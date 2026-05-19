@@ -59,6 +59,18 @@ public:
 	static float CAStrength;	// chromatic aberration radial offset (0 = off, ~0.005 typical)
 	static float CADistanceScale;	// 0 = uniform, 1 = scaled by radius (default 1)
 #endif
+#ifdef POSTFX_HDR
+	// SSAO (consumes CGBuffer::pGbufNormalDepth). Output blended in
+	// hdrResolve_PS via sampler s1 = pSsaoA.
+	static RwRaster *pSsaoA;
+	static RwRaster *pSsaoB;
+	static bool SsaoEnable;
+	static float SsaoRadius;	// world units (~0.5..2.0)
+	static float SsaoBias;		// (~0.01..0.05)
+	static float SsaoIntensity;	// occlusion scale (~1..3)
+	static float SsaoStrength;	// final compose lerp (0 = off, 1 = full effect)
+	static float SsaoPower;		// AO curve power (>1 = darker, <1 = softer)
+#endif
 
 	static void InitOnce(void);
 	static void Open(RwCamera *cam);
@@ -83,6 +95,10 @@ public:
 	// right after CGBuffer::EndScenePass, before any LDR pass (motion blur,
 	// screen droplets, UI).
 	static void ResolveHDR(RwCamera *cam);
+	// Screen-space AO consuming the G-buffer. Renders to pSsaoA which is
+	// then sampled by hdrResolve_PS. Call between EndScenePass and
+	// ResolveHDR.
+	static void RenderSSAO(RwCamera *cam);
 #endif
 	static void SmoothColor(uint32 red, uint32 green, uint32 blue, uint32 alpha);
 	static bool NeedBackBuffer(void);

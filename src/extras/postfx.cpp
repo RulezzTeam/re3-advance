@@ -62,6 +62,16 @@ float CPostFX::VignetteRoundness = 1.0f;
 float CPostFX::CAStrength = 0.0f;
 float CPostFX::CADistanceScale = 1.0f;
 #endif
+#ifdef POSTFX_HDR
+RwRaster *CPostFX::pSsaoA;
+RwRaster *CPostFX::pSsaoB;
+bool CPostFX::SsaoEnable = true;
+float CPostFX::SsaoRadius = 0.9f;
+float CPostFX::SsaoBias = 0.025f;
+float CPostFX::SsaoIntensity = 1.8f;
+float CPostFX::SsaoStrength = 0.85f;
+float CPostFX::SsaoPower = 1.4f;
+#endif
 
 static RwIm2DVertex Vertex[4];
 static RwIm2DVertex Vertex2[4];
@@ -92,6 +102,12 @@ static void *godrays_PS;
 #endif
 #ifdef POSTFX_HDR
 void *hdrResolve_PS;
+static void *ssao_PS;
+static void *ssaoBlur_PS;
+static rw::Camera *ssaoCamA;
+static rw::Camera *ssaoCamB;
+static RwIm2DVertex SsaoVertex[4];	// half-res quad sized to SSAO RT
+static int32 g_ssaoW, g_ssaoH;
 #endif
 #ifdef SOFT_SHADOWS
 void *shadowPCF_PS;
@@ -200,6 +216,73 @@ CPostFX::Open(RwCamera *cam)
 	// HDR scene RT + G-buffer share the camera's actual resolution
 	// (non-pow2 is fine on ps_3_0; tonemap-resolve samples UV [0,1]).
 	CGBuffer::Open(cam);
+
+	// Half-res SSAO ping-pong RTs (RGBA8, R channel = AO; alpha ignored).
+	// Half-res is the standard SSAO economy trade-off — ~4x cheaper than
+	// full-res with no visible quality loss after bilateral blur.
+	int32 cw = RwRasterGetWidth(RwCameraGetRaster(cam));
+	int32 ch = RwRasterGetHeight(RwCameraGetRaster(cam));
+	int32 sw = cw / 2;
+	int32 sh = ch / 2;
+	if(sw < 64) sw = 64;
+	if(sh < 64) sh = 64;
+	pSsaoA = RwRasterCreate(sw, sh, depth, rwRASTERTYPECAMERATEXTURE);
+	pSsaoB = RwRasterCreate(sw, sh, depth, rwRASTERTYPECAMERATEXTURE);
+	ssaoCamA = CreateBloomCam(pSsaoA);
+	ssaoCamB = CreateBloomCam(pSsaoB);
+	g_ssaoW = sw;
+	g_ssaoH = sh;
+
+	// Half-res quad for SSAO passes. The destination RTs are exactly sw x sh
+	// (non-pow2), so UV=0..1 must map to (0, 0)..(sw, sh) screen coords.
+	{
+		float hz, hxmax, hymax;
+		if(depth == 16){
+			hz = HALFPX;
+			hxmax = (float)sw + HALFPX;
+			hymax = (float)sh + HALFPX;
+		}else{
+			hz = -HALFPX;
+			hxmax = (float)sw - HALFPX;
+			hymax = (float)sh - HALFPX;
+		}
+		float invNear = 1.0f / RwCameraGetNearClipPlane(cam);
+		RwIm2DVertexSetScreenX(&SsaoVertex[0], hz);
+		RwIm2DVertexSetScreenY(&SsaoVertex[0], hz);
+		RwIm2DVertexSetScreenZ(&SsaoVertex[0], RwIm2DGetNearScreenZ());
+		RwIm2DVertexSetCameraZ(&SsaoVertex[0], RwCameraGetNearClipPlane(cam));
+		RwIm2DVertexSetRecipCameraZ(&SsaoVertex[0], invNear);
+		RwIm2DVertexSetU(&SsaoVertex[0], 0.0f, invNear);
+		RwIm2DVertexSetV(&SsaoVertex[0], 0.0f, invNear);
+		RwIm2DVertexSetIntRGBA(&SsaoVertex[0], 255, 255, 255, 255);
+
+		RwIm2DVertexSetScreenX(&SsaoVertex[1], hz);
+		RwIm2DVertexSetScreenY(&SsaoVertex[1], hymax);
+		RwIm2DVertexSetScreenZ(&SsaoVertex[1], RwIm2DGetNearScreenZ());
+		RwIm2DVertexSetCameraZ(&SsaoVertex[1], RwCameraGetNearClipPlane(cam));
+		RwIm2DVertexSetRecipCameraZ(&SsaoVertex[1], invNear);
+		RwIm2DVertexSetU(&SsaoVertex[1], 0.0f, invNear);
+		RwIm2DVertexSetV(&SsaoVertex[1], 1.0f, invNear);
+		RwIm2DVertexSetIntRGBA(&SsaoVertex[1], 255, 255, 255, 255);
+
+		RwIm2DVertexSetScreenX(&SsaoVertex[2], hxmax);
+		RwIm2DVertexSetScreenY(&SsaoVertex[2], hymax);
+		RwIm2DVertexSetScreenZ(&SsaoVertex[2], RwIm2DGetNearScreenZ());
+		RwIm2DVertexSetCameraZ(&SsaoVertex[2], RwCameraGetNearClipPlane(cam));
+		RwIm2DVertexSetRecipCameraZ(&SsaoVertex[2], invNear);
+		RwIm2DVertexSetU(&SsaoVertex[2], 1.0f, invNear);
+		RwIm2DVertexSetV(&SsaoVertex[2], 1.0f, invNear);
+		RwIm2DVertexSetIntRGBA(&SsaoVertex[2], 255, 255, 255, 255);
+
+		RwIm2DVertexSetScreenX(&SsaoVertex[3], hxmax);
+		RwIm2DVertexSetScreenY(&SsaoVertex[3], hz);
+		RwIm2DVertexSetScreenZ(&SsaoVertex[3], RwIm2DGetNearScreenZ());
+		RwIm2DVertexSetCameraZ(&SsaoVertex[3], RwCameraGetNearClipPlane(cam));
+		RwIm2DVertexSetRecipCameraZ(&SsaoVertex[3], invNear);
+		RwIm2DVertexSetU(&SsaoVertex[3], 1.0f, invNear);
+		RwIm2DVertexSetV(&SsaoVertex[3], 0.0f, invNear);
+		RwIm2DVertexSetIntRGBA(&SsaoVertex[3], 255, 255, 255, 255);
+	}
 #endif
 	g_postfxRtWidth = width;
 	g_postfxRtHeight = height;
@@ -386,6 +469,14 @@ CPostFX::Open(RwCamera *cam)
 #include "shaders/obj/hdrResolve_PS.inc"
 	hdrResolve_PS = rw::d3d::createPixelShader(hdrResolve_PS_cso);
 	}
+	{
+#include "shaders/obj/ssao_PS.inc"
+	ssao_PS = rw::d3d::createPixelShader(ssao_PS_cso);
+	}
+	{
+#include "shaders/obj/ssaoBlur_PS.inc"
+	ssaoBlur_PS = rw::d3d::createPixelShader(ssaoBlur_PS_cso);
+	}
 #endif
 #ifdef SOFT_SHADOWS
 	{
@@ -436,6 +527,10 @@ CPostFX::Close(void)
 	if(pBloomB){ RwRasterDestroy(pBloomB); pBloomB = nil; }
 #endif
 #ifdef POSTFX_HDR
+	if(ssaoCamA){ DestroyBloomCam(ssaoCamA); ssaoCamA = nil; }
+	if(ssaoCamB){ DestroyBloomCam(ssaoCamB); ssaoCamB = nil; }
+	if(pSsaoA){ RwRasterDestroy(pSsaoA); pSsaoA = nil; }
+	if(pSsaoB){ RwRasterDestroy(pSsaoB); pSsaoB = nil; }
 	CGBuffer::Close();
 #endif
 #ifdef RW_D3D9
@@ -460,6 +555,8 @@ CPostFX::Close(void)
 #endif
 #ifdef POSTFX_HDR
 	if(hdrResolve_PS){ rw::d3d::destroyPixelShader(hdrResolve_PS); hdrResolve_PS = nil; }
+	if(ssao_PS){ rw::d3d::destroyPixelShader(ssao_PS); ssao_PS = nil; }
+	if(ssaoBlur_PS){ rw::d3d::destroyPixelShader(ssaoBlur_PS); ssaoBlur_PS = nil; }
 #endif
 #ifdef SOFT_SHADOWS
 	if(shadowPCF_PS){ rw::d3d::destroyPixelShader(shadowPCF_PS); shadowPCF_PS = nil; }
@@ -615,6 +712,107 @@ CPostFX::RenderOverlayShader(RwCamera *cam, int32 r, int32 g, int32 b, int32 a)
 }
 
 #ifdef POSTFX_HDR
+
+// Bind a CAMERATEXTURE raster as a PS sampler slot (s1..s15). Slot 0 is
+// owned by the rwRENDERSTATETEXTURERASTER render-state path.
+static void
+BindRasterToSampler(int slot, RwRaster *raster)
+{
+#ifdef RW_D3D9
+	if(raster == nil){
+		rw::d3d::d3ddevice->SetTexture(slot, nil);
+		return;
+	}
+	if(((rw::Raster*)raster)->parent)
+		raster = (RwRaster*)((rw::Raster*)raster)->parent;
+	rw::d3d::D3dRaster *natras = GETD3DRASTEREXT((rw::Raster*)raster);
+	rw::d3d::d3ddevice->SetTexture(slot, (IDirect3DTexture9*)natras->texture);
+	rw::d3d::d3ddevice->SetSamplerState(slot, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
+	rw::d3d::d3ddevice->SetSamplerState(slot, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+	rw::d3d::d3ddevice->SetSamplerState(slot, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+	rw::d3d::d3ddevice->SetSamplerState(slot, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+	rw::d3d::d3ddevice->SetSamplerState(slot, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+#endif
+}
+
+void
+CPostFX::RenderSSAO(RwCamera *cam)
+{
+	if(!CGBuffer::HdrEnabled || !CGBuffer::GbufEnabled || !SsaoEnable)
+		return;
+	if(CGBuffer::pGbufNormalDepth == nil || ssao_PS == nil || ssaoBlur_PS == nil ||
+	   pSsaoA == nil || pSsaoB == nil || ssaoCamA == nil || ssaoCamB == nil)
+		return;
+
+	PUSH_RENDERGROUP("CPostFX::RenderSSAO");
+
+	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEFOGENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDONE);
+	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDZERO);
+
+	float farClip = RwCameraGetFarClipPlane(cam);
+	float cw = (float)RwRasterGetWidth(RwCameraGetRaster(cam));
+	float ch = (float)RwRasterGetHeight(RwCameraGetRaster(cam));
+
+	// Pass 1: SSAO sampling — G-buffer -> pSsaoA
+	RwCameraEndUpdate(cam);
+	RwCameraBeginUpdate((RwCamera*)ssaoCamA);
+	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, CGBuffer::pGbufNormalDepth);
+	{
+#ifdef RW_D3D9
+		float p[4] = { SsaoRadius, SsaoBias, SsaoIntensity, farClip };
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(10, p, 1);
+		float t[4] = { 1.0f/cw, 1.0f/ch, 0.0f, 0.0f };
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(11, t, 1);
+		rw::d3d::im2dOverridePS = ssao_PS;
+#endif
+		RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, SsaoVertex, 4, Index, 6);
+	}
+	RwCameraEndUpdate((RwCamera*)ssaoCamA);
+
+	// Pass 2: bilateral blur H — pSsaoA -> pSsaoB. Also bind G-buffer on s1
+	// for the depth weights.
+	RwCameraBeginUpdate((RwCamera*)ssaoCamB);
+	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, pSsaoA);
+	BindRasterToSampler(1, CGBuffer::pGbufNormalDepth);
+	{
+#ifdef RW_D3D9
+		float p[4] = { 1.0f/(float)g_ssaoW, 0.0f, 6.0f, farClip };
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(10, p, 1);
+		rw::d3d::im2dOverridePS = ssaoBlur_PS;
+#endif
+		RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, SsaoVertex, 4, Index, 6);
+	}
+	RwCameraEndUpdate((RwCamera*)ssaoCamB);
+
+	// Pass 3: bilateral blur V — pSsaoB -> pSsaoA
+	RwCameraBeginUpdate((RwCamera*)ssaoCamA);
+	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, pSsaoB);
+	BindRasterToSampler(1, CGBuffer::pGbufNormalDepth);
+	{
+#ifdef RW_D3D9
+		float p[4] = { 0.0f, 1.0f/(float)g_ssaoH, 6.0f, farClip };
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(10, p, 1);
+		rw::d3d::im2dOverridePS = ssaoBlur_PS;
+#endif
+		RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, SsaoVertex, 4, Index, 6);
+	}
+	RwCameraEndUpdate((RwCamera*)ssaoCamA);
+
+	// Unbind s1 to keep other passes from accidentally reading the G-buffer.
+	BindRasterToSampler(1, nil);
+	RwCameraBeginUpdate(cam);
+
+#ifdef RW_D3D9
+	rw::d3d::im2dOverridePS = nil;
+#endif
+
+	POP_RENDERGROUP();
+}
+
 void
 CPostFX::ResolveHDR(RwCamera *cam)
 {
@@ -632,6 +830,12 @@ CPostFX::ResolveHDR(RwCamera *cam)
 	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDONE);
 	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDZERO);
 
+	// Bind the AO buffer on sampler 1 — hdrResolve_PS reads it when the
+	// SSAO strength is non-zero. Unbind on exit.
+	bool ssaoActive = SsaoEnable && pSsaoA != nil && CGBuffer::GbufEnabled;
+	if(ssaoActive)
+		BindRasterToSampler(1, pSsaoA);
+
 #ifdef RW_D3D9
 	// .x = exposure, .y = ACES toggle, .z = gamma toggle, .w = saturation
 	float params[4] = {
@@ -645,6 +849,14 @@ CPostFX::ResolveHDR(RwCamera *cam)
 # endif
 	};
 	rw::d3d::d3ddevice->SetPixelShaderConstantF(10, params, 1);
+
+	float ssaoMix[4] = {
+		ssaoActive ? SsaoStrength : 0.0f,
+		SsaoPower,
+		0.0f, 0.0f
+	};
+	rw::d3d::d3ddevice->SetPixelShaderConstantF(11, ssaoMix, 1);
+
 	rw::d3d::im2dOverridePS = hdrResolve_PS;
 #endif
 
@@ -655,6 +867,8 @@ CPostFX::ResolveHDR(RwCamera *cam)
 
 #ifdef RW_D3D9
 	rw::d3d::im2dOverridePS = nil;
+	if(ssaoActive)
+		BindRasterToSampler(1, nil);
 #endif
 	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
 	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);

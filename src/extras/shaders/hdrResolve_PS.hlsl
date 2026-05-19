@@ -1,23 +1,21 @@
-// HDR -> LDR resolve shader.
+// HDR -> LDR resolve shader with optional SSAO compose.
 //
-// Reads the RGBA16F off-screen scene RT (CGBuffer::pHdrScene), applies the
-// final tonemap pipeline (exposure -> ACES -> saturation -> gamma) without
-// the iterative blur-colour loop or vignette/CA used by colourfilterVC_PS,
-// and writes the result into the LDR backbuffer.
-//
-// We keep this pass separate from colourfilterVC_PS because the legacy
-// colour-filter shader applies an LDR clamp inside its blur loop — that
-// would destroy >1 HDR values before they hit ACES. Splitting the pass
-// gives us a clean, no-clamp tonemap for the HDR pipeline and leaves the
-// existing LDR colour-filter intact for legacy mode.
+// Reads the RGBA16F off-screen scene RT (CGBuffer::pHdrScene), optionally
+// multiplies by an SSAO mask (CPostFX::pSsaoA), then applies the final
+// tonemap pipeline (exposure -> ACES -> saturation -> gamma) before writing
+// to the LDR backbuffer.
 
-sampler2D hdrTex : register(s0);
+sampler2D hdrTex  : register(s0);
+sampler2D ssaoTex : register(s1);	// R8 AO; 1.0 = fully lit
 
 // .x = exposure (linear multiplier, 1.0 = neutral)
 // .y = ACES toggle (0..1, lerps toward filmic curve)
 // .z = gamma toggle (0..1)
 // .w = saturation (1.0 = neutral)
 float4 hdrTonemap : register(c10);
+
+// .x = SSAO strength (0 = disabled), .y = AO power curve, .zw = unused
+float4 hdrSsao : register(c11);
 
 float3 ACES(float3 x)
 {
@@ -28,10 +26,20 @@ float4 main(in float2 uv : TEXCOORD0) : COLOR0
 {
 	float3 col = tex2D(hdrTex, uv).rgb;
 
-	// Exposure (linear). Default 1.0 keeps the scene at "stock" brightness.
+	// SSAO compose — multiply ambient term by AO. Skipped when strength = 0
+	// so the shader works correctly even when SSAO RTs are stale/disabled.
+	[branch]
+	if(hdrSsao.x > 0.001){
+		float ao = tex2D(ssaoTex, uv).r;
+		ao = pow(saturate(ao), max(hdrSsao.y, 0.1));
+		ao = lerp(1.0, ao, hdrSsao.x);
+		col *= ao;
+	}
+
+	// Exposure (linear).
 	col *= hdrTonemap.x;
 
-	// ACES filmic tonemap, blendable to verify HDR input visually.
+	// ACES filmic tonemap, blendable.
 	float3 aces = ACES(col);
 	col = lerp(col, aces, hdrTonemap.y);
 

@@ -1644,6 +1644,9 @@ Idle(void *arg)
 		// droplets, 2D HUD, menus). Restore camera framebuffer to the
 		// original backbuffer first.
 		CGBuffer::EndScenePass(Scene.camera);
+		// SSAO runs between the scene pass (which filled the G-buffer)
+		// and the tonemap-resolve (which composes AO into the output).
+		CPostFX::RenderSSAO(Scene.camera);
 		CPostFX::ResolveHDR(Scene.camera);
 #endif
 
