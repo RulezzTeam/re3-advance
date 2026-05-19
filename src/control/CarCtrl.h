@@ -12,8 +12,8 @@ class CZoneInfo;
 class CAutomobile;
 
 enum{
-	MAX_CARS_TO_KEEP = 2,
-	MAX_CAR_MODELS_IN_ARRAY = 25,
+	MAX_CARS_TO_KEEP = 50,
+	MAX_CAR_MODELS_IN_ARRAY = 70,
 };
 
 #ifdef FIX_BUGS

@@ -26,8 +26,8 @@ public:
 	uint8 m_bArmyRequired : 1;
 	int32 m_nWantedLevel;
 	int32 m_nMinWantedLevel;
-	CCrimeBeingQd m_aCrimes[16];
-	CCopPed *m_pCops[10];
+	CCrimeBeingQd m_aCrimes[32];
+	CCopPed *m_pCops[128];
 
 	static int32 MaximumWantedLevel;
 	static int32 nMaximumWantedLevel;

@@ -22,7 +22,7 @@ enum
 	HELI_RANDOM1,
 	HELI_SCRIPT,
 	HELI_CATALINA,	// TODO 2 in VC
-	NUM_HELIS
+	NUM_HELIS = 32
 };
 
 enum

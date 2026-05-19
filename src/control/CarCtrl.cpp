@@ -73,14 +73,14 @@
 #define MIN_ANGLE_TO_APPLY_HANDBRAKE (0.7f)
 #define MIN_SPEED_TO_APPLY_HANDBRAKE (0.3f)
 
-#define PROBABILITY_OF_DEAD_PED_ACCIDENT (0.005f)
+#define PROBABILITY_OF_DEAD_PED_ACCIDENT (0.2f)
 #define DISTANCE_BETWEEN_CAR_AND_DEAD_PED (6.0f)
-#define PROBABILITY_OF_PASSENGER_IN_VEHICLE (0.125f)
+#define PROBABILITY_OF_PASSENGER_IN_VEHICLE (3.125f)
 
-#define ONSCREEN_DESPAWN_RANGE (120.0f)
+#define ONSCREEN_DESPAWN_RANGE (220.0f)
 #define MINIMAL_DISTANCE_TO_SPAWN_ONSCREEN (100.0f)
 #define REQUEST_ONSCREEN_DISTANCE ((ONSCREEN_DESPAWN_RANGE + MINIMAL_DISTANCE_TO_SPAWN_ONSCREEN) / 2)
-#define OFFSCREEN_DESPAWN_RANGE (40.0f)
+#define OFFSCREEN_DESPAWN_RANGE (140.0f)
 #define EXTENDED_RANGE_DESPAWN_MULTIPLIER (1.5f)
 
 bool CCarCtrl::bMadDriversCheat;
@@ -88,7 +88,7 @@ int CCarCtrl::NumLawEnforcerCars;
 int CCarCtrl::NumAmbulancesOnDuty;
 int CCarCtrl::NumFiretrucksOnDuty;
 bool CCarCtrl::bCarsGeneratedAroundCamera;
-float CCarCtrl::CarDensityMultiplier = 1.0f;
+float CCarCtrl::CarDensityMultiplier = 100.0f;
 int32 CCarCtrl::NumMissionCars;
 int32 CCarCtrl::NumRandomCars;
 int32 CCarCtrl::NumParkedCars;
@@ -116,9 +116,16 @@ CCarCtrl::GenerateRandomCars()
 		CountDownToCarsAtStart = 2;
 		return;
 	}
-	if (NumRandomCars < 30){
-		if (CountDownToCarsAtStart == 0)
+	if (NumRandomCars < 60){
+		if(CountDownToCarsAtStart == 0) {
 			GenerateOneRandomCar();
+			GenerateOneRandomCar();
+			GenerateOneRandomCar();
+			GenerateOneRandomCar();
+			GenerateOneRandomCar();
+			GenerateEmergencyServicesCar();
+
+		}
 		else if (--CountDownToCarsAtStart == 0) {
 			for (int i = 0; i < 100; i++)
 				GenerateOneRandomCar();
@@ -2197,7 +2204,7 @@ void CCarCtrl::Init(void)
 #endif
 	bCarsGeneratedAroundCamera = false;
 	CountDownToCarsAtStart = 2;
-	CarDensityMultiplier = 1.0f;
+	CarDensityMultiplier = 10.0f;
 	for (int i = 0; i < MAX_CARS_TO_KEEP; i++)
 		apCarsToKeep[i] = nil;
 	for (int i = 0; i < TOTAL_CUSTOM_CLASSES; i++){

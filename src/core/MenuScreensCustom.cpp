@@ -70,8 +70,8 @@
 #ifdef PED_CAR_DENSITY_SLIDERS
 	// 0.2f - 3.4f makes it possible to have 1.0f somewhere inbetween
 	#define DENSITY_SLIDERS \
-		MENUACTION_CFO_SLIDER, "FEM_PED", { new CCFOSlider(&CIniFile::PedNumberMultiplier, "Display", "PedDensity", 0.2f, 3.4f, PedDensityChange) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FEM_CAR", { new CCFOSlider(&CIniFile::CarNumberMultiplier, "Display", "CarDensity", 0.2f, 3.4f, CarDensityChange) }, 0, 0, MENUALIGN_LEFT, 
+		MENUACTION_CFO_SLIDER, "FEM_PED", { new CCFOSlider(&CIniFile::PedNumberMultiplier, "Display", "PedDensity", 0.2f, 300.4f, PedDensityChange) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FEM_CAR", { new CCFOSlider(&CIniFile::CarNumberMultiplier, "Display", "CarDensity", 0.2f, 300.4f, CarDensityChange) }, 0, 0, MENUALIGN_LEFT, 
 #else
 	#define DENSITY_SLIDERS 
 #endif

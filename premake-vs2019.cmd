@@ -1,1 +1,1 @@
-premake5 vs2019 --with-librw
+premake5 vs2022 --with-librw

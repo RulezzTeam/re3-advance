@@ -121,7 +121,7 @@ CRoadBlocks::GenerateRoadBlocks(void)
 #endif
 	uint32 frame = CTimer::GetFrameCounter() & 0xF;
 	int16 nRoadblockNode = (int16)(NUMROADBLOCKS * frame) / 16;
-	const int16 maxRoadBlocks = (int16)(NUMROADBLOCKS * (frame + 1)) / 16;
+	const int16 maxRoadBlocks = (int16)(NUMROADBLOCKS * (frame + 1)) / 8;
 	for (; nRoadblockNode < Min(NumRoadBlocks, maxRoadBlocks); nRoadblockNode++) {
 		int16 node = RoadBlockNodes[nRoadblockNode];
 		CVector2D vecDistance = FindPlayerCoors() - ThePaths.m_pathNodes[node].GetPosition();
@@ -219,7 +219,7 @@ CRoadBlocks::CreateRoadBlockBetween2Points(CVector point1, CVector point2)
 		vehicleId = MI_POLICE;
 	CColModel *pVehicleColModel = CModelInfo::GetColModel(vehicleId);
 	float fModelRadius = 2.0f * pVehicleColModel->boundingSphere.radius + 0.25f;
-	int16 numRoadblockVehicles = Min(6, (int16)(distBetween / fModelRadius));
+	int16 numRoadblockVehicles = Min(8, (int16)(distBetween / fModelRadius));
 	for (int16 i = 0; i < numRoadblockVehicles; i++) {
 		float offset = fModelRadius * (i - numRoadblockVehicles / 2);
 		tmp.SetTranslate(0.0f, 0.0f, 0.0f);
