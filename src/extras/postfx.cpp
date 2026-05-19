@@ -77,6 +77,12 @@ float CPostFX::SsaoBias = 0.025f;
 float CPostFX::SsaoIntensity = 1.8f;
 float CPostFX::SsaoStrength = 0.85f;
 float CPostFX::SsaoPower = 1.4f;
+RwRaster *CPostFX::pTaaHistA;
+RwRaster *CPostFX::pTaaHistB;
+bool CPostFX::TaaEnable = false;	// opt-in (FXAA stays default)
+float CPostFX::TaaBlend = 0.12f;
+float CPostFX::TaaClamp = 1.0f;
+int CPostFX::TaaFrameIdx = 0;
 #endif
 
 static RwIm2DVertex Vertex[4];
@@ -114,6 +120,9 @@ static rw::Camera *ssaoCamA;
 static rw::Camera *ssaoCamB;
 static RwIm2DVertex SsaoVertex[4];	// half-res quad sized to SSAO RT
 static int32 g_ssaoW, g_ssaoH;
+static void *taa_PS;
+static rw::Camera *taaCamA;
+static rw::Camera *taaCamB;
 #endif
 #ifdef SOFT_SHADOWS
 void *shadowPCF_PS;
@@ -228,6 +237,14 @@ CPostFX::Open(RwCamera *cam)
 #ifdef POSTFX_CSM
 	CCSM::Open(cam);
 #endif
+
+	// TAA history buffers — full pow2 size (same as pBackBuffer) so we can
+	// reuse the existing Vertex[] quad for the blend pass.
+	pTaaHistA = RwRasterCreate(width, height, depth, rwRASTERTYPECAMERATEXTURE);
+	pTaaHistB = RwRasterCreate(width, height, depth, rwRASTERTYPECAMERATEXTURE);
+	taaCamA = CreateBloomCam(pTaaHistA);
+	taaCamB = CreateBloomCam(pTaaHistB);
+	TaaFrameIdx = 0;
 
 	// Half-res SSAO ping-pong RTs (RGBA8, R channel = AO; alpha ignored).
 	// Half-res is the standard SSAO economy trade-off — ~4x cheaper than
@@ -489,6 +506,10 @@ CPostFX::Open(RwCamera *cam)
 #include "shaders/obj/ssaoBlur_PS.inc"
 	ssaoBlur_PS = rw::d3d::createPixelShader(ssaoBlur_PS_cso);
 	}
+	{
+#include "shaders/obj/taa_PS.inc"
+	taa_PS = rw::d3d::createPixelShader(taa_PS_cso);
+	}
 #endif
 #ifdef SOFT_SHADOWS
 	{
@@ -543,6 +564,10 @@ CPostFX::Close(void)
 	if(ssaoCamB){ DestroyBloomCam(ssaoCamB); ssaoCamB = nil; }
 	if(pSsaoA){ RwRasterDestroy(pSsaoA); pSsaoA = nil; }
 	if(pSsaoB){ RwRasterDestroy(pSsaoB); pSsaoB = nil; }
+	if(taaCamA){ DestroyBloomCam(taaCamA); taaCamA = nil; }
+	if(taaCamB){ DestroyBloomCam(taaCamB); taaCamB = nil; }
+	if(pTaaHistA){ RwRasterDestroy(pTaaHistA); pTaaHistA = nil; }
+	if(pTaaHistB){ RwRasterDestroy(pTaaHistB); pTaaHistB = nil; }
 #ifdef POSTFX_WATER_REFLECTION
 	CWaterReflection::Close();
 #endif
@@ -575,6 +600,7 @@ CPostFX::Close(void)
 	if(hdrResolve_PS){ rw::d3d::destroyPixelShader(hdrResolve_PS); hdrResolve_PS = nil; }
 	if(ssao_PS){ rw::d3d::destroyPixelShader(ssao_PS); ssao_PS = nil; }
 	if(ssaoBlur_PS){ rw::d3d::destroyPixelShader(ssaoBlur_PS); ssaoBlur_PS = nil; }
+	if(taa_PS){ rw::d3d::destroyPixelShader(taa_PS); taa_PS = nil; }
 #endif
 #ifdef SOFT_SHADOWS
 	if(shadowPCF_PS){ rw::d3d::destroyPixelShader(shadowPCF_PS); shadowPCF_PS = nil; }
@@ -1068,6 +1094,71 @@ CPostFX::RenderGodRays(RwCamera *cam)
 }
 #endif
 
+#ifdef POSTFX_HDR
+void
+CPostFX::RenderTAA(RwCamera *cam)
+{
+#ifdef RW_D3D9
+	if(!TaaEnable || taa_PS == nil || pBackBuffer == nil ||
+	   pTaaHistA == nil || pTaaHistB == nil ||
+	   taaCamA == nil || taaCamB == nil)
+		return;
+
+	PUSH_RENDERGROUP("CPostFX::RenderTAA");
+
+	// 1. Capture the current backbuffer into pBackBuffer so the TAA pass
+	//    has a stable read of the just-tonemapped colour. GetBackBuffer
+	//    does a fast surface copy (StretchRect).
+	GetBackBuffer(cam);
+
+	// 2. Pick the current history slot (read from) and the next slot
+	//    (write to). Ping-pong each frame.
+	RwRaster *histRead  = (TaaFrameIdx == 0) ? pTaaHistA : pTaaHistB;
+	RwRaster *histWrite = (TaaFrameIdx == 0) ? pTaaHistB : pTaaHistA;
+	rw::Camera *writeCam = (rw::Camera*)((TaaFrameIdx == 0) ? taaCamB : taaCamA);
+
+	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEFOGENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDONE);
+	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDZERO);
+
+	// 3. Blend pass: pBackBuffer (s0=current) + histRead (s1=previous) ->
+	//    histWrite.
+	RwCameraEndUpdate(cam);
+	RwCameraBeginUpdate((RwCamera*)writeCam);
+	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, pBackBuffer);
+	BindRasterToSampler(1, histRead);
+	{
+		float p[4] = { TaaBlend, TaaClamp, 0.0f, 0.0f };
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(10, p, 1);
+		float t[4] = { 1.0f / (float)g_postfxRtWidth, 1.0f / (float)g_postfxRtHeight, 0.0f, 0.0f };
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(11, t, 1);
+		rw::d3d::im2dOverridePS = taa_PS;
+		RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, Vertex, 4, Index, 6);
+		rw::d3d::im2dOverridePS = nil;
+	}
+	BindRasterToSampler(1, nil);
+	RwCameraEndUpdate((RwCamera*)writeCam);
+
+	// 4. Restore the main camera and copy histWrite -> backbuffer so the
+	//    user sees the resolved TAA result.
+	RwCameraBeginUpdate(cam);
+	RwRasterPushContext(RwCameraGetRaster(cam));
+	RwRasterRenderFast(histWrite, 0, 0);
+	RwRasterPopContext();
+
+	TaaFrameIdx ^= 1;
+
+	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
+	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
+
+	POP_RENDERGROUP();
+#endif
+}
+#endif
+
 #ifdef POSTFX_FXAA
 void
 CPostFX::RenderFXAA(RwCamera *cam)
@@ -1225,9 +1316,24 @@ CPostFX::Render(RwCamera *cam, uint32 red, uint32 green, uint32 blue, uint32 blu
 		RenderGodRays(cam);
 #endif
 
+#ifdef POSTFX_HDR
+	// TAA and FXAA are mutually exclusive AA strategies — TAA runs first
+	// and disables FXAA for this frame when it's active.
+	bool taaActive = false;
+	if(TaaEnable && !bJustInitialised && type != MOTION_BLUR_SNIPER &&
+	   EffectSwitch != POSTFX_OFF){
+		RenderTAA(cam);
+		taaActive = true;
+	}
+#endif
+
 #ifdef POSTFX_FXAA
 	if(FxaaEnable && !bJustInitialised && type != MOTION_BLUR_SNIPER &&
-	   EffectSwitch != POSTFX_OFF)
+	   EffectSwitch != POSTFX_OFF
+#ifdef POSTFX_HDR
+	   && !taaActive
+#endif
+	  )
 		RenderFXAA(cam);
 #endif
 

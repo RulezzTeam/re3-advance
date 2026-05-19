@@ -132,6 +132,14 @@
 	#define POSTFX_FXAA_SELECTORS
 #endif
 
+#ifdef POSTFX_HDR
+	#define POSTFX_TAA_SELECTORS \
+		MENUACTION_CFO_SELECT, "FED_TAA", { new CCFOSelect((int8*)&CPostFX::TaaEnable, "Graphics", "TAA", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_TAB", { new CCFOSlider(&CPostFX::TaaBlend, "Graphics", "TaaBlend", 0.02f, 0.5f) }, 0, 0, MENUALIGN_LEFT,
+#else
+	#define POSTFX_TAA_SELECTORS
+#endif
+
 #ifdef POSTFX_GODRAYS
 	#define POSTFX_GODRAYS_SELECTORS \
 		MENUACTION_CFO_SELECT, "FED_GDR", { new CCFOSelect((int8*)&CPostFX::GodRaysEnable, "Graphics", "GodRays", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
@@ -269,6 +277,9 @@ void RestoreDefGraphics(int8 action) {
 		CPostFX::SsaoBias = 0.025f;
 		CPostFX::SsaoIntensity = 1.8f;
 		CPostFX::SsaoStrength = 0.85f;
+		CPostFX::TaaEnable = false;
+		CPostFX::TaaBlend = 0.12f;
+		CPostFX::TaaClamp = 1.0f;
 	#endif
 	#ifdef POSTFX_WATER_REFLECTION
 		CWaterReflection::Enabled = false;	// off until water shader hooks land
@@ -945,6 +956,7 @@ CMenuScreenCustom aScreens[] = {
 		POSTFX_BLOOM_SELECTORS
 		POSTFX_TONEMAP_SELECTORS
 		POSTFX_FXAA_SELECTORS
+		POSTFX_TAA_SELECTORS
 		POSTFX_GODRAYS_SELECTORS
 		POSTFX_SHADOWS_SELECTORS
 		POSTFX_ENVMAP_SELECTORS

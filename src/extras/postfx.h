@@ -41,6 +41,18 @@ public:
 	static bool FxaaEnable;
 	static float FxaaStrength;	// 0..1 lerp toward FXAA result
 #endif
+#ifdef POSTFX_HDR
+	// TAA (also gated by POSTFX_HDR so we have a clean colour pipeline +
+	// matching RT sizes). FXAA is auto-disabled while TaaEnable is on
+	// because both passes do edge smoothing — running together adds
+	// blur without quality gain.
+	static RwRaster *pTaaHistA;
+	static RwRaster *pTaaHistB;
+	static bool TaaEnable;
+	static float TaaBlend;		// 0.05..0.20 typical; smaller = more temporal accumulation
+	static float TaaClamp;		// neighbourhood AABB expansion (1.0 default)
+	static int   TaaFrameIdx;	// 0 or 1 ping-pong slot for the current history
+#endif
 #ifdef POSTFX_GODRAYS
 	static bool GodRaysEnable;
 	static float GodRaysDensity;	// sample spacing (~1.0 default)
@@ -99,6 +111,10 @@ public:
 	// then sampled by hdrResolve_PS. Call between EndScenePass and
 	// ResolveHDR.
 	static void RenderSSAO(RwCamera *cam);
+	// Temporal AA — reads pBackBuffer (current) + pTaaHist[idx] (history),
+	// writes the blended result back to the backbuffer + the next history
+	// slot. Call once per frame, after ResolveHDR, instead of FXAA.
+	static void RenderTAA(RwCamera *cam);
 #endif
 	static void SmoothColor(uint32 red, uint32 green, uint32 blue, uint32 alpha);
 	static bool NeedBackBuffer(void);
