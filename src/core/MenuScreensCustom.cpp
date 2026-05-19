@@ -171,6 +171,8 @@
 		MENUACTION_CFO_SLIDER, "FED_SAR", { new CCFOSlider(&CPostFX::SsaoRadius, "Graphics", "SsaoRadius", 0.2f, 3.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_SAI", { new CCFOSlider(&CPostFX::SsaoIntensity, "Graphics", "SsaoIntensity", 0.0f, 4.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_SAS", { new CCFOSlider(&CPostFX::SsaoStrength, "Graphics", "SsaoStrength", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_CAO", { new CCFOSlider(&CPostFX::SsaoContactStrength, "Graphics", "SsaoContact", 0.0f, 1.5f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_CAR", { new CCFOSlider(&CPostFX::SsaoContactRadius, "Graphics", "SsaoContactRadius", 1.0f, 8.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_VOL", { new CCFOSelect((int8*)&CPostFX::VolFogEnable, "Graphics", "VolFog", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_VFS", { new CCFOSlider(&CPostFX::VolFogStrength, "Graphics", "VolFogStrength", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_VFD", { new CCFOSlider(&CPostFX::VolFogDensity, "Graphics", "VolFogDensity", 0.0f, 0.08f) }, 0, 0, MENUALIGN_LEFT, \
@@ -283,6 +285,9 @@ void RestoreDefGraphics(int8 action) {
 		CPostFX::SsaoBias = 0.03f;
 		CPostFX::SsaoIntensity = 1.2f;
 		CPostFX::SsaoStrength = 0.6f;
+		CPostFX::SsaoContactStrength = 0.35f;
+		CPostFX::SsaoContactRadius = 3.5f;
+		CPostFX::SsaoContactMaxDz = 0.6f;
 		CPostFX::TaaEnable = false;
 		CPostFX::TaaBlend = 0.12f;
 		CPostFX::TaaClamp = 1.0f;

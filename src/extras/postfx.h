@@ -83,6 +83,12 @@ public:
 	static float SsaoStrength;	// final compose lerp (0 = off, 1 = full effect)
 	static float SsaoPower;		// AO curve power (>1 = darker, <1 = softer)
 
+	// Contact AO — short cross-tap ray-march on top of the hemisphere
+	// kernel. Catches sub-pixel contacts the main kernel jumps over.
+	static float SsaoContactStrength;	// 0 = off
+	static float SsaoContactRadius;	// screen-space pixels (2..6 typical)
+	static float SsaoContactMaxDz;	// metres — discard farther occluders
+
 	// Volumetric fog — single-scattering height fog with Henyey-Greenstein
 	// directional in-scatter from the sun. Composed inside hdrResolve_PS
 	// using the G-buffer normal/depth raster on sampler s2.

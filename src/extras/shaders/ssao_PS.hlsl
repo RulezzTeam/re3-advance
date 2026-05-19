@@ -24,6 +24,16 @@ float4 ssaoParams : register(c10);
 // .w = AO range falloff
 float4 ssaoTexel : register(c11);
 
+// Contact AO — short screen-space ray-march catching sub-pixel occluders
+// the hemisphere kernel misses (foot-to-ground, tyre-to-road, ped-to-car
+// shoulder). 4 unit-cross taps at a tight radius; rejects matches outside
+// a small Z-window so we don't darken distant geometry.
+// .x = strength (0 disables — early-out the [branch])
+// .y = pixel radius (in screen-space texels, ~2..6)
+// .z = max Z delta in metres (anything farther doesn't count)
+// .w = bias multiplier on the inner Z reject
+float4 ssaoContact : register(c12);
+
 // 16 sample directions on a unit hemisphere (z >= 0), pre-scattered with
 // a quadratic falloff so most samples hug the origin and a few reach the
 // outer ring. Uploaded once at init.
@@ -91,5 +101,39 @@ float4 main(VS_out input) : COLOR
 	}
 
 	float ao = 1.0 - (occlusion / 16.0) * intensity;
+
+	// Contact AO — 4-tap unit-cross ray-march. Each tap is offset by a
+	// small number of texels and checks whether the gbuf depth in that
+	// direction is in front of us by a small amount. Catches the dark
+	// hairline you get where two near-tangential surfaces meet (shoes on
+	// road, tyres at the kerb, ped pressed against a car door).
+	//
+	// We unroll the loop and weight the result by ssaoContact.x. When the
+	// strength is 0 the contribution multiplies out to nothing — no
+	// [branch] needed (ps_3_0 doesn't allow branch+gradient-tex reads in
+	// the same scope without uniform UVs).
+	{
+		const float2 contactDirs[4] = {
+			float2( 1.0,  0.0), float2(-1.0,  0.0),
+			float2( 0.0,  1.0), float2( 0.0, -1.0)
+		};
+		float pixRadius = ssaoContact.y;
+		float maxDz    = ssaoContact.z;
+		float innerBias = ssaoContact.w;
+
+		float contact = 0.0;
+		[unroll(4)]
+		for(int j = 0; j < 4; j++){
+			float2 cuv = uv + contactDirs[j] * pixRadius * ssaoTexel.xy;
+			float chitZ = tex2D(gbufTex, cuv).a * farClip;
+			float dz = centreZ - chitZ;	// positive = neighbour is closer
+			// Reject too-tiny (self) and too-large (background) deltas.
+			float ok = step(bias * innerBias, dz) * step(dz, maxDz);
+			// Weight by how mid-range the delta is.
+			contact += ok * (1.0 - saturate(dz / maxDz));
+		}
+		ao -= ssaoContact.x * (contact * 0.25);
+	}
+
 	return float4(saturate(ao), 1.0, 1.0, 1.0);
 }

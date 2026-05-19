@@ -84,6 +84,11 @@ float CPostFX::SsaoBias = 0.03f;
 float CPostFX::SsaoIntensity = 1.2f;
 float CPostFX::SsaoStrength = 0.6f;
 float CPostFX::SsaoPower = 1.4f;
+// Contact AO defaults — subtle by default; the player can crank it via
+// the menu if they want sharper foot/tyre/door contacts.
+float CPostFX::SsaoContactStrength = 0.35f;
+float CPostFX::SsaoContactRadius = 3.5f;	// ~3-4 pixels at 1080p
+float CPostFX::SsaoContactMaxDz = 0.6f;	// 60 cm window — bigger gaps are not contact
 // Volumetric fog — defaults tuned for Vice City's daytime haze look.
 // Density is modest so the scene doesn't read as foggy; the in-scatter is
 // what gives the warm "filled" feel toward the sun. Disabled by default
@@ -830,6 +835,16 @@ CPostFX::RenderSSAO(RwCamera *cam)
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(10, p, 1);
 		float t[4] = { 1.0f/cw, 1.0f/ch, 0.0f, 0.0f };
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(11, t, 1);
+		// Contact AO params at c12. The shader branches on .x so when this
+		// is 0 (player toggled it off) the inner [branch] is statically
+		// skipped — no perf cost over the legacy hemisphere-only path.
+		float cAO[4] = {
+			SsaoContactStrength,
+			SsaoContactRadius,
+			SsaoContactMaxDz,
+			1.0f,	// inner bias multiplier; 1.0 reuses SsaoBias directly
+		};
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(12, cAO, 1);
 		rw::d3d::im2dOverridePS = ssao_PS;
 #endif
 		RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, SsaoVertex, 4, Index, 6);
