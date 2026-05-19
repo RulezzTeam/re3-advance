@@ -16,6 +16,12 @@
 #ifdef POSTFX_HDR
 #include "gbuffer.h"
 #endif
+#ifdef POSTFX_WATER_REFLECTION
+#include "waterReflection.h"
+#endif
+#ifdef POSTFX_CSM
+#include "csm.h"
+#endif
 
 RwRaster *CPostFX::pFrontBuffer;
 RwRaster *CPostFX::pBackBuffer;
@@ -216,6 +222,12 @@ CPostFX::Open(RwCamera *cam)
 	// HDR scene RT + G-buffer share the camera's actual resolution
 	// (non-pow2 is fine on ps_3_0; tonemap-resolve samples UV [0,1]).
 	CGBuffer::Open(cam);
+#ifdef POSTFX_WATER_REFLECTION
+	CWaterReflection::Open(cam);
+#endif
+#ifdef POSTFX_CSM
+	CCSM::Open(cam);
+#endif
 
 	// Half-res SSAO ping-pong RTs (RGBA8, R channel = AO; alpha ignored).
 	// Half-res is the standard SSAO economy trade-off — ~4x cheaper than
@@ -531,6 +543,12 @@ CPostFX::Close(void)
 	if(ssaoCamB){ DestroyBloomCam(ssaoCamB); ssaoCamB = nil; }
 	if(pSsaoA){ RwRasterDestroy(pSsaoA); pSsaoA = nil; }
 	if(pSsaoB){ RwRasterDestroy(pSsaoB); pSsaoB = nil; }
+#ifdef POSTFX_WATER_REFLECTION
+	CWaterReflection::Close();
+#endif
+#ifdef POSTFX_CSM
+	CCSM::Close();
+#endif
 	CGBuffer::Close();
 #endif
 #ifdef RW_D3D9

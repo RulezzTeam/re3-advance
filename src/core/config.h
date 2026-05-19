@@ -336,6 +336,8 @@ enum Config {
 // TAA build on top of.
 #define POSTFX_HDR			// off-screen RGBA16F scene RT + tonemap resolve
 #define POSTFX_GBUFFER		// MRT slot1 = normal+depth (requires POSTFX_HDR)
+#define POSTFX_WATER_REFLECTION	// planar reflection RT, requires HDR
+#define POSTFX_CSM			// cascaded shadow maps, requires PER_PIXEL_LIGHTING
 #endif
 
 #define TREE_SHADOWS		// implement StoreShadowForTree using sun direction (no librw needed)
@@ -365,12 +367,16 @@ enum Config {
 // G-buffer makes no sense without an HDR scene RT — both routes need MRT
 // support and a non-LDR backbuffer to be useful.
 #undef POSTFX_GBUFFER
+#undef POSTFX_WATER_REFLECTION
 #endif
 
 #ifndef PER_PIXEL_LIGHTING
 // G-buffer is filled by the pp pixel shaders; legacy non-pp materials
 // don't emit normals/depth.
 #undef POSTFX_GBUFFER
+// CSM receive lives in default_pp_PS — without per-pixel lighting we
+// have nowhere to apply the shadow lookup.
+#undef POSTFX_CSM
 #endif
 
 // Water & Particle

@@ -20,6 +20,12 @@
 #ifdef POSTFX_HDR
 #include "gbuffer.h"
 #endif
+#ifdef POSTFX_WATER_REFLECTION
+#include "waterReflection.h"
+#endif
+#ifdef POSTFX_CSM
+#include "csm.h"
+#endif
 #include "custompipes.h"
 #include "RwHelper.h"
 #include "Text.h"
@@ -152,9 +158,28 @@
 #ifdef POSTFX_HDR
 	#define POSTFX_HDR_SELECTORS \
 		MENUACTION_CFO_SELECT, "FED_HDR", { new CCFOSelect((int8*)&CGBuffer::HdrEnabled, "Graphics", "HDR", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SELECT, "FED_GBF", { new CCFOSelect((int8*)&CGBuffer::GbufEnabled, "Graphics", "GBuffer", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_SELECT, "FED_GBF", { new CCFOSelect((int8*)&CGBuffer::GbufEnabled, "Graphics", "GBuffer", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_SAO", { new CCFOSelect((int8*)&CPostFX::SsaoEnable, "Graphics", "SSAO", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_SAR", { new CCFOSlider(&CPostFX::SsaoRadius, "Graphics", "SsaoRadius", 0.2f, 3.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_SAI", { new CCFOSlider(&CPostFX::SsaoIntensity, "Graphics", "SsaoIntensity", 0.0f, 4.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_SAS", { new CCFOSlider(&CPostFX::SsaoStrength, "Graphics", "SsaoStrength", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT,
 #else
 	#define POSTFX_HDR_SELECTORS
+#endif
+
+#ifdef POSTFX_WATER_REFLECTION
+	#define POSTFX_WATER_REFLECTION_SELECTORS \
+		MENUACTION_CFO_SELECT, "FED_WRR", { new CCFOSelect((int8*)&CWaterReflection::Enabled, "Graphics", "WaterReflection", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
+#else
+	#define POSTFX_WATER_REFLECTION_SELECTORS
+#endif
+
+#ifdef POSTFX_CSM
+	#define POSTFX_CSM_SELECTORS \
+		MENUACTION_CFO_SELECT, "FED_CSM", { new CCFOSelect((int8*)&CCSM::Enabled, "Graphics", "CSM", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_CSS", { new CCFOSlider(&CCSM::Strength, "Graphics", "CSMStrength", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT,
+#else
+	#define POSTFX_CSM_SELECTORS
 #endif
 
 #ifdef INVERT_LOOK_FOR_PAD
@@ -239,6 +264,19 @@ void RestoreDefGraphics(int8 action) {
 	#ifdef POSTFX_HDR
 		CGBuffer::HdrEnabled = true;
 		CGBuffer::GbufEnabled = true;
+		CPostFX::SsaoEnable = true;
+		CPostFX::SsaoRadius = 0.9f;
+		CPostFX::SsaoBias = 0.025f;
+		CPostFX::SsaoIntensity = 1.8f;
+		CPostFX::SsaoStrength = 0.85f;
+	#endif
+	#ifdef POSTFX_WATER_REFLECTION
+		CWaterReflection::Enabled = false;	// off until water shader hooks land
+	#endif
+	#ifdef POSTFX_CSM
+		CCSM::Enabled = false;			// off until receiver lands in default_pp_PS
+		CCSM::Strength = 0.85f;
+		CCSM::Bias = 0.003f;
 	#endif
 
 	#ifdef GRAPHICS_MENU_OPTIONS // otherwise Frontend will handle those
@@ -902,6 +940,8 @@ CMenuScreenCustom aScreens[] = {
 		MENUACTION_TRAILS,		"FED_TRA", { nil, SAVESLOT_NONE, MENUPAGE_GRAPHICS_SETTINGS }, 0, 0, MENUALIGN_LEFT,
 #endif
 		POSTFX_HDR_SELECTORS
+		POSTFX_WATER_REFLECTION_SELECTORS
+		POSTFX_CSM_SELECTORS
 		POSTFX_BLOOM_SELECTORS
 		POSTFX_TONEMAP_SELECTORS
 		POSTFX_FXAA_SELECTORS

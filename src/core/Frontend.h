@@ -357,10 +357,11 @@ enum eCheckHover
 enum
 {
 #if defined LEGACY_MENU_OPTIONS || defined CUSTOM_FRONTEND_OPTIONS
-	// Bumped from 18 to fit the extended graphics page (bloom + tonemap +
-	// vignette + CA + FXAA + god rays sliders). 32 leaves headroom for
-	// future options.
-	NUM_MENUROWS = 32,
+	// Bumped from 18 -> 32 -> 48 to fit the extended graphics page (HDR
+	// + G-buffer + SSAO sliders + water reflection + CSM + bloom +
+	// tonemap + vignette + CA + FXAA + god rays + envmap-size). 48
+	// leaves comfortable headroom for the remaining Phase 4 (TAA) options.
+	NUM_MENUROWS = 48,
 #else
 	NUM_MENUROWS = 12,
 #endif
