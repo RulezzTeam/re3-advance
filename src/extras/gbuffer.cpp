@@ -114,6 +114,22 @@ CGBuffer::BeginScenePass(RwCamera *cam)
 	rw::d3d::d3ddevice->Clear(0, nullptr,
 		D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
 		clearCol, 1.0f, 0);
+
+	// CRITICAL: D3D9 leaves the contents of an "unwritten" MRT slot
+	// undefined when the bound PS doesn't emit oColor1. NVIDIA tends to
+	// leave it untouched, AMD/Intel sometimes scribble garbage that
+	// mimics the slot 0 write. The latter is what produced the visible
+	// pedestrian silhouettes on car bodies / water — neoVehicle and the
+	// water pass write only oColor0, and the driver was copying that
+	// into slot 1, so SSAO sampled "phantom normals" matching the
+	// vehicle/water surface.
+	//
+	// Fix: disable colour-write to slot 1 globally during the HDR pass.
+	// defaultRenderCB_Shader and skinRenderCB re-enable it just for the
+	// gbuf shader variants, then drop it back to zero. Every other
+	// pipeline (vehiclePipe, glossPipe, water, particles, ...) therefore
+	// physically cannot touch the G-buffer.
+	rw::d3d::d3ddevice->SetRenderState(D3DRS_COLORWRITEENABLE1, 0);
 #else
 	RwCameraClear(cam, &gColourTop, rwCAMERACLEARIMAGE | rwCAMERACLEARZ);
 #endif
@@ -127,6 +143,11 @@ CGBuffer::DropMRT(void)
 	if(rw::d3d::gbufferEnabled){
 		rw::d3d::clearMRT();
 		rw::d3d::gbufferEnabled = false;
+#ifdef RW_D3D9
+		// Also restore slot 1 colour-write so we don't leak the
+		// "disabled" state into post-effect / 2D passes.
+		rw::d3d::d3ddevice->SetRenderState(D3DRS_COLORWRITEENABLE1, 0x0F);
+#endif
 	}
 }
 

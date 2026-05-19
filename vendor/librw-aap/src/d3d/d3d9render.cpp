@@ -175,6 +175,15 @@ defaultRenderCB_Shader(Atomic *atomic, InstanceDataHeader *header)
 		                usePP   && default_pp_all_VS      ? default_pp_all_VS      :
 		                                                    default_all_VS);
 
+	// G-buffer slot 1 colour-write is globally disabled by
+	// CGBuffer::BeginScenePass to keep stray pipelines (vehicle, water,
+	// particles, ...) from writing garbage into the normal/depth RT. We
+	// re-enable it here only for the gbuf shader variants, then drop it
+	// back to zero after the mesh loop, so every other pipeline still
+	// runs with slot 1 protected.
+	if(useGbuf)
+		d3ddevice->SetRenderState(D3DRS_COLORWRITEENABLE1, 0x0F);
+
 	InstanceData *inst = header->inst;
 	for(uint32 i = 0; i < header->numMeshes; i++){
 		Material *m = inst->material;
@@ -196,6 +205,9 @@ defaultRenderCB_Shader(Atomic *atomic, InstanceDataHeader *header)
 		drawInst(header, inst);
 		inst++;
 	}
+
+	if(useGbuf)
+		d3ddevice->SetRenderState(D3DRS_COLORWRITEENABLE1, 0);
 }
 
 #endif

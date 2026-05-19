@@ -329,6 +329,13 @@ skinRenderCB(Atomic *atomic, InstanceDataHeader *header)
 		                usePP   ? skin_pp_all_VS      :
 		                          skin_all_VS);
 
+	// Slot-1 colour-write gate — see defaultRenderCB_Shader for the full
+	// reasoning. Without this, peds (skinned meshes) would silently fail
+	// to write into the G-buffer because slot 1 stays masked off after
+	// CGBuffer::BeginScenePass.
+	if(useGbuf)
+		d3ddevice->SetRenderState(D3DRS_COLORWRITEENABLE1, 0x0F);
+
 	InstanceData *inst = header->inst;
 	for(uint32 i = 0; i < header->numMeshes; i++){
 		Material *m = inst->material;
@@ -350,6 +357,9 @@ skinRenderCB(Atomic *atomic, InstanceDataHeader *header)
 		drawInst(header, inst);
 		inst++;
 	}
+
+	if(useGbuf)
+		d3ddevice->SetRenderState(D3DRS_COLORWRITEENABLE1, 0);
 }
 
 #define VS_NAME g_vs30_main
