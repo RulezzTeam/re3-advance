@@ -1,7 +1,7 @@
 @echo off
-rem fxaa_PS doesn't fit in ps_2_0 (65 ALU > 64); compile it as ps_2_b first.
-"%DXSDK_DIR%\Utilities\bin\x86\fxc.exe" /T ps_2_b /nologo /E main /Fo obj\fxaa_PS.cso fxaa_PS.hlsl
-for %%f in (*PS.hlsl) do (
-    if /I not "%%~nf"=="fxaa_PS" "%DXSDK_DIR%\Utilities\bin\x86\fxc.exe" /T ps_2_0 /nologo /E main /Fo obj\%%~nf.cso %%f
-)
-for %%f in (*VS.hlsl) do "%DXSDK_DIR%\Utilities\bin\x86\fxc.exe" /T vs_2_0 /nologo /E main /Fo obj\%%~nf.cso %%f
+rem All postfx shaders target ps_3_0 / vs_3_0 — gives us proper [loop],
+rem 12+ texture samples, and 512 ALU headroom for the bigger composes
+rem (hdrResolve + volumetric fog, ssao, taa). ps_3_0 has wider driver
+rem support than ps_2_b on modern hardware.
+for %%f in (*PS.hlsl) do "%DXSDK_DIR%\Utilities\bin\x86\fxc.exe" /T ps_3_0 /nologo /E main /Fo obj\%%~nf.cso %%f
+for %%f in (*VS.hlsl) do "%DXSDK_DIR%\Utilities\bin\x86\fxc.exe" /T vs_3_0 /nologo /E main /Fo obj\%%~nf.cso %%f

@@ -82,6 +82,18 @@ public:
 	static float SsaoIntensity;	// occlusion scale (~1..3)
 	static float SsaoStrength;	// final compose lerp (0 = off, 1 = full effect)
 	static float SsaoPower;		// AO curve power (>1 = darker, <1 = softer)
+
+	// Volumetric fog — single-scattering height fog with Henyey-Greenstein
+	// directional in-scatter from the sun. Composed inside hdrResolve_PS
+	// using the G-buffer normal/depth raster on sampler s2.
+	static bool VolFogEnable;
+	static float VolFogStrength;	// 0..1, lerps the fogged colour onto the original
+	static float VolFogDensity;	// extinction per metre at ground level (~0.01..0.05)
+	static float VolFogHeightFalloff;// 1/m; fog thins exp(-h*falloff) above ground
+	static float VolFogGroundZ;	// world Z that counts as ground (~ -5..5 in VC)
+	static float VolFogMaxDist;	// march distance for sky pixels (metres)
+	static float VolFogHG;		// Henyey-Greenstein g (0=iso, 0.7=sun halo)
+	static float VolFogSunBoost;	// multiplier on sun colour (HDR-aware)
 #endif
 
 	static void InitOnce(void);

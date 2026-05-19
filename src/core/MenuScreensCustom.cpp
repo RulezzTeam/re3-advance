@@ -170,7 +170,13 @@
 		MENUACTION_CFO_SELECT, "FED_SAO", { new CCFOSelect((int8*)&CPostFX::SsaoEnable, "Graphics", "SSAO", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_SAR", { new CCFOSlider(&CPostFX::SsaoRadius, "Graphics", "SsaoRadius", 0.2f, 3.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_SAI", { new CCFOSlider(&CPostFX::SsaoIntensity, "Graphics", "SsaoIntensity", 0.0f, 4.0f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_SAS", { new CCFOSlider(&CPostFX::SsaoStrength, "Graphics", "SsaoStrength", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_SLIDER, "FED_SAS", { new CCFOSlider(&CPostFX::SsaoStrength, "Graphics", "SsaoStrength", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_VOL", { new CCFOSelect((int8*)&CPostFX::VolFogEnable, "Graphics", "VolFog", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_VFS", { new CCFOSlider(&CPostFX::VolFogStrength, "Graphics", "VolFogStrength", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_VFD", { new CCFOSlider(&CPostFX::VolFogDensity, "Graphics", "VolFogDensity", 0.0f, 0.08f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_VFH", { new CCFOSlider(&CPostFX::VolFogHeightFalloff, "Graphics", "VolFogHeight", 0.0f, 0.1f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_VFG", { new CCFOSlider(&CPostFX::VolFogHG, "Graphics", "VolFogHG", 0.0f, 0.95f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_VFB", { new CCFOSlider(&CPostFX::VolFogSunBoost, "Graphics", "VolFogSunBoost", 0.0f, 4.0f) }, 0, 0, MENUALIGN_LEFT,
 #else
 	#define POSTFX_HDR_SELECTORS
 #endif
@@ -280,6 +286,14 @@ void RestoreDefGraphics(int8 action) {
 		CPostFX::TaaEnable = false;
 		CPostFX::TaaBlend = 0.12f;
 		CPostFX::TaaClamp = 1.0f;
+		CPostFX::VolFogEnable = false;
+		CPostFX::VolFogStrength = 0.8f;
+		CPostFX::VolFogDensity = 0.015f;
+		CPostFX::VolFogHeightFalloff = 0.018f;
+		CPostFX::VolFogGroundZ = -10.0f;
+		CPostFX::VolFogMaxDist = 350.0f;
+		CPostFX::VolFogHG = 0.55f;
+		CPostFX::VolFogSunBoost = 1.0f;
 	#endif
 	#ifdef POSTFX_WATER_REFLECTION
 		CWaterReflection::Enabled = false;	// off until water shader hooks land

@@ -1,12 +1,14 @@
-// HDR -> LDR resolve shader with optional SSAO compose.
+// HDR -> LDR resolve shader with optional SSAO compose + volumetric fog.
 //
 // Reads the RGBA16F off-screen scene RT (CGBuffer::pHdrScene), optionally
-// multiplies by an SSAO mask (CPostFX::pSsaoA), then applies the final
-// tonemap pipeline (exposure -> ACES -> saturation -> gamma) before writing
-// to the LDR backbuffer.
+// multiplies by an SSAO mask (CPostFX::pSsaoA), composes a single-scattering
+// height fog with directional in-scatter from the sun, then applies the
+// final tonemap pipeline (exposure -> ACES -> saturation -> gamma) before
+// writing to the LDR backbuffer.
 
 sampler2D hdrTex  : register(s0);
 sampler2D ssaoTex : register(s1);	// R8 AO; 1.0 = fully lit
+sampler2D gbufTex : register(s2);	// RGB = world-normal*0.5+0.5, A = linearDepth (viewZ/farClip)
 
 // .x = exposure (linear multiplier, 1.0 = neutral)
 // .y = ACES toggle (0..1, lerps toward filmic curve)
@@ -17,9 +19,43 @@ float4 hdrTonemap : register(c10);
 // .x = SSAO strength (0 = disabled), .y = AO power curve, .zw = unused
 float4 hdrSsao : register(c11);
 
+// .xyz = camera world position, .w = farClip (for unpacking gbuf.a → viewZ)
+float4 volCamera : register(c12);
+
+// World-space unit rays through each screen corner (length = 1 forward).
+// Bilerped by uv to get the per-pixel ray. Ordering: uv=(0,0)=TL, (1,1)=BR.
+float4 volRayTL : register(c13);
+float4 volRayTR : register(c14);
+float4 volRayBR : register(c15);
+float4 volRayBL : register(c16);
+
+// .xyz = direction toward the sun (normalized), .w = Henyey-Greenstein g
+//        (0 = isotropic, 0.7 = forward-scattered halo around the sun)
+float4 volSun : register(c17);
+
+// .xyz = scattering colour (sun + ambient sky, can be >1 HDR), .w = base density
+//        (extinction per metre at sea level; ~0.01..0.05 typical)
+float4 volColor : register(c18);
+
+// .x = height falloff (1/m, larger = fog thins faster with altitude)
+// .y = ground world-Z (heights below this fully attenuated to base density)
+// .z = max march distance in metres (used when the fragment is sky / depth=0)
+// .w = enable flag (0 = bypass, >0 = on; also controls overall strength lerp)
+float4 volParams : register(c19);
+
 float3 ACES(float3 x)
 {
 	return saturate((x*(2.51*x + 0.03)) / (x*(2.43*x + 0.59) + 0.14));
+}
+
+// Henyey-Greenstein phase function — gives the directional brightening
+// when the camera looks toward the sun.
+float HGPhase(float cosTheta, float g)
+{
+	float g2 = g * g;
+	float denom = 1.0 + g2 - 2.0 * g * cosTheta;
+	// pow(x, 1.5) — branchless approximation good enough for fog
+	return (1.0 - g2) / (4.0 * 3.14159265 * denom * sqrt(denom));
 }
 
 float4 main(in float2 uv : TEXCOORD0) : COLOR0
@@ -34,6 +70,69 @@ float4 main(in float2 uv : TEXCOORD0) : COLOR0
 		ao = pow(saturate(ao), max(hdrSsao.y, 0.1));
 		ao = lerp(1.0, ao, hdrSsao.x);
 		col *= ao;
+	}
+
+	// Volumetric fog — ray-march along the world-space view ray, integrate
+	// scattering with a HG phase function biased toward the sun. Branch is
+	// static so non-fog frames pay only the if() test.
+	[branch]
+	if(volParams.w > 0.001){
+		// Bilerp the world-space ray direction from the 4 corner vectors.
+		// uv.y = 0 = top in D3D9 texture coords, which matches the TL ray.
+		float3 rayDir = lerp(lerp(volRayTL.xyz, volRayTR.xyz, uv.x),
+		                     lerp(volRayBL.xyz, volRayBR.xyz, uv.x),
+		                     uv.y);
+		// rayDir has a unit forward component, so |rayDir| > 1 at corners.
+		// Marching by view-space Z still gives correct world positions
+		// because rayDir.z (forward proj) = 1 by construction.
+
+		float4 gbuf = tex2D(gbufTex, uv);
+		// gbuf.a is in [0,1] linear viewZ / farClip. Sky / un-rendered
+		// pixels read 0 (gbuffer was cleared with A=0) — treat as the
+		// max-march distance so we still get inscatter into the sky.
+		float viewZ = gbuf.a * volCamera.w;
+		float maxD = (gbuf.a > 0.0005) ? viewZ : volParams.z;
+		maxD = min(maxD, volParams.z);
+
+		// Phase function — directional brightening toward the sun.
+		// Use the normalized forward direction of the ray.
+		float3 fwd = normalize(rayDir);
+		float cosTheta = dot(fwd, volSun.xyz);
+		float phase = HGPhase(cosTheta, volSun.w);
+
+		const int STEPS = 12;
+		float stepLen = maxD / (float)STEPS;
+
+		// Per-pixel jitter — kills banding from low step count.
+		float jitter = frac(sin(dot(uv * 4321.123, float2(12.9898, 78.233))) * 43758.5453);
+
+		float3 scatter = float3(0, 0, 0);
+		float trans = 1.0;
+
+		[loop]
+		for(int i = 0; i < STEPS; i++){
+			float t = (float(i) + jitter) * stepLen;
+			float3 wp = volCamera.xyz + fwd * t;
+
+			// Exponential height fog — heavier near the ground.
+			float h = max(0.0, wp.z - volParams.y);
+			float density = volColor.w * exp(-h * volParams.x);
+
+			// Beer-Lambert extinction along the segment.
+			float segOpt = density * stepLen;
+			// In-scatter contribution from the sun, weighted by phase.
+			// Lights scale included in volColor.xyz so we don't need to
+			// multiply by sun colour again.
+			float3 inScat = volColor.xyz * phase * density * stepLen;
+
+			scatter += inScat * trans;
+			trans *= exp(-segOpt);
+		}
+
+		// Lerp by enable strength so the menu slider can attenuate the
+		// effect without zeroing density (keeps the lookup colour intact).
+		float3 fogged = col * trans + scatter;
+		col = lerp(col, fogged, saturate(volParams.w));
 	}
 
 	// Exposure (linear).

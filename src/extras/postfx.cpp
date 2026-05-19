@@ -12,9 +12,11 @@
 #include "Camera.h"
 #include "MBlur.h"
 #include "Timecycle.h"
+#include "Lights.h"	// pDirect (sun light) + DirectionalLightColourForFrame
 #include "postfx.h"
 #ifdef POSTFX_HDR
 #include "gbuffer.h"
+extern RwRGBAReal DirectionalLightColourForFrame;
 #endif
 #ifdef POSTFX_WATER_REFLECTION
 #include "waterReflection.h"
@@ -82,6 +84,18 @@ float CPostFX::SsaoBias = 0.03f;
 float CPostFX::SsaoIntensity = 1.2f;
 float CPostFX::SsaoStrength = 0.6f;
 float CPostFX::SsaoPower = 1.4f;
+// Volumetric fog — defaults tuned for Vice City's daytime haze look.
+// Density is modest so the scene doesn't read as foggy; the in-scatter is
+// what gives the warm "filled" feel toward the sun. Disabled by default
+// until the menu toggle is wired (so existing saves don't suddenly fog).
+bool CPostFX::VolFogEnable = false;
+float CPostFX::VolFogStrength = 0.8f;
+float CPostFX::VolFogDensity = 0.015f;
+float CPostFX::VolFogHeightFalloff = 0.018f;	// fog ~halves every ~38m up
+float CPostFX::VolFogGroundZ = -10.0f;	// VC ground is around z=0..20; -10 gives some slack
+float CPostFX::VolFogMaxDist = 350.0f;
+float CPostFX::VolFogHG = 0.55f;
+float CPostFX::VolFogSunBoost = 1.0f;
 RwRaster *CPostFX::pTaaHistA;
 RwRaster *CPostFX::pTaaHistB;
 bool CPostFX::TaaEnable = false;	// opt-in (FXAA stays default)
@@ -885,6 +899,15 @@ CPostFX::ResolveHDR(RwCamera *cam)
 	if(ssaoActive)
 		BindRasterToSampler(1, pSsaoA);
 
+	// Bind the G-buffer (slot 1 = packed world-normal + linear depth) on
+	// sampler 2. Required by the volumetric fog ray-march to find the
+	// march endpoint per pixel; sky/uncovered pixels read alpha=0 and the
+	// shader treats them as "march to volParams.z".
+	bool volFogActive = VolFogEnable && CGBuffer::GbufEnabled
+	                 && CGBuffer::pGbufNormalDepth != nil;
+	if(volFogActive)
+		BindRasterToSampler(2, CGBuffer::pGbufNormalDepth);
+
 #ifdef RW_D3D9
 	// .x = exposure, .y = ACES toggle, .z = gamma toggle, .w = saturation
 	float params[4] = {
@@ -906,6 +929,61 @@ CPostFX::ResolveHDR(RwCamera *cam)
 	};
 	rw::d3d::d3ddevice->SetPixelShaderConstantF(11, ssaoMix, 1);
 
+	// --- Volumetric fog constants (c12..c19) -----------------------------
+	// c12: camera world pos + farClip; the ray-march walks viewZ along the
+	//      view ray and unpacks gbuf.a*farClip = viewZ to size the loop.
+	{
+		rw::Camera *rwcam = (rw::Camera*)cam;
+		rw::V3d camPos = rwcam->getFrame()->getLTM()->pos;
+		float farClip = rwcam->farPlane;
+		float volCam[4] = { camPos.x, camPos.y, camPos.z, farClip };
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(12, volCam, 1);
+
+		// c13..c16: world-space rays through the 4 screen corners. librw
+		// already computes frustumCorners[0..3] as unit-forward vectors
+		// from camera position (length along camera.at = 1, lateral comp
+		// scaled by viewWindow). Order: 0=TL, 1=TR, 2=BR, 3=BL. We just
+		// repackage them as float4s for c-register upload.
+		const rw::V3d *fc = rwcam->frustumCorners;
+		float volRays[4][4] = {
+			{ fc[0].x, fc[0].y, fc[0].z, 0.0f },	// TL → c13
+			{ fc[1].x, fc[1].y, fc[1].z, 0.0f },	// TR → c14
+			{ fc[2].x, fc[2].y, fc[2].z, 0.0f },	// BR → c15
+			{ fc[3].x, fc[3].y, fc[3].z, 0.0f },	// BL → c16
+		};
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(13, &volRays[0][0], 4);
+
+		// c17: direction TOWARD the sun + HG g. pDirect->at points away
+		// from the sun (sun light direction = sun → ground), so negate.
+		float sunDir[4] = { 0, 0, 1, VolFogHG };
+		if(volFogActive && pDirect != nullptr){
+			rw::V3d a = pDirect->getFrame()->getLTM()->at;
+			float len = sqrtf(a.x*a.x + a.y*a.y + a.z*a.z);
+			if(len > 1e-5f){
+				sunDir[0] = -a.x / len;
+				sunDir[1] = -a.y / len;
+				sunDir[2] = -a.z / len;
+			}
+		}
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(17, sunDir, 1);
+
+		// c18: scattering colour (sun×boost, HDR-aware) + base density.
+		float r = DirectionalLightColourForFrame.red   * VolFogSunBoost;
+		float g = DirectionalLightColourForFrame.green * VolFogSunBoost;
+		float b = DirectionalLightColourForFrame.blue  * VolFogSunBoost;
+		float volCol[4] = { r, g, b, VolFogDensity };
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(18, volCol, 1);
+
+		// c19: height falloff / ground / max-march / strength-lerp gate.
+		float volPar[4] = {
+			VolFogHeightFalloff,
+			VolFogGroundZ,
+			VolFogMaxDist,
+			volFogActive ? VolFogStrength : 0.0f,
+		};
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(19, volPar, 1);
+	}
+
 	rw::d3d::im2dOverridePS = hdrResolve_PS;
 #endif
 
@@ -918,6 +996,8 @@ CPostFX::ResolveHDR(RwCamera *cam)
 	rw::d3d::im2dOverridePS = nil;
 	if(ssaoActive)
 		BindRasterToSampler(1, nil);
+	if(volFogActive)
+		BindRasterToSampler(2, nil);
 #endif
 	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
 	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
