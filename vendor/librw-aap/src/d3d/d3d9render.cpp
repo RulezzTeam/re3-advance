@@ -156,14 +156,24 @@ defaultRenderCB_Shader(Atomic *atomic, InstanceDataHeader *header)
 	// Pick a shader. The pp-* variants move the lighting loops into the
 	// pixel shader; we only use them when perPixelLightingEnabled is set
 	// AND the matching shaders are loaded (defensive in case pp .h headers
-	// weren't shipped with the build).
-	bool usePP = perPixelLightingEnabled && default_pp_PS && default_pp_tex_PS;
+	// weren't shipped with the build). The pp_gbuf_* variants additionally
+	// write MRT slot 1 (packed world-normal + linear depth) and are picked
+	// when gbufferEnabled is set by the host (CGBuffer::BeginScenePass).
+	bool usePP   = perPixelLightingEnabled && default_pp_PS && default_pp_tex_PS;
+	bool useGbuf = usePP && gbufferEnabled && default_pp_gbuf_PS && default_pp_gbuf_tex_PS;
+
 	if((vsBits & VSLIGHT_MASK) == 0)
-		setVertexShader(usePP && default_pp_amb_VS ? default_pp_amb_VS : default_amb_VS);
+		setVertexShader(useGbuf && default_pp_gbuf_amb_VS ? default_pp_gbuf_amb_VS :
+		                usePP   && default_pp_amb_VS      ? default_pp_amb_VS      :
+		                                                    default_amb_VS);
 	else if((vsBits & VSLIGHT_MASK) == VSLIGHT_DIRECT)
-		setVertexShader(usePP && default_pp_amb_dir_VS ? default_pp_amb_dir_VS : default_amb_dir_VS);
+		setVertexShader(useGbuf && default_pp_gbuf_amb_dir_VS ? default_pp_gbuf_amb_dir_VS :
+		                usePP   && default_pp_amb_dir_VS      ? default_pp_amb_dir_VS      :
+		                                                        default_amb_dir_VS);
 	else
-		setVertexShader(usePP && default_pp_all_VS ? default_pp_all_VS : default_all_VS);
+		setVertexShader(useGbuf && default_pp_gbuf_all_VS ? default_pp_gbuf_all_VS :
+		                usePP   && default_pp_all_VS      ? default_pp_all_VS      :
+		                                                    default_all_VS);
 
 	InstanceData *inst = header->inst;
 	for(uint32 i = 0; i < header->numMeshes; i++){
@@ -175,9 +185,13 @@ defaultRenderCB_Shader(Atomic *atomic, InstanceDataHeader *header)
 
 		if(m->texture){
 			d3d::setTexture(0, m->texture);
-			setPixelShader(usePP ? default_pp_tex_PS : default_tex_PS);
+			setPixelShader(useGbuf ? default_pp_gbuf_tex_PS :
+			               usePP   ? default_pp_tex_PS      :
+			                         default_tex_PS);
 		}else
-			setPixelShader(usePP ? default_pp_PS : default_PS);
+			setPixelShader(useGbuf ? default_pp_gbuf_PS :
+			               usePP   ? default_pp_PS      :
+			                         default_PS);
 
 		drawInst(header, inst);
 		inst++;

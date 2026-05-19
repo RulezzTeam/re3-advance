@@ -276,7 +276,7 @@ struct RasterFormatInfo
 	uint32 rwFormat;
 };
 
-// indexed directly by RW format
+// indexed directly by RW format (high byte of Raster::Format)
 static RasterFormatInfo formatInfoRW[16] = {
 	{ 0, 0, 0, 0},
 	{ D3DFMT_A1R5G5B5, 16, 1, Raster::C1555 },
@@ -289,6 +289,8 @@ static RasterFormatInfo formatInfoRW[16] = {
 	{ D3DFMT_D24X8,    32, 0, Raster::D24 },
 	{ D3DFMT_D32,      32, 0, Raster::D32 },
 	{ D3DFMT_X1R5G5B5, 16, 0, Raster::C555 },
+	// 0x0B00 = Raster::F16_RGBA — RGBA16F float render target for HDR / G-buffer.
+	{ D3DFMT_A16B16G16R16F, 64, 1, Raster::F16_RGBA },
 };
 
 static RasterFormatInfo formatInfoFull[] = {

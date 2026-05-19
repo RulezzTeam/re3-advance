@@ -328,6 +328,14 @@ enum Config {
 #define PER_PIXEL_LIGHTING		// Lambertian + point lights in pixel shader (default/skin)
 #define MULTI_ENVMAP			// rotating per-vehicle environment maps
 #define POSTFX_GODRAYS		// radial blur god rays around screen-space sun
+// HDR / G-buffer foundation (phase 1 of advanced graphics plan).
+// POSTFX_HDR routes the entire scene through an off-screen RGBA16F render
+// target so bloom/tonemap/exposure can operate on linear HDR data without
+// LDR clipping. POSTFX_GBUFFER reuses the same scene pass to fill a
+// secondary MRT (packed world-normal + linear-depth) which SSAO, CSM and
+// TAA build on top of.
+#define POSTFX_HDR			// off-screen RGBA16F scene RT + tonemap resolve
+#define POSTFX_GBUFFER		// MRT slot1 = normal+depth (requires POSTFX_HDR)
 #endif
 
 #define TREE_SHADOWS		// implement StoreShadowForTree using sun direction (no librw needed)
@@ -340,6 +348,7 @@ enum Config {
 #undef POSTFX_TONEMAP
 #undef POSTFX_FXAA
 #undef POSTFX_GODRAYS
+#undef POSTFX_HDR
 #endif
 
 #ifndef EXTENDED_PIPELINES
@@ -349,6 +358,19 @@ enum Config {
 #ifndef LIBRW
 #undef SOFT_SHADOWS			// shader override needs librw
 #undef PER_PIXEL_LIGHTING
+#undef POSTFX_HDR
+#endif
+
+#ifndef POSTFX_HDR
+// G-buffer makes no sense without an HDR scene RT — both routes need MRT
+// support and a non-LDR backbuffer to be useful.
+#undef POSTFX_GBUFFER
+#endif
+
+#ifndef PER_PIXEL_LIGHTING
+// G-buffer is filled by the pp pixel shaders; legacy non-pp materials
+// don't emit normals/depth.
+#undef POSTFX_GBUFFER
 #endif
 
 // Water & Particle

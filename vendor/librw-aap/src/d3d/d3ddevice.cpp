@@ -248,6 +248,48 @@ setRenderTarget(int n, void *surf)
 	}
 }
 
+// Bind a CAMERATEXTURE raster as MRT slot `n`. Used by the G-buffer pass to
+// route per-pixel-lit fragments into a secondary normal+depth target while
+// the main HDR scene RT stays on slot 0.
+//
+// We resolve the IDirect3DSurface9 from the texture's level-0 surface each
+// call; D3D9 keeps an internal reference inside SetRenderTarget so the
+// immediate Release() is safe.
+void
+setMRT(int n, Raster *ras)
+{
+	if(n <= 0 || n >= MAXNUMRENDERTARGETS){
+		assert(0 && "setMRT slot must be 1..MAXNUMRENDERTARGETS-1");
+		return;
+	}
+	if(ras == nil){
+		setRenderTarget(n, nil);
+		return;
+	}
+	if(ras->parent)
+		ras = ras->parent;
+	D3dRaster *natras = GETD3DRASTEREXT(ras);
+	if(natras->texture == nil){
+		setRenderTarget(n, nil);
+		return;
+	}
+	IDirect3DSurface9 *surf;
+	((IDirect3DTexture9*)natras->texture)->GetSurfaceLevel(0, &surf);
+	setRenderTarget(n, surf);
+	if(surf)
+		surf->Release();
+}
+
+// Detach slots 1..MAXNUMRENDERTARGETS-1. Must be called before any draw
+// that doesn't write to the G-buffer (alpha-blended pass, 2D HUD, post-FX
+// passes), otherwise the driver will keep writing garbage into slot 1.
+void
+clearMRT(void)
+{
+	for(int i = 1; i < MAXNUMRENDERTARGETS; i++)
+		setRenderTarget(i, nil);
+}
+
 void
 setDepthSurface(void *surf)
 {
@@ -590,30 +632,34 @@ setMaterial_fix(const RGBA &color, const SurfaceProperties &surfProps)
 void
 setMaterial(const RGBA &color, const SurfaceProperties &surfaceprops, float extraSurfProp)
 {
+	rw::RGBAf col;
+	convColor(&col, &color);
 	if(!equal(d3dShaderState.matColor, color)){
-		rw::RGBAf col;
-		convColor(&col, &color);
 		d3ddevice->SetVertexShaderConstantF(VSLOC_matColor, (float*)&col, 1);
-		if(perPixelLightingEnabled)
-			d3ddevice->SetPixelShaderConstantF(VSLOC_matColor, (float*)&col, 1);
 		d3dShaderState.matColor = color;
 	}
+	// PS and VS have *separate* constant register spaces. Always re-upload
+	// to the PS side when the per-pixel lighting path is active — otherwise
+	// the PS reads stale data left by some unrelated earlier draw (UI,
+	// im2d, non-pp pass), which used to manifest as a blueish tint.
+	if(perPixelLightingEnabled)
+		d3ddevice->SetPixelShaderConstantF(VSLOC_matColor, (float*)&col, 1);
 
+	float surfProps[4];
+	surfProps[0] = surfaceprops.ambient;
+	surfProps[1] = surfaceprops.specular;
+	surfProps[2] = surfaceprops.diffuse;
+	surfProps[3] = extraSurfProp;
 	if(d3dShaderState.surfProps.ambient != surfaceprops.ambient ||
 	   d3dShaderState.surfProps.specular != surfaceprops.specular ||
 	   d3dShaderState.surfProps.diffuse != surfaceprops.diffuse ||
 	   d3dShaderState.extraSurfProp != extraSurfProp){
-		float surfProps[4];
-		surfProps[0] = surfaceprops.ambient;
-		surfProps[1] = surfaceprops.specular;
-		surfProps[2] = surfaceprops.diffuse;
-		surfProps[3] = extraSurfProp;
 		d3ddevice->SetVertexShaderConstantF(VSLOC_surfProps, surfProps, 1);
-		if(perPixelLightingEnabled)
-			d3ddevice->SetPixelShaderConstantF(VSLOC_surfProps, surfProps, 1);
 		d3dShaderState.surfProps = surfaceprops;
 		d3dShaderState.extraSurfProp = extraSurfProp;
 	}
+	if(perPixelLightingEnabled)
+		d3ddevice->SetPixelShaderConstantF(VSLOC_surfProps, surfProps, 1);
 }
 
 static void

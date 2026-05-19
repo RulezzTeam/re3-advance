@@ -1,14 +1,12 @@
 // Default pixel shader.
 //
-// PER_PIXEL_LIGHTING variant:
-//   - Lambertian diffuse + point/spot attenuation in PS so large polygons
-//     and point lights look correct regardless of tessellation.
-//   - Blinn-Phong specular highlight gated by surfSpecular > 0.
-//   - Fog applied per-pixel with smoothstep for a softer falloff than the
-//     legacy linear lerp.
-//
-// Non-PP variant: same as the original LDR pass — vertex colour modulated
-// by the texture, plus the linear fog lerp.
+// Variants compiled from this file:
+//   default_PS              - legacy LDR (no PP, no GBUFFER)
+//   default_tex_PS          - legacy LDR with diffuse texture
+//   default_pp_PS / _tex_PS - per-pixel lighting, LDR (single RT)
+//   default_pp_gbuf_PS / _tex_PS - per-pixel lighting, HDR-friendly, writes MRT:
+//                                  COLOR0 = scene (HDR linear), COLOR1 = packed
+//                                  world-normal (rgb) + linear depth (a)
 
 #ifdef PER_PIXEL_LIGHTING
 #include "standardConstantsPS.h"
@@ -21,6 +19,9 @@ struct VS_out {
 #ifdef PER_PIXEL_LIGHTING
 	float3 WorldNormal	: TEXCOORD1;
 	float3 WorldPos		: TEXCOORD2;
+#ifdef GBUFFER
+	float  ViewDepth	: TEXCOORD3;
+#endif
 #endif
 };
 
@@ -34,7 +35,19 @@ float4 fogColor : register(c0);
 float4 eyePosPS : register(c42);
 #endif
 
-float4 main(VS_out input) : COLOR
+#ifdef GBUFFER
+struct PS_out {
+	float4 Color		: COLOR0;	// HDR linear scene
+	float4 NormalDepth	: COLOR1;	// RGB = world normal * 0.5 + 0.5, A = linear depth
+};
+#endif
+
+
+// ComputeShadedColor: shared core that computes the final fragment colour.
+// The two main() entry points (single-RT vs MRT) call this and then either
+// return float4 (legacy) or pack the result into PS_out with the G-buffer
+// channel filled in.
+float4 ComputeShadedColor(VS_out input)
 {
 	float4 color = input.Color;
 
@@ -44,7 +57,6 @@ float4 main(VS_out input) : COLOR
 	float3 spec = float3(0.0, 0.0, 0.0);
 
 	int i;
-	// ps_3_0 supports dynamic flow control via [loop]; no unroll needed.
 #ifdef DIRECTIONALS
 	[loop]
 	for(i = 0; i < numDirLights; i++)
@@ -61,8 +73,6 @@ float4 main(VS_out input) : COLOR
 		lit += DoSpotLight(lights[i+firstSpotLight], input.WorldPos, N) * surfDiffuse;
 #endif
 
-	// Specular only when the material actually has a non-zero spec value.
-	// Cheap branch saves ~20 ALU on the vast majority of fragments.
 	[branch]
 	if(surfSpecular > 0.001){
 		float3 V = normalize(eyePosPS.xyz - input.WorldPos);
@@ -74,16 +84,46 @@ float4 main(VS_out input) : COLOR
 #endif
 	}
 
-	color.rgb += lit * matCol.rgb + spec;
-	color.rgb = saturate(color.rgb);
+	// In LDR mode we clamp prelight+ambient+lit BEFORE matCol — matches the
+	// legacy VS path so brightness stays identical to stock GTA.
+	// In HDR/G-buffer mode we only reject negatives so >1 light values
+	// survive into the bloom + tonemap pipeline.
+#ifdef GBUFFER
+	float3 baseLight = max(color.rgb + lit, 0.0);
+#else
+	float3 baseLight = saturate(color.rgb + lit);
+#endif
+	color.rgb = baseLight * matCol.rgb + spec;
+	color.a *= matCol.a;
 #endif
 
 #ifdef TEX
 	color *= tex2D(tex0, input.TexCoord0.xy);
 #endif
-	// Smoothstep fog gives a softer near-field falloff than a raw lerp; in
-	// the absence of fog the host passes a fog factor of 0..1 already clamped.
-	float fogFactor = smoothstep(0.0, 1.0, input.TexCoord0.z);
-	color.rgb = lerp(fogColor.rgb, color.rgb, fogFactor);
+
+	// Fog: linear lerp. A smoothstep variant was tried once and pushed mid-
+	// distance pixels toward fogColor — looked blue in Vice City.
+	color.rgb = lerp(fogColor.rgb, color.rgb, input.TexCoord0.z);
 	return color;
 }
+
+
+#ifdef GBUFFER
+PS_out main(VS_out input)
+{
+	PS_out o;
+	o.Color = ComputeShadedColor(input);
+
+	// World-space normal packed into [0,1] for RGBA16F storage. Re-normalise
+	// before storage so the consumer (SSAO, CSM) gets unit-length normals
+	// even on degenerate mesh edges.
+	float3 N = normalize(input.WorldNormal);
+	o.NormalDepth = float4(N * 0.5 + 0.5, saturate(input.ViewDepth));
+	return o;
+}
+#else
+float4 main(VS_out input) : COLOR
+{
+	return ComputeShadedColor(input);
+}
+#endif

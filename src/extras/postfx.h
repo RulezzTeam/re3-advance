@@ -77,6 +77,13 @@ public:
 	static void RenderGodRays(RwCamera *cam);
 #endif
 	static void Render(RwCamera *cam, uint32 red, uint32 green, uint32 blue, uint32 blur, int32 type, uint32 bluralpha);
+#ifdef POSTFX_HDR
+	// HDR -> LDR tonemap resolve. Reads CGBuffer::pHdrScene and writes the
+	// tonemapped result into the camera's backbuffer. Called once per frame
+	// right after CGBuffer::EndScenePass, before any LDR pass (motion blur,
+	// screen droplets, UI).
+	static void ResolveHDR(RwCamera *cam);
+#endif
 	static void SmoothColor(uint32 red, uint32 green, uint32 blue, uint32 alpha);
 	static bool NeedBackBuffer(void);
 	static bool NeedFrontBuffer(int32 type);

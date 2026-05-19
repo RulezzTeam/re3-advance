@@ -286,6 +286,9 @@ struct Raster
 		D24        = 0x0800,
 		D32        = 0x0900,
 		C555       = 0x0A00,
+		// HDR / G-buffer floating-point format for camera-texture RTs.
+		// Maps to D3DFMT_A16B16G16R16F in the D3D9 backend; ignored on others.
+		F16_RGBA   = 0x0B00,
 		AUTOMIPMAP = 0x1000,
 		PAL8       = 0x2000,
 		PAL4       = 0x4000,

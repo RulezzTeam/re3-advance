@@ -19,6 +19,9 @@ struct VS_out {
 #ifdef PER_PIXEL_LIGHTING
 	float3 WorldNormal	: TEXCOORD1;
 	float3 WorldPos		: TEXCOORD2;
+#ifdef GBUFFER
+	float  ViewDepth	: TEXCOORD3;
+#endif
 #endif
 };
 
@@ -42,12 +45,15 @@ VS_out main(in VS_in input)
 	output.TexCoord0.xy = input.TexCoord;
 
 #ifdef PER_PIXEL_LIGHTING
+	// See default_VS.hlsl — PS handles clamp+matCol so the brightness
+	// matches the legacy VS lighting path.
 	output.WorldNormal = Normal;
 	output.WorldPos = Vertex;
 	output.Color = input.Prelight;
 	output.Color.rgb += ambientLight.rgb * surfAmbient;
-	output.Color = clamp(output.Color, 0.0, 1.0);
-	output.Color *= matCol;
+#ifdef GBUFFER
+	output.ViewDepth = saturate(output.Position.w * viewParams.x);
+#endif
 #else
 	output.Color = input.Prelight;
 	output.Color.rgb += ambientLight.rgb * surfAmbient;

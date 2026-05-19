@@ -17,6 +17,9 @@
 #include "main.h"
 #include "MBlur.h"
 #include "postfx.h"
+#ifdef POSTFX_HDR
+#include "gbuffer.h"
+#endif
 #include "custompipes.h"
 #include "RwHelper.h"
 #include "Text.h"
@@ -146,6 +149,14 @@
 	#define POSTFX_ENVMAP_SELECTORS
 #endif
 
+#ifdef POSTFX_HDR
+	#define POSTFX_HDR_SELECTORS \
+		MENUACTION_CFO_SELECT, "FED_HDR", { new CCFOSelect((int8*)&CGBuffer::HdrEnabled, "Graphics", "HDR", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_GBF", { new CCFOSelect((int8*)&CGBuffer::GbufEnabled, "Graphics", "GBuffer", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
+#else
+	#define POSTFX_HDR_SELECTORS
+#endif
+
 #ifdef INVERT_LOOK_FOR_PAD
 	#define INVERT_PAD_SELECTOR MENUACTION_CFO_SELECT, "FEC_ILU", { new CCFOSelect((int8*)&CPad::bInvertLook4Pad, "Controller", "InvertPad", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
 #else
@@ -184,6 +195,52 @@ void RestoreDefGraphics(int8 action) {
 	    	} else
 	    		FrontEndMenuManager.m_PrefsIslandLoading = FrontEndMenuManager.ISLAND_LOADING_LOW;
 	#endif
+
+	// Reset the new graphics extensions back to their conservative shipping
+	// defaults. CCFOSelect/Slider persists each value in settings.ini under
+	// the "Graphics" category, so without this block users carry over old
+	// per-effect tweaks (e.g. ACES + Gamma on a sRGB LDR scene) that hide
+	// the new neutral defaults from the C++ side.
+	#ifdef POSTFX_BLOOM
+		CPostFX::BloomEnable = true;
+		CPostFX::BloomThreshold = 0.95f;
+		CPostFX::BloomKnee = 0.15f;
+		CPostFX::BloomIntensity = 0.28f;
+		CPostFX::BloomSaturation = 1.0f;
+	#endif
+	#ifdef POSTFX_TONEMAP
+		CPostFX::TonemapACES = false;
+		CPostFX::TonemapGamma = false;
+		CPostFX::Exposure = 1.0f;
+		CPostFX::Saturation = 1.0f;
+		CPostFX::VignetteIntensity = 0.0f;
+		CPostFX::VignetteSoftness = 0.45f;
+		CPostFX::VignetteRoundness = 1.0f;
+		CPostFX::CAStrength = 0.0f;
+		CPostFX::CADistanceScale = 1.0f;
+	#endif
+	#ifdef POSTFX_FXAA
+		CPostFX::FxaaEnable = true;
+		CPostFX::FxaaStrength = 0.75f;
+	#endif
+	#ifdef POSTFX_GODRAYS
+		CPostFX::GodRaysEnable = false;
+		CPostFX::GodRaysExposure = 0.45f;
+		CPostFX::GodRaysDensity = 0.95f;
+		CPostFX::GodRaysDecay = 0.965f;
+	#endif
+	#ifdef SOFT_SHADOWS
+		shadowPCFRadius = 1.6f;
+	#endif
+	#ifdef MULTI_ENVMAP
+		CustomPipes::EnvMapSizeIndex = 2; // 1024
+		CustomPipes::EnvMapSizePref = 1024;
+	#endif
+	#ifdef POSTFX_HDR
+		CGBuffer::HdrEnabled = true;
+		CGBuffer::GbufEnabled = true;
+	#endif
+
 	#ifdef GRAPHICS_MENU_OPTIONS // otherwise Frontend will handle those
 		FrontEndMenuManager.m_PrefsFrameLimiter = true;
 		FrontEndMenuManager.m_PrefsVsyncDisp = true;
@@ -844,6 +901,7 @@ CMenuScreenCustom aScreens[] = {
 #elif defined LEGACY_MENU_OPTIONS
 		MENUACTION_TRAILS,		"FED_TRA", { nil, SAVESLOT_NONE, MENUPAGE_GRAPHICS_SETTINGS }, 0, 0, MENUALIGN_LEFT,
 #endif
+		POSTFX_HDR_SELECTORS
 		POSTFX_BLOOM_SELECTORS
 		POSTFX_TONEMAP_SELECTORS
 		POSTFX_FXAA_SELECTORS

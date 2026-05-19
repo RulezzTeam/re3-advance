@@ -320,6 +320,12 @@ void setIndices(void *indexBuffer);
 void setStreamSource(int n, void *buffer, uint32 offset, uint32 stride);
 void setVertexDeclaration(void *declaration);
 
+// Multi-Render-Target helpers for HDR + G-buffer.
+// setMRT binds slot N (1..3) to a CAMERATEXTURE raster; slot 0 is always
+// managed by Camera::beginUpdate. clearMRT detaches every slot > 0.
+void setMRT(int n, Raster *ras);
+void clearMRT(void);
+
 void *createVertexShader(void *csosrc);
 void *createPixelShader(void *csosrc);
 void destroyVertexShader(void *shader);
@@ -424,6 +430,16 @@ extern void *default_pp_amb_dir_VS;
 extern void *default_pp_all_VS;
 extern void *default_pp_PS;
 extern void *default_pp_tex_PS;
+
+// G-buffer variants — same as pp variants but write MRT slot 1 with packed
+// world-normal + linear depth. Selected at runtime via gbufferEnabled
+// (which itself requires perPixelLightingEnabled + an active HDR pass).
+extern bool gbufferEnabled;
+extern void *default_pp_gbuf_amb_VS;
+extern void *default_pp_gbuf_amb_dir_VS;
+extern void *default_pp_gbuf_all_VS;
+extern void *default_pp_gbuf_PS;
+extern void *default_pp_gbuf_tex_PS;
 
 void createDefaultShaders(void);
 void destroyDefaultShaders(void);

@@ -73,6 +73,9 @@
 #include "Ropes.h"
 #include "postfx.h"
 #include "custompipes.h"
+#ifdef POSTFX_HDR
+#include "gbuffer.h"
+#endif
 #include "screendroplets.h"
 #include "VarConsole.h"
 #ifdef USE_OUR_VERSIONING
@@ -235,6 +238,14 @@ DoRWStuffStartOfFrame_Horizon(int16 TopRed, int16 TopGreen, int16 TopBlue, int16
 		return false;
 
 	TheCamera.m_viewMatrix.Update();
+
+#ifdef POSTFX_HDR
+	// Switch to the HDR off-screen camera BEFORE drawing the sky gradient
+	// — otherwise CClouds::RenderBackground would paint into the LDR
+	// backbuffer and be overwritten when ResolveHDR copies pHdrScene back.
+	CGBuffer::BeginScenePass(Scene.camera);
+#endif
+
 	CClouds::RenderBackground(TopRed, TopGreen, TopBlue, BottomRed, BottomGreen, BottomBlue, Alpha);
 
 	return true;
@@ -1614,6 +1625,9 @@ Idle(void *arg)
 		RwCameraSetFogDistance(Scene.camera, CTimeCycle::GetFogStart());
 #endif
 
+		// CGBuffer::BeginScenePass already happened inside
+		// DoRWStuffStartOfFrame_Horizon so the sky gradient lands in HDR.
+
 		tbStartTimer(0, "RenderScene");
 		RenderScene();
 		tbEndTimer("RenderScene");
@@ -1624,6 +1638,14 @@ Idle(void *arg)
 
 		RenderDebugShit();
 		RenderEffects();
+
+#ifdef POSTFX_HDR
+		// Tonemap HDR -> LDR before any LDR-only pass (motion blur, screen
+		// droplets, 2D HUD, menus). Restore camera framebuffer to the
+		// original backbuffer first.
+		CGBuffer::EndScenePass(Scene.camera);
+		CPostFX::ResolveHDR(Scene.camera);
+#endif
 
 		if((TheCamera.m_BlurType == MOTION_BLUR_NONE || TheCamera.m_BlurType == MOTION_BLUR_LIGHT_SCENE) &&
 		   TheCamera.m_ScreenReductionPercentage > 0.0f)

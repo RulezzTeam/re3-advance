@@ -13,6 +13,9 @@
 #include "MBlur.h"
 #include "Timecycle.h"
 #include "postfx.h"
+#ifdef POSTFX_HDR
+#include "gbuffer.h"
+#endif
 
 RwRaster *CPostFX::pFrontBuffer;
 RwRaster *CPostFX::pBackBuffer;
@@ -25,31 +28,38 @@ bool CPostFX::MotionBlurOn = false;
 RwRaster *CPostFX::pBloomA;
 RwRaster *CPostFX::pBloomB;
 bool CPostFX::BloomEnable = true;
-float CPostFX::BloomThreshold = 0.72f;
-float CPostFX::BloomKnee = 0.18f;
-float CPostFX::BloomIntensity = 0.55f;
-float CPostFX::BloomSaturation = 1.25f;
+// Conservative defaults — only the brightest pixels bloom, and the
+// composite stays subtle so the scene doesn't look hazy.
+float CPostFX::BloomThreshold = 0.95f;
+float CPostFX::BloomKnee = 0.15f;
+float CPostFX::BloomIntensity = 0.28f;
+float CPostFX::BloomSaturation = 1.0f;
 #endif
 #ifdef POSTFX_FXAA
 bool CPostFX::FxaaEnable = true;
 float CPostFX::FxaaStrength = 0.75f;
 #endif
 #ifdef POSTFX_GODRAYS
-bool CPostFX::GodRaysEnable = true;
+// Off by default — looks great at sunrise/sunset but is too obvious
+// midday. Players can enable it via the menu.
+bool CPostFX::GodRaysEnable = false;
 float CPostFX::GodRaysDensity = 0.95f;
 float CPostFX::GodRaysDecay = 0.965f;
-float CPostFX::GodRaysExposure = 0.65f;
+float CPostFX::GodRaysExposure = 0.45f;
 float CPostFX::GodRaysWeight = 0.45f;
 #endif
 #ifdef POSTFX_TONEMAP
-bool CPostFX::TonemapACES = true;
-bool CPostFX::TonemapGamma = true;
+// ACES expects linear HDR input; running it on the existing sRGB LDR
+// scene desaturates the picture and clips shadows. Default OFF — players
+// can opt in once we have a true HDR backbuffer.
+bool CPostFX::TonemapACES = false;
+bool CPostFX::TonemapGamma = false;
 float CPostFX::Exposure = 1.0f;
-float CPostFX::Saturation = 1.05f;
-float CPostFX::VignetteIntensity = 0.0f;	// off until the player toggles it
+float CPostFX::Saturation = 1.0f;	// neutral
+float CPostFX::VignetteIntensity = 0.0f;
 float CPostFX::VignetteSoftness = 0.45f;
 float CPostFX::VignetteRoundness = 1.0f;
-float CPostFX::CAStrength = 0.0f;	// off by default; opt-in via menu
+float CPostFX::CAStrength = 0.0f;
 float CPostFX::CADistanceScale = 1.0f;
 #endif
 
@@ -57,6 +67,14 @@ static RwIm2DVertex Vertex[4];
 static RwIm2DVertex Vertex2[4];
 static RwImVertexIndex Index[6] = { 0, 1, 2, 0, 2, 3 };
 static int32 g_postfxRtWidth, g_postfxRtHeight;
+#ifdef POSTFX_HDR
+// Dedicated quad sized to the camera resolution (not the pow2 RT size used
+// by pBackBuffer). pHdrScene is exactly camera-sized, so we need the
+// UV=0..1 to map to the camera-sized backbuffer 1:1, otherwise the resolve
+// pass stretches the HDR image (visible as a wider FOV with HDR on).
+static RwIm2DVertex HdrResolveVertex[4];
+static int32 g_hdrResolveW, g_hdrResolveH;
+#endif
 
 #ifdef RW_D3D9
 void *colourfilterVC_PS;
@@ -71,6 +89,9 @@ static void *fxaa_PS;
 #endif
 #ifdef POSTFX_GODRAYS
 static void *godrays_PS;
+#endif
+#ifdef POSTFX_HDR
+void *hdrResolve_PS;
 #endif
 #ifdef SOFT_SHADOWS
 void *shadowPCF_PS;
@@ -175,6 +196,11 @@ CPostFX::Open(RwCamera *cam)
 	bloomCamA = CreateBloomCam(pBloomA);
 	bloomCamB = CreateBloomCam(pBloomB);
 #endif
+#ifdef POSTFX_HDR
+	// HDR scene RT + G-buffer share the camera's actual resolution
+	// (non-pow2 is fine on ps_3_0; tonemap-resolve samples UV [0,1]).
+	CGBuffer::Open(cam);
+#endif
 	g_postfxRtWidth = width;
 	g_postfxRtHeight = height;
 	bJustInitialised = true;
@@ -264,6 +290,65 @@ CPostFX::Open(RwCamera *cam)
 	RwIm2DVertexSetV(&Vertex2[3], 0.0f, 1.0f/RwCameraGetNearClipPlane(cam));
 	RwIm2DVertexSetIntRGBA(&Vertex2[3], 255, 255, 255, 255);
 
+#ifdef POSTFX_HDR
+	// HDR-resolve quad. Sized to the actual camera resolution so a UV=0..1
+	// over the quad maps 1:1 onto the camera-sized pHdrScene texture.
+	{
+		float cw = (float)RwRasterGetWidth(RwCameraGetRaster(cam));
+		float ch = (float)RwRasterGetHeight(RwCameraGetRaster(cam));
+		float hz, hxmax, hymax;
+		if(RwRasterGetDepth(RwCameraGetRaster(cam)) == 16){
+			hz = HALFPX;
+			hxmax = cw + HALFPX;
+			hymax = ch + HALFPX;
+		}else{
+			hz = -HALFPX;
+			hxmax = cw - HALFPX;
+			hymax = ch - HALFPX;
+		}
+		float invNear = 1.0f / RwCameraGetNearClipPlane(cam);
+
+		RwIm2DVertexSetScreenX(&HdrResolveVertex[0], hz);
+		RwIm2DVertexSetScreenY(&HdrResolveVertex[0], hz);
+		RwIm2DVertexSetScreenZ(&HdrResolveVertex[0], RwIm2DGetNearScreenZ());
+		RwIm2DVertexSetCameraZ(&HdrResolveVertex[0], RwCameraGetNearClipPlane(cam));
+		RwIm2DVertexSetRecipCameraZ(&HdrResolveVertex[0], invNear);
+		RwIm2DVertexSetU(&HdrResolveVertex[0], 0.0f, invNear);
+		RwIm2DVertexSetV(&HdrResolveVertex[0], 0.0f, invNear);
+		RwIm2DVertexSetIntRGBA(&HdrResolveVertex[0], 255, 255, 255, 255);
+
+		RwIm2DVertexSetScreenX(&HdrResolveVertex[1], hz);
+		RwIm2DVertexSetScreenY(&HdrResolveVertex[1], hymax);
+		RwIm2DVertexSetScreenZ(&HdrResolveVertex[1], RwIm2DGetNearScreenZ());
+		RwIm2DVertexSetCameraZ(&HdrResolveVertex[1], RwCameraGetNearClipPlane(cam));
+		RwIm2DVertexSetRecipCameraZ(&HdrResolveVertex[1], invNear);
+		RwIm2DVertexSetU(&HdrResolveVertex[1], 0.0f, invNear);
+		RwIm2DVertexSetV(&HdrResolveVertex[1], 1.0f, invNear);
+		RwIm2DVertexSetIntRGBA(&HdrResolveVertex[1], 255, 255, 255, 255);
+
+		RwIm2DVertexSetScreenX(&HdrResolveVertex[2], hxmax);
+		RwIm2DVertexSetScreenY(&HdrResolveVertex[2], hymax);
+		RwIm2DVertexSetScreenZ(&HdrResolveVertex[2], RwIm2DGetNearScreenZ());
+		RwIm2DVertexSetCameraZ(&HdrResolveVertex[2], RwCameraGetNearClipPlane(cam));
+		RwIm2DVertexSetRecipCameraZ(&HdrResolveVertex[2], invNear);
+		RwIm2DVertexSetU(&HdrResolveVertex[2], 1.0f, invNear);
+		RwIm2DVertexSetV(&HdrResolveVertex[2], 1.0f, invNear);
+		RwIm2DVertexSetIntRGBA(&HdrResolveVertex[2], 255, 255, 255, 255);
+
+		RwIm2DVertexSetScreenX(&HdrResolveVertex[3], hxmax);
+		RwIm2DVertexSetScreenY(&HdrResolveVertex[3], hz);
+		RwIm2DVertexSetScreenZ(&HdrResolveVertex[3], RwIm2DGetNearScreenZ());
+		RwIm2DVertexSetCameraZ(&HdrResolveVertex[3], RwCameraGetNearClipPlane(cam));
+		RwIm2DVertexSetRecipCameraZ(&HdrResolveVertex[3], invNear);
+		RwIm2DVertexSetU(&HdrResolveVertex[3], 1.0f, invNear);
+		RwIm2DVertexSetV(&HdrResolveVertex[3], 0.0f, invNear);
+		RwIm2DVertexSetIntRGBA(&HdrResolveVertex[3], 255, 255, 255, 255);
+
+		g_hdrResolveW = (int32)cw;
+		g_hdrResolveH = (int32)ch;
+	}
+#endif
+
 
 #ifdef RW_D3D9
 #include "shaders/obj/colourfilterVC_PS.inc"
@@ -294,6 +379,12 @@ CPostFX::Open(RwCamera *cam)
 	{
 #include "shaders/obj/godrays_PS.inc"
 	godrays_PS = rw::d3d::createPixelShader(godrays_PS_cso);
+	}
+#endif
+#ifdef POSTFX_HDR
+	{
+#include "shaders/obj/hdrResolve_PS.inc"
+	hdrResolve_PS = rw::d3d::createPixelShader(hdrResolve_PS_cso);
 	}
 #endif
 #ifdef SOFT_SHADOWS
@@ -344,6 +435,9 @@ CPostFX::Close(void)
 	if(pBloomA){ RwRasterDestroy(pBloomA); pBloomA = nil; }
 	if(pBloomB){ RwRasterDestroy(pBloomB); pBloomB = nil; }
 #endif
+#ifdef POSTFX_HDR
+	CGBuffer::Close();
+#endif
 #ifdef RW_D3D9
 	if(colourfilterVC_PS){
 		rw::d3d::destroyPixelShader(colourfilterVC_PS);
@@ -363,6 +457,9 @@ CPostFX::Close(void)
 #endif
 #ifdef POSTFX_GODRAYS
 	if(godrays_PS){ rw::d3d::destroyPixelShader(godrays_PS); godrays_PS = nil; }
+#endif
+#ifdef POSTFX_HDR
+	if(hdrResolve_PS){ rw::d3d::destroyPixelShader(hdrResolve_PS); hdrResolve_PS = nil; }
 #endif
 #ifdef SOFT_SHADOWS
 	if(shadowPCF_PS){ rw::d3d::destroyPixelShader(shadowPCF_PS); shadowPCF_PS = nil; }
@@ -516,6 +613,55 @@ CPostFX::RenderOverlayShader(RwCamera *cam, int32 r, int32 g, int32 b, int32 a)
 	rw::gl3::im2dOverrideShader = nil;
 #endif
 }
+
+#ifdef POSTFX_HDR
+void
+CPostFX::ResolveHDR(RwCamera *cam)
+{
+	if(!CGBuffer::HdrEnabled || CGBuffer::pHdrScene == nil || hdrResolve_PS == nil)
+		return;
+
+	PUSH_RENDERGROUP("CPostFX::ResolveHDR");
+
+	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, CGBuffer::pHdrScene);
+	RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
+	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEFOGENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDONE);
+	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDZERO);
+
+#ifdef RW_D3D9
+	// .x = exposure, .y = ACES toggle, .z = gamma toggle, .w = saturation
+	float params[4] = {
+# ifdef POSTFX_TONEMAP
+		Exposure,
+		TonemapACES ? 1.0f : 0.0f,
+		TonemapGamma ? 1.0f : 0.0f,
+		Saturation,
+# else
+		1.0f, 0.0f, 0.0f, 1.0f,
+# endif
+	};
+	rw::d3d::d3ddevice->SetPixelShaderConstantF(10, params, 1);
+	rw::d3d::im2dOverridePS = hdrResolve_PS;
+#endif
+
+	// Use the camera-sized vertex quad (not Vertex[], which is pow2-sized
+	// for pBackBuffer). UV=0..1 over the quad maps exactly to the
+	// camera-sized pHdrScene without any stretching.
+	RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, HdrResolveVertex, 4, Index, 6);
+
+#ifdef RW_D3D9
+	rw::d3d::im2dOverridePS = nil;
+#endif
+	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
+	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
+
+	POP_RENDERGROUP();
+}
+#endif
 
 void
 CPostFX::RenderMotionBlur(RwCamera *cam, uint32 blur)

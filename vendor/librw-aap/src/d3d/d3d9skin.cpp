@@ -35,6 +35,11 @@ static void *skin_pp_amb_VS;
 static void *skin_pp_amb_dir_VS;
 static void *skin_pp_all_VS;
 
+// G-buffer variants (per-pixel lighting + MRT output for SSAO/CSM/TAA).
+static void *skin_pp_gbuf_amb_VS;
+static void *skin_pp_gbuf_amb_dir_VS;
+static void *skin_pp_gbuf_all_VS;
+
 #define NUMDECLELT 14
 
 void
@@ -305,14 +310,24 @@ skinRenderCB(Atomic *atomic, InstanceDataHeader *header)
 
 	uploadSkinMatrices(atomic);
 
-	// Pick a shader. Same gating as defaultRenderCB_Shader.
-	bool usePP = perPixelLightingEnabled && default_pp_PS && default_pp_tex_PS;
+	// Pick a shader. Same gating as defaultRenderCB_Shader — pp_gbuf
+	// variants for skinned meshes flow into the G-buffer (peds, drivers).
+	bool usePP   = perPixelLightingEnabled && default_pp_PS && default_pp_tex_PS;
+	bool useGbuf = usePP && gbufferEnabled && default_pp_gbuf_PS && default_pp_gbuf_tex_PS
+	             && skin_pp_gbuf_amb_VS && skin_pp_gbuf_amb_dir_VS && skin_pp_gbuf_all_VS;
+
 	if((vsBits & VSLIGHT_MASK) == 0)
-		setVertexShader(usePP && skin_pp_amb_VS ? skin_pp_amb_VS : skin_amb_VS);
+		setVertexShader(useGbuf ? skin_pp_gbuf_amb_VS :
+		                usePP   ? skin_pp_amb_VS      :
+		                          skin_amb_VS);
 	else if((vsBits & VSLIGHT_MASK) == VSLIGHT_DIRECT)
-		setVertexShader(usePP && skin_pp_amb_dir_VS ? skin_pp_amb_dir_VS : skin_amb_dir_VS);
+		setVertexShader(useGbuf ? skin_pp_gbuf_amb_dir_VS :
+		                usePP   ? skin_pp_amb_dir_VS      :
+		                          skin_amb_dir_VS);
 	else
-		setVertexShader(usePP && skin_pp_all_VS ? skin_pp_all_VS : skin_all_VS);
+		setVertexShader(useGbuf ? skin_pp_gbuf_all_VS :
+		                usePP   ? skin_pp_all_VS      :
+		                          skin_all_VS);
 
 	InstanceData *inst = header->inst;
 	for(uint32 i = 0; i < header->numMeshes; i++){
@@ -324,9 +339,13 @@ skinRenderCB(Atomic *atomic, InstanceDataHeader *header)
 
 		if(inst->material->texture){
 			d3d::setTexture(0, m->texture);
-			setPixelShader(usePP ? default_pp_tex_PS : default_tex_PS);
+			setPixelShader(useGbuf ? default_pp_gbuf_tex_PS :
+			               usePP   ? default_pp_tex_PS      :
+			                         default_tex_PS);
 		}else
-			setPixelShader(usePP ? default_pp_PS : default_PS);
+			setPixelShader(useGbuf ? default_pp_gbuf_PS :
+			               usePP   ? default_pp_PS      :
+			                         default_PS);
 
 		drawInst(header, inst);
 		inst++;
@@ -380,6 +399,27 @@ createSkinShaders(void)
 		skin_pp_all_VS = createVertexShader((void*)VS_NAME);
 		assert(skin_pp_all_VS);
 	}
+
+	// G-buffer skin variants — extra TEXCOORD3 (linear depth) handed to
+	// default_pp_gbuf_*_PS for the normal+depth MRT slot.
+	{
+		static
+#include "shaders/skin_pp_gbuf_amb_VS.h"
+		skin_pp_gbuf_amb_VS = createVertexShader((void*)VS_NAME);
+		assert(skin_pp_gbuf_amb_VS);
+	}
+	{
+		static
+#include "shaders/skin_pp_gbuf_amb_dir_VS.h"
+		skin_pp_gbuf_amb_dir_VS = createVertexShader((void*)VS_NAME);
+		assert(skin_pp_gbuf_amb_dir_VS);
+	}
+	{
+		static
+#include "shaders/skin_pp_gbuf_all_VS.h"
+		skin_pp_gbuf_all_VS = createVertexShader((void*)VS_NAME);
+		assert(skin_pp_gbuf_all_VS);
+	}
 }
 
 void
@@ -399,6 +439,10 @@ destroySkinShaders(void)
 	if(skin_pp_amb_VS){ destroyVertexShader(skin_pp_amb_VS); skin_pp_amb_VS = nil; }
 	if(skin_pp_amb_dir_VS){ destroyVertexShader(skin_pp_amb_dir_VS); skin_pp_amb_dir_VS = nil; }
 	if(skin_pp_all_VS){ destroyVertexShader(skin_pp_all_VS); skin_pp_all_VS = nil; }
+
+	if(skin_pp_gbuf_amb_VS){ destroyVertexShader(skin_pp_gbuf_amb_VS); skin_pp_gbuf_amb_VS = nil; }
+	if(skin_pp_gbuf_amb_dir_VS){ destroyVertexShader(skin_pp_gbuf_amb_dir_VS); skin_pp_gbuf_amb_dir_VS = nil; }
+	if(skin_pp_gbuf_all_VS){ destroyVertexShader(skin_pp_gbuf_all_VS); skin_pp_gbuf_all_VS = nil; }
 }
 
 #endif

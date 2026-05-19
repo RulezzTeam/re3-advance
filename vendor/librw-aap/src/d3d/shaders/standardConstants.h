@@ -1,6 +1,12 @@
 float4x4	combinedMat	: register(c0);
 float4x4	worldMat	: register(c4);
 float3x3	normalMat	: register(c8);
+// c11 = viewParams: .x = 1/farClip (for normalised view-space depth), .y =
+// near plane, .z = far plane, .w = reserved. Fed by uploadMatrices when
+// G-buffer is active; safe to read in all VS variants because c11 is a gap
+// between normalMat (c8..c10) and matCol (c12) and is not used by skin
+// bones (which start at c41).
+float4		viewParams	: register(c11);
 float4		matCol		: register(c12);
 float4		surfProps	: register(c13);
 float4		fogData	: register(c14);

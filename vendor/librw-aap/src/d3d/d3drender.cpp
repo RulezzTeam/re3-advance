@@ -38,6 +38,13 @@ void *default_pp_all_VS;
 void *default_pp_PS;
 void *default_pp_tex_PS;
 
+bool gbufferEnabled = false;
+void *default_pp_gbuf_amb_VS;
+void *default_pp_gbuf_amb_dir_VS;
+void *default_pp_gbuf_all_VS;
+void *default_pp_gbuf_PS;
+void *default_pp_gbuf_tex_PS;
+
 
 void
 createDefaultShaders(void)
@@ -125,6 +132,39 @@ createDefaultShaders(void)
 		default_pp_tex_PS = createPixelShader((void*)PS_NAME);
 		assert(default_pp_tex_PS);
 	}
+
+	// G-buffer variants. Same per-pixel lighting math as pp_*, plus MRT
+	// output of packed world-normal + linear depth in COLOR1.
+	{
+		static
+#include "shaders/default_pp_gbuf_amb_VS.h"
+		default_pp_gbuf_amb_VS = createVertexShader((void*)VS_NAME);
+		assert(default_pp_gbuf_amb_VS);
+	}
+	{
+		static
+#include "shaders/default_pp_gbuf_amb_dir_VS.h"
+		default_pp_gbuf_amb_dir_VS = createVertexShader((void*)VS_NAME);
+		assert(default_pp_gbuf_amb_dir_VS);
+	}
+	{
+		static
+#include "shaders/default_pp_gbuf_all_VS.h"
+		default_pp_gbuf_all_VS = createVertexShader((void*)VS_NAME);
+		assert(default_pp_gbuf_all_VS);
+	}
+	{
+		static
+#include "shaders/default_pp_gbuf_PS.h"
+		default_pp_gbuf_PS = createPixelShader((void*)PS_NAME);
+		assert(default_pp_gbuf_PS);
+	}
+	{
+		static
+#include "shaders/default_pp_gbuf_tex_PS.h"
+		default_pp_gbuf_tex_PS = createPixelShader((void*)PS_NAME);
+		assert(default_pp_gbuf_tex_PS);
+	}
 }
 
 void
@@ -154,6 +194,12 @@ destroyDefaultShaders(void)
 	if(default_pp_all_VS){ destroyVertexShader(default_pp_all_VS); default_pp_all_VS = nil; }
 	if(default_pp_PS){ destroyPixelShader(default_pp_PS); default_pp_PS = nil; }
 	if(default_pp_tex_PS){ destroyPixelShader(default_pp_tex_PS); default_pp_tex_PS = nil; }
+
+	if(default_pp_gbuf_amb_VS){ destroyVertexShader(default_pp_gbuf_amb_VS); default_pp_gbuf_amb_VS = nil; }
+	if(default_pp_gbuf_amb_dir_VS){ destroyVertexShader(default_pp_gbuf_amb_dir_VS); default_pp_gbuf_amb_dir_VS = nil; }
+	if(default_pp_gbuf_all_VS){ destroyVertexShader(default_pp_gbuf_all_VS); default_pp_gbuf_all_VS = nil; }
+	if(default_pp_gbuf_PS){ destroyPixelShader(default_pp_gbuf_PS); default_pp_gbuf_PS = nil; }
+	if(default_pp_gbuf_tex_PS){ destroyPixelShader(default_pp_gbuf_tex_PS); default_pp_gbuf_tex_PS = nil; }
 }
 
 
@@ -279,9 +325,12 @@ setAmbient(const RGBAf &color)
 	if(!equal(d3dShaderState.ambient, color)){
 		d3dShaderState.ambient = color;
 		d3ddevice->SetVertexShaderConstantF(VSLOC_ambLight, (float*)&color, 1);
-		if(perPixelLightingEnabled)
-			d3ddevice->SetPixelShaderConstantF(VSLOC_ambLight, (float*)&color, 1);
 	}
+	// PS register space is separate from VS — re-upload every call so the
+	// pp pixel shader never sees stale ambient (which would tint everything
+	// toward whatever was in c15 from an earlier non-pp pass).
+	if(perPixelLightingEnabled)
+		d3ddevice->SetPixelShaderConstantF(VSLOC_ambLight, (float*)&color, 1);
 }
 
 void
@@ -494,6 +543,14 @@ uploadMatrices(Matrix *worldMat)
 		V3d eye = cam->getFrame()->getLTM()->pos;
 		float eyeArr[4] = { eye.x, eye.y, eye.z, 32.0f };
 		d3ddevice->SetPixelShaderConstantF(42, eyeArr, 1);
+	}
+
+	if(gbufferEnabled){
+		// viewParams.x = 1/farClip — used by VS to normalise view-space depth
+		// before passing it down to the G-buffer pixel shader.
+		float farClip = cam->farPlane > 0.0001f ? cam->farPlane : 250.0f;
+		float viewParams[4] = { 1.0f/farClip, cam->nearPlane, cam->farPlane, 0.0f };
+		d3ddevice->SetVertexShaderConstantF(11, viewParams, 1);
 	}
 }
 
