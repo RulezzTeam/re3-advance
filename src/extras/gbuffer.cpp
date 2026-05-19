@@ -88,18 +88,35 @@ CGBuffer::BeginScenePass(RwCamera *cam)
 	rwcam->frameBuffer = (rw::Raster*)pHdrScene;
 	rwcam->zBuffer = (rw::Raster*)pHdrZBuffer;
 
-	// Clear with the time-of-day sky colour and full depth. Without this
-	// pHdrScene retains last-frame pixels for any region not written this
-	// frame (sky band, transparent windows) — ghost-duplicate textures.
-	RwCameraClear(cam, &gColourTop, rwCAMERACLEARIMAGE | rwCAMERACLEARZ);
-
 	RwCameraBeginUpdate(cam);
 	bSceneInHDR = true;
 
+	// Bind the G-buffer MRT slot BEFORE clearing so the clear hits both
+	// targets atomically. If we bind after the clear, slot 1 keeps the
+	// previous frame's normal/depth — sky/water pixels (which never write
+	// to the G-buffer) then feed stale data into SSAO, producing the
+	// black smear on the horizon and the "see-through-cars" halo around
+	// pedestrians the player reported.
 	if(GbufEnabled && pGbufNormalDepth){
 		rw::d3d::setMRT(1, (rw::Raster*)pGbufNormalDepth);
 		rw::d3d::gbufferEnabled = true;
 	}
+
+#ifdef RW_D3D9
+	// One Clear call wipes every bound RT (slot 0 and slot 1) plus the
+	// depth/stencil. Alpha = 0 in the clear colour means the G-buffer
+	// depth channel (slot 1 .a) starts at 0 — SSAO's `if(depth < 0.0001)`
+	// guard then correctly skips every untouched pixel.
+	DWORD clearCol = D3DCOLOR_ARGB(0,
+		(int)gColourTop.red,
+		(int)gColourTop.green,
+		(int)gColourTop.blue);
+	rw::d3d::d3ddevice->Clear(0, nullptr,
+		D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
+		clearCol, 1.0f, 0);
+#else
+	RwCameraClear(cam, &gColourTop, rwCAMERACLEARIMAGE | rwCAMERACLEARZ);
+#endif
 }
 
 void

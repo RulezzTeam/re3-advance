@@ -273,10 +273,10 @@ void RestoreDefGraphics(int8 action) {
 		CGBuffer::HdrEnabled = true;
 		CGBuffer::GbufEnabled = true;
 		CPostFX::SsaoEnable = true;
-		CPostFX::SsaoRadius = 0.9f;
-		CPostFX::SsaoBias = 0.025f;
-		CPostFX::SsaoIntensity = 1.8f;
-		CPostFX::SsaoStrength = 0.85f;
+		CPostFX::SsaoRadius = 0.55f;
+		CPostFX::SsaoBias = 0.03f;
+		CPostFX::SsaoIntensity = 1.2f;
+		CPostFX::SsaoStrength = 0.6f;
 		CPostFX::TaaEnable = false;
 		CPostFX::TaaBlend = 0.12f;
 		CPostFX::TaaClamp = 1.0f;

@@ -72,10 +72,15 @@ float CPostFX::CADistanceScale = 1.0f;
 RwRaster *CPostFX::pSsaoA;
 RwRaster *CPostFX::pSsaoB;
 bool CPostFX::SsaoEnable = true;
-float CPostFX::SsaoRadius = 0.9f;
-float CPostFX::SsaoBias = 0.025f;
-float CPostFX::SsaoIntensity = 1.8f;
-float CPostFX::SsaoStrength = 0.85f;
+// Conservative defaults — tightened from the original 0.9 / 1.8 / 0.85 set
+// to suppress the dark halo around pedestrians that the player reported.
+// The G-buffer clear fix in CGBuffer::BeginScenePass kills the bulk of the
+// SSAO artefacts (sky / water smear) but a smaller sampling radius keeps
+// edge occlusion subtler.
+float CPostFX::SsaoRadius = 0.55f;
+float CPostFX::SsaoBias = 0.03f;
+float CPostFX::SsaoIntensity = 1.2f;
+float CPostFX::SsaoStrength = 0.6f;
 float CPostFX::SsaoPower = 1.4f;
 RwRaster *CPostFX::pTaaHistA;
 RwRaster *CPostFX::pTaaHistB;
