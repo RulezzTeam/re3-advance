@@ -321,6 +321,9 @@ CEntity::PreRender(void)
 			float dist = (TheCamera.GetPosition() - GetPosition()).Magnitude2D();
 			CObject::fDistToNearestTree = Min(CObject::fDistToNearestTree, dist);
 			ModifyMatrixForTreeInWind();
+#ifdef TREE_SHADOWS
+			CShadows::StoreShadowForTree(this);
+#endif
 		}
 		break;
 	case ENTITY_TYPE_OBJECT:

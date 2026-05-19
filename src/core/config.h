@@ -81,8 +81,8 @@ enum Config {
 
 	NUMEXTRADIRECTIONALS = 4,
 	NUMANTENNAS = 8,
-	NUMCORONAS = 56,
-	NUMPOINTLIGHTS = 32,
+	NUMCORONAS = 256,	// was 56 — denser corona soup for night-time
+	NUMPOINTLIGHTS = 128,	// was 32 — modern hardware can absorb dozens of street lamps in view
 	NUM3DMARKERS = 32,
 	NUMBRIGHTLIGHTS = 32,
 	NUMSHINYTEXTS = 32,
@@ -320,12 +320,35 @@ enum Config {
 #define EXTENDED_PIPELINES		// custom render pipelines (includes Neo)
 #define SCREEN_DROPLETS			// neo water droplets
 #define NEW_RENDERER		// leeds-like world rendering, needs librw
+// re3-advance graphics improvements
+#define SOFT_SHADOWS			// PCF-filtered blob shadows
+#define POSTFX_BLOOM			// HDR-style bloom (bright-pass + Gaussian + composite)
+#define POSTFX_TONEMAP			// ACES filmic tonemap + gamma 2.2 in colourfilter PS
+#define POSTFX_FXAA			// FXAA 3.11 anti-aliasing
+#define PER_PIXEL_LIGHTING		// Lambertian + point lights in pixel shader (default/skin)
+#define MULTI_ENVMAP			// rotating per-vehicle environment maps
+#define POSTFX_GODRAYS		// radial blur god rays around screen-space sun
 #endif
+
+#define TREE_SHADOWS		// implement StoreShadowForTree using sun direction (no librw needed)
 
 #define FIX_SPRITES	// fix sprites aspect ratio(moon, coronas, particle etc)
 
 #ifndef EXTENDED_COLOURFILTER
 #undef SCREEN_DROPLETS		// we need the backbuffer for this effect
+#undef POSTFX_BLOOM
+#undef POSTFX_TONEMAP
+#undef POSTFX_FXAA
+#undef POSTFX_GODRAYS
+#endif
+
+#ifndef EXTENDED_PIPELINES
+#undef MULTI_ENVMAP
+#endif
+
+#ifndef LIBRW
+#undef SOFT_SHADOWS			// shader override needs librw
+#undef PER_PIXEL_LIGHTING
 #endif
 
 // Water & Particle

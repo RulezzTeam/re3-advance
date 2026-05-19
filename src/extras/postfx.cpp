@@ -11,6 +11,7 @@
 #include "RwHelper.h"
 #include "Camera.h"
 #include "MBlur.h"
+#include "Timecycle.h"
 #include "postfx.h"
 
 RwRaster *CPostFX::pFrontBuffer;
@@ -20,13 +21,124 @@ int CPostFX::EffectSwitch = POSTFX_NORMAL;
 bool CPostFX::BlurOn = false;
 bool CPostFX::MotionBlurOn = false;
 
+#ifdef POSTFX_BLOOM
+RwRaster *CPostFX::pBloomA;
+RwRaster *CPostFX::pBloomB;
+bool CPostFX::BloomEnable = true;
+float CPostFX::BloomThreshold = 0.72f;
+float CPostFX::BloomKnee = 0.18f;
+float CPostFX::BloomIntensity = 0.55f;
+float CPostFX::BloomSaturation = 1.25f;
+#endif
+#ifdef POSTFX_FXAA
+bool CPostFX::FxaaEnable = true;
+float CPostFX::FxaaStrength = 0.75f;
+#endif
+#ifdef POSTFX_GODRAYS
+bool CPostFX::GodRaysEnable = true;
+float CPostFX::GodRaysDensity = 0.95f;
+float CPostFX::GodRaysDecay = 0.965f;
+float CPostFX::GodRaysExposure = 0.65f;
+float CPostFX::GodRaysWeight = 0.45f;
+#endif
+#ifdef POSTFX_TONEMAP
+bool CPostFX::TonemapACES = true;
+bool CPostFX::TonemapGamma = true;
+float CPostFX::Exposure = 1.0f;
+float CPostFX::Saturation = 1.05f;
+float CPostFX::VignetteIntensity = 0.0f;	// off until the player toggles it
+float CPostFX::VignetteSoftness = 0.45f;
+float CPostFX::VignetteRoundness = 1.0f;
+float CPostFX::CAStrength = 0.0f;	// off by default; opt-in via menu
+float CPostFX::CADistanceScale = 1.0f;
+#endif
+
 static RwIm2DVertex Vertex[4];
 static RwIm2DVertex Vertex2[4];
 static RwImVertexIndex Index[6] = { 0, 1, 2, 0, 2, 3 };
+static int32 g_postfxRtWidth, g_postfxRtHeight;
 
 #ifdef RW_D3D9
 void *colourfilterVC_PS;
 void *contrast_PS;
+#ifdef POSTFX_BLOOM
+static void *brightpass_PS;
+static void *bloomBlur_PS;
+static void *bloomComposite_PS;
+#endif
+#ifdef POSTFX_FXAA
+static void *fxaa_PS;
+#endif
+#ifdef POSTFX_GODRAYS
+static void *godrays_PS;
+#endif
+#ifdef SOFT_SHADOWS
+void *shadowPCF_PS;
+float shadowPCFTexelSize[4] = { 1.0f/256.0f, 1.0f/256.0f, 1.6f, 0.0f };
+float shadowPCFRadius = 1.6f;
+#endif
+#endif
+
+#ifdef SOFT_SHADOWS
+void
+EnableShadowPCF(int textureSize)
+{
+#ifdef RW_D3D9
+	if(shadowPCF_PS == nil)
+		return;
+	float invSize = (textureSize > 0) ? 1.0f / (float)textureSize : 1.0f / 128.0f;
+	shadowPCFTexelSize[0] = invSize;
+	shadowPCFTexelSize[1] = invSize;
+	shadowPCFTexelSize[2] = shadowPCFRadius;
+	shadowPCFTexelSize[3] = 0.0f;
+	rw::d3d::d3ddevice->SetPixelShaderConstantF(10, shadowPCFTexelSize, 1);
+	rw::d3d::im3dOverridePS = shadowPCF_PS;
+#endif
+}
+
+void
+DisableShadowPCF(void)
+{
+#ifdef RW_D3D9
+	rw::d3d::im3dOverridePS = nil;
+#endif
+}
+#endif
+
+#ifdef POSTFX_BLOOM
+static rw::Camera *bloomCamA;
+static rw::Camera *bloomCamB;
+
+static rw::Camera*
+CreateBloomCam(rw::Raster *fbuf)
+{
+	rw::Frame *frame = rw::Frame::create();
+	if(frame == nil) return nil;
+	rw::Camera *cam = rw::Camera::create();
+	if(cam == nil){ frame->destroy(); return nil; }
+	cam->frameBuffer = fbuf;
+	cam->zBuffer = nil;
+	cam->setFrame(frame);
+	cam->setNearPlane(0.1f);
+	cam->setFarPlane(1000.0f);
+	rw::V2d vw = { 1.0f, 1.0f };
+	cam->setViewWindow(&vw);
+	return cam;
+}
+
+static void
+DestroyBloomCam(rw::Camera *cam)
+{
+	if(cam == nil) return;
+	cam->frameBuffer = nil; // we own the raster elsewhere
+	cam->zBuffer = nil;
+	rw::Frame *f = cam->getFrame();
+	if(f){
+		cam->setFrame(nil);
+		f->destroy();
+	}
+	cam->destroy();
+}
 #endif
 #ifdef RW_OPENGL
 int32 u_blurcolor;
@@ -57,6 +169,14 @@ CPostFX::Open(RwCamera *cam)
 	uint32 depth  = RwRasterGetDepth(RwCameraGetRaster(cam));
 	pFrontBuffer = RwRasterCreate(width, height, depth, rwRASTERTYPECAMERATEXTURE);
 	pBackBuffer = RwRasterCreate(width, height, depth, rwRASTERTYPECAMERATEXTURE);
+#ifdef POSTFX_BLOOM
+	pBloomA = RwRasterCreate(width, height, depth, rwRASTERTYPECAMERATEXTURE);
+	pBloomB = RwRasterCreate(width, height, depth, rwRASTERTYPECAMERATEXTURE);
+	bloomCamA = CreateBloomCam(pBloomA);
+	bloomCamB = CreateBloomCam(pBloomB);
+#endif
+	g_postfxRtWidth = width;
+	g_postfxRtHeight = height;
 	bJustInitialised = true;
 
 	float zero, xmax, ymax;
@@ -150,6 +270,38 @@ CPostFX::Open(RwCamera *cam)
 	colourfilterVC_PS = rw::d3d::createPixelShader(colourfilterVC_PS_cso);
 #include "shaders/obj/contrastPS.inc"
 	contrast_PS = rw::d3d::createPixelShader(contrastPS_cso);
+#ifdef POSTFX_BLOOM
+	{
+#include "shaders/obj/brightpass_PS.inc"
+	brightpass_PS = rw::d3d::createPixelShader(brightpass_PS_cso);
+	}
+	{
+#include "shaders/obj/bloomBlur_PS.inc"
+	bloomBlur_PS = rw::d3d::createPixelShader(bloomBlur_PS_cso);
+	}
+	{
+#include "shaders/obj/bloomComposite_PS.inc"
+	bloomComposite_PS = rw::d3d::createPixelShader(bloomComposite_PS_cso);
+	}
+#endif
+#ifdef POSTFX_FXAA
+	{
+#include "shaders/obj/fxaa_PS.inc"
+	fxaa_PS = rw::d3d::createPixelShader(fxaa_PS_cso);
+	}
+#endif
+#ifdef POSTFX_GODRAYS
+	{
+#include "shaders/obj/godrays_PS.inc"
+	godrays_PS = rw::d3d::createPixelShader(godrays_PS_cso);
+	}
+#endif
+#ifdef SOFT_SHADOWS
+	{
+#include "shaders/obj/shadowPCF_PS.inc"
+	shadowPCF_PS = rw::d3d::createPixelShader(shadowPCF_PS_cso);
+	}
+#endif
 #endif
 #ifdef RW_OPENGL
 	using namespace rw::gl3;
@@ -186,6 +338,12 @@ CPostFX::Close(void)
 		RwRasterDestroy(pBackBuffer);
 		pBackBuffer = nil;
 	}
+#ifdef POSTFX_BLOOM
+	if(bloomCamA){ DestroyBloomCam(bloomCamA); bloomCamA = nil; }
+	if(bloomCamB){ DestroyBloomCam(bloomCamB); bloomCamB = nil; }
+	if(pBloomA){ RwRasterDestroy(pBloomA); pBloomA = nil; }
+	if(pBloomB){ RwRasterDestroy(pBloomB); pBloomB = nil; }
+#endif
 #ifdef RW_D3D9
 	if(colourfilterVC_PS){
 		rw::d3d::destroyPixelShader(colourfilterVC_PS);
@@ -195,6 +353,20 @@ CPostFX::Close(void)
 		rw::d3d::destroyPixelShader(contrast_PS);
 		contrast_PS = nil;
 	}
+#ifdef POSTFX_BLOOM
+	if(brightpass_PS){ rw::d3d::destroyPixelShader(brightpass_PS); brightpass_PS = nil; }
+	if(bloomBlur_PS){ rw::d3d::destroyPixelShader(bloomBlur_PS); bloomBlur_PS = nil; }
+	if(bloomComposite_PS){ rw::d3d::destroyPixelShader(bloomComposite_PS); bloomComposite_PS = nil; }
+#endif
+#ifdef POSTFX_FXAA
+	if(fxaa_PS){ rw::d3d::destroyPixelShader(fxaa_PS); fxaa_PS = nil; }
+#endif
+#ifdef POSTFX_GODRAYS
+	if(godrays_PS){ rw::d3d::destroyPixelShader(godrays_PS); godrays_PS = nil; }
+#endif
+#ifdef SOFT_SHADOWS
+	if(shadowPCF_PS){ rw::d3d::destroyPixelShader(shadowPCF_PS); shadowPCF_PS = nil; }
+#endif
 #endif
 #ifdef RW_OPENGL
 	if(colourFilterVC){
@@ -297,6 +469,37 @@ CPostFX::RenderOverlayShader(RwCamera *cam, int32 r, int32 g, int32 b, int32 a)
 		blurcolors[3] = 30/255.0f;
 #ifdef RW_D3D9
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(10, blurcolors, 1);
+#ifdef POSTFX_TONEMAP
+		float tonemapParams[4] = {
+			TonemapACES ? 1.0f : 0.0f,
+			TonemapGamma ? 1.0f : 0.0f,
+			Exposure,
+			Saturation
+		};
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(11, tonemapParams, 1);
+
+		// Aspect (.w) is camera width/height so the vignette stays circular.
+		uint32 camW = RwRasterGetWidth(RwCameraGetRaster(cam));
+		uint32 camH = RwRasterGetHeight(RwCameraGetRaster(cam));
+		float aspect = camH > 0 ? (float)camW / (float)camH : 1.0f;
+		float vignetteParams[4] = {
+			VignetteIntensity,
+			VignetteSoftness,
+			VignetteRoundness,
+			aspect
+		};
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(12, vignetteParams, 1);
+
+		float caParams[4] = { CAStrength, CADistanceScale, 0.0f, 0.0f };
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(13, caParams, 1);
+#else
+		float tonemapParams[4] = { 0.0f, 0.0f, 1.0f, 1.0f };
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(11, tonemapParams, 1);
+		float vignetteParams[4] = { 0.0f, 0.5f, 1.0f, 1.0f };
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(12, vignetteParams, 1);
+		float caParams[4] = { 0.0f, 1.0f, 0.0f, 0.0f };
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(13, caParams, 1);
+#endif
 		rw::d3d::im2dOverridePS = colourfilterVC_PS;
 #endif
 #ifdef RW_OPENGL
@@ -332,6 +535,201 @@ CPostFX::RenderMotionBlur(RwCamera *cam, uint32 blur)
 
 	RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, Vertex, 4, Index, 6);
 }
+
+#ifdef POSTFX_BLOOM
+void
+CPostFX::RenderBloom(RwCamera *cam)
+{
+#ifdef RW_D3D9
+	if(!BloomEnable || brightpass_PS == nil || bloomBlur_PS == nil ||
+	   bloomComposite_PS == nil || bloomCamA == nil || bloomCamB == nil ||
+	   pBloomA == nil || pBloomB == nil)
+		return;
+
+	PUSH_RENDERGROUP("CPostFX::RenderBloom");
+
+	RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
+	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEFOGENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDONE);
+	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDZERO);
+
+	// 1. Bright-pass: pBackBuffer -> pBloomA
+	RwCameraEndUpdate(cam);
+	RwCameraBeginUpdate((RwCamera*)bloomCamA);
+	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, pBackBuffer);
+	{
+		float params[4] = { BloomThreshold, BloomKnee, 1.0f, 0.0f };
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(10, params, 1);
+		// brightpass also needs the source texel size for its 5-tap prefilter.
+		float texel[4] = {
+			1.0f / (float)g_postfxRtWidth,
+			1.0f / (float)g_postfxRtHeight,
+			0.0f, 0.0f
+		};
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(11, texel, 1);
+		rw::d3d::im2dOverridePS = brightpass_PS;
+		RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, Vertex, 4, Index, 6);
+	}
+	RwCameraEndUpdate((RwCamera*)bloomCamA);
+
+	// 2. Blur horizontal: pBloomA -> pBloomB
+	RwCameraBeginUpdate((RwCamera*)bloomCamB);
+	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, pBloomA);
+	{
+		float dir[4] = { 1.0f / (float)g_postfxRtWidth, 0.0f, 0.0f, 0.0f };
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(10, dir, 1);
+		rw::d3d::im2dOverridePS = bloomBlur_PS;
+		RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, Vertex, 4, Index, 6);
+	}
+	RwCameraEndUpdate((RwCamera*)bloomCamB);
+
+	// 3. Blur vertical: pBloomB -> pBloomA
+	RwCameraBeginUpdate((RwCamera*)bloomCamA);
+	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, pBloomB);
+	{
+		float dir[4] = { 0.0f, 1.0f / (float)g_postfxRtHeight, 0.0f, 0.0f };
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(10, dir, 1);
+		rw::d3d::im2dOverridePS = bloomBlur_PS;
+		RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, Vertex, 4, Index, 6);
+	}
+	RwCameraEndUpdate((RwCamera*)bloomCamA);
+
+	// 4. Additive composite onto the main camera target.
+	RwCameraBeginUpdate(cam);
+	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, pBloomA);
+	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDONE);
+	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDONE);
+	{
+		float mix[4] = { BloomIntensity, BloomSaturation, 0.0f, 0.0f };
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(10, mix, 1);
+		rw::d3d::im2dOverridePS = bloomComposite_PS;
+		RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, Vertex, 4, Index, 6);
+	}
+	rw::d3d::im2dOverridePS = nil;
+	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
+	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
+
+	POP_RENDERGROUP();
+#endif
+}
+#endif
+
+#ifdef POSTFX_GODRAYS
+void
+CPostFX::RenderGodRays(RwCamera *cam)
+{
+#ifdef RW_D3D9
+	if(!GodRaysEnable || godrays_PS == nil || pBloomA == nil)
+		return;
+
+	// Sun direction (world space) — only render when it's roughly in front
+	// of the camera so the rays converge to a visible point.
+	CVector sunDir = CTimeCycle::GetSunDirection();
+	rw::Camera *rwcam = (rw::Camera*)cam;
+	rw::V3d viewDir = rwcam->getFrame()->getLTM()->at;
+	float facing = sunDir.x*viewDir.x + sunDir.y*viewDir.y + sunDir.z*viewDir.z;
+	if(facing < 0.05f)
+		return;
+
+	// Project a far point along sunDir into clip space.
+	rw::V3d camPos = rwcam->getFrame()->getLTM()->pos;
+	rw::V3d sunWorld;
+	sunWorld.x = camPos.x + sunDir.x * 1000.0f;
+	sunWorld.y = camPos.y + sunDir.y * 1000.0f;
+	sunWorld.z = camPos.z + sunDir.z * 1000.0f;
+
+	rw::RawMatrix viewProj;
+	rw::RawMatrix::mult(&viewProj, &rwcam->devView, &rwcam->devProj);
+
+	// Column-major 4x4 multiply: clipCol = M * [x y z 1]^T
+	float clipX = sunWorld.x*viewProj.right.x  + sunWorld.y*viewProj.up.x  + sunWorld.z*viewProj.at.x  + viewProj.pos.x;
+	float clipY = sunWorld.x*viewProj.right.y  + sunWorld.y*viewProj.up.y  + sunWorld.z*viewProj.at.y  + viewProj.pos.y;
+	float clipW = sunWorld.x*viewProj.rightw   + sunWorld.y*viewProj.upw   + sunWorld.z*viewProj.atw   + viewProj.posw;
+	if(clipW <= 0.0f)
+		return;
+
+	float sunU = (clipX/clipW) * 0.5f + 0.5f;
+	float sunV = -(clipY/clipW) * 0.5f + 0.5f;
+	// Skip when the sun is well off the screen — rays would fly into the
+	// edge and look broken.
+	if(sunU < -0.5f || sunU > 1.5f || sunV < -0.5f || sunV > 1.5f)
+		return;
+
+	PUSH_RENDERGROUP("CPostFX::RenderGodRays");
+
+	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, pBloomA);
+	RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
+	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEFOGENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDONE);
+	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDONE);
+
+	float godParams[4] = { sunU, sunV, GodRaysDensity, GodRaysDecay };
+	rw::d3d::d3ddevice->SetPixelShaderConstantF(10, godParams, 1);
+
+	// Warm tint that fades as the sun gets close to the horizon — uses the
+	// dot-with-view facing factor as a cheap occlusion proxy.
+	float facingClamped = (facing > 1.0f) ? 1.0f : facing;
+	float godColor[4] = { 1.0f, 0.92f, 0.78f, GodRaysExposure * facingClamped };
+	rw::d3d::d3ddevice->SetPixelShaderConstantF(11, godColor, 1);
+
+	rw::d3d::im2dOverridePS = godrays_PS;
+	RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, Vertex, 4, Index, 6);
+	rw::d3d::im2dOverridePS = nil;
+
+	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
+	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
+
+	POP_RENDERGROUP();
+#endif
+}
+#endif
+
+#ifdef POSTFX_FXAA
+void
+CPostFX::RenderFXAA(RwCamera *cam)
+{
+#ifdef RW_D3D9
+	if(!FxaaEnable || fxaa_PS == nil || pBackBuffer == nil)
+		return;
+
+	PUSH_RENDERGROUP("CPostFX::RenderFXAA");
+
+	// Capture the current camera output as input for FXAA.
+	GetBackBuffer(cam);
+
+	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, pBackBuffer);
+	RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
+	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEFOGENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDONE);
+	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDZERO);
+
+	float params[4] = {
+		1.0f / (float)g_postfxRtWidth,
+		1.0f / (float)g_postfxRtHeight,
+		FxaaStrength,
+		0.0f
+	};
+	rw::d3d::d3ddevice->SetPixelShaderConstantF(10, params, 1);
+	rw::d3d::im2dOverridePS = fxaa_PS;
+	RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, Vertex, 4, Index, 6);
+	rw::d3d::im2dOverridePS = nil;
+
+	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
+	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
+
+	POP_RENDERGROUP();
+#endif
+}
+#endif
 
 bool
 CPostFX::NeedBackBuffer(void)
@@ -434,6 +832,26 @@ CPostFX::Render(RwCamera *cam, uint32 red, uint32 green, uint32 blue, uint32 blu
 		RenderOverlayShader(cam, red, green, blue, blur);
 		break;
 	}
+
+#ifdef POSTFX_BLOOM
+	if(BloomEnable && !bJustInitialised && type != MOTION_BLUR_SNIPER &&
+	   EffectSwitch != POSTFX_OFF && EffectSwitch != POSTFX_SIMPLE)
+		RenderBloom(cam);
+#endif
+
+#ifdef POSTFX_GODRAYS
+	// God rays reuse the (already populated) bright-pass buffer from bloom,
+	// so they must run after RenderBloom but before motion blur / FXAA.
+	if(GodRaysEnable && !bJustInitialised && type != MOTION_BLUR_SNIPER &&
+	   EffectSwitch != POSTFX_OFF && EffectSwitch != POSTFX_SIMPLE)
+		RenderGodRays(cam);
+#endif
+
+#ifdef POSTFX_FXAA
+	if(FxaaEnable && !bJustInitialised && type != MOTION_BLUR_SNIPER &&
+	   EffectSwitch != POSTFX_OFF)
+		RenderFXAA(cam);
+#endif
 
 	if(!bJustInitialised)
 		RenderMotionBlur(cam, 175.0f * CMBlur::Drunkness);

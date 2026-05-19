@@ -44,10 +44,13 @@ newoption {
 
 require("autoconf")
 
+-- librw vendor location. Switched to the fresh aap/librw clone in
+-- vendor/librw-aap; the old sentik/librw-advance submodule at vendor/librw is
+-- kept untouched for reference.
 if(_OPTIONS["with-librw"]) then
-	Librw = "vendor/librw"
+	Librw = "vendor/librw-aap"
 else
-	Librw = os.getenv("LIBRW") or "vendor/librw"
+	Librw = os.getenv("LIBRW") or "vendor/librw-aap"
 end
 
 function getsys(a)
@@ -75,6 +78,12 @@ workspace "reVC"
 	location "build"
 	symbols "Full"
 	staticruntime "off"
+
+	-- Enable MSVC multi-processor compilation (/MP) for both librw and reVC.
+	-- Premake maps this to <MultiProcessorCompilation>true</MultiProcessorCompilation>.
+	filter { "action:vs*" }
+		buildoptions { "/MP" }
+	filter {}
 
 	if _OPTIONS["with-asan"] then
 		buildoptions { "-fsanitize=address -g3 -fno-omit-frame-pointer" }
@@ -235,7 +244,9 @@ project "librw"
 		staticruntime "off"
 
 	filter "platforms:*RW34*"
-		flags { "ExcludeFromBuild" }
+		removefiles { path.join(Librw, "src/*.*") }
+		removefiles { path.join(Librw, "src/*/*.*") }
+		removefiles { path.join(Librw, "src/gl/*/*.*") }
 	filter  {}
 end
 
@@ -432,7 +443,7 @@ project "reVC"
 		includedirs { "src/fakerw" }
 		includedirs { Librw }
 		if(_OPTIONS["with-librw"]) then
-			libdirs { "vendor/librw/lib/%{cfg.platform}/%{cfg.buildcfg}" }
+			libdirs { path.join(Librw, "lib/%{cfg.platform}/%{cfg.buildcfg}") }
 		end
 		links { "rw" }
 

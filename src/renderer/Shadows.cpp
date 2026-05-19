@@ -26,6 +26,9 @@
 #include "CutsceneShadow.h"
 #include "Clock.h"
 #include "VarConsole.h"
+#ifdef SOFT_SHADOWS
+#include "postfx.h"
+#endif
 
 #ifdef DEBUGMENU
 //SETTWEAKPATH("Shadows");
@@ -997,6 +1000,35 @@ void
 CShadows::StoreShadowForTree(CEntity *pTree)
 {
 	ASSERT(pTree != nil);
+
+#ifdef TREE_SHADOWS
+	if ( CTimeCycle::GetShadowStrength() == 0 )
+		return;
+
+	if ( pTree->GetUp().z < 0.5f )
+		return;
+
+	float fTreeHeight = pTree->GetBoundRadius();
+	if ( fTreeHeight < 2.0f )
+		fTreeHeight = 2.0f;
+	else if ( fTreeHeight > 14.0f )
+		fTreeHeight = 14.0f;
+	float fTreeWidth = fTreeHeight * 0.35f;
+	float fHalfHeight = fTreeHeight * 0.5f;
+
+	CVector TreePos = pTree->GetPosition();
+	TreePos.x += -CTimeCycle::GetSunDirection().x * fHalfHeight;
+	TreePos.y += -CTimeCycle::GetSunDirection().y * fHalfHeight;
+
+	StoreStaticShadow((uintptr)pTree + _TODOCONST(73), SHADOWTYPE_DARK, gpPostShadowTex, &TreePos,
+			-CTimeCycle::GetSunDirection().x * fHalfHeight,
+			-CTimeCycle::GetSunDirection().y * fHalfHeight,
+			CTimeCycle::GetShadowSideX() * fTreeWidth,
+			CTimeCycle::GetShadowSideY() * fTreeWidth,
+			2 * (int32)((pTree->GetUp().z - 0.5f) * CTimeCycle::GetShadowStrength() * 2.0f) / 3,
+			0, 0, 0,
+			18.0f, 1.0f, 50.0f, false, 0.0f);
+#endif
 }
 
 
@@ -1071,6 +1103,10 @@ CShadows::RenderStoredShadows(void)
 	RwRenderStateSet(rwRENDERSTATEZTESTENABLE,       (void *)TRUE);
 	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void *)TRUE);
 	RwRenderStateSet(rwRENDERSTATETEXTUREADDRESS,    (void *)rwTEXTUREADDRESSCLAMP);
+
+#ifdef SOFT_SHADOWS
+	EnableShadowPCF(128);
+#endif
 
 
 	for ( int32 i = 0; i < ShadowsStoredToBeRendered; i++ )
@@ -1232,6 +1268,10 @@ CShadows::RenderStoredShadows(void)
 		}
 	}
 
+#ifdef SOFT_SHADOWS
+	DisableShadowPCF();
+#endif
+
 	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void *)FALSE);
 	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE,      (void *)TRUE);
 	RwRenderStateSet(rwRENDERSTATEZTESTENABLE,       (void *)TRUE);
@@ -1256,6 +1296,10 @@ CShadows::RenderStaticShadows(void)
 	RwRenderStateSet(rwRENDERSTATEFOGENABLE,         (void *)FALSE);
 
 	SetAlphaTest(0);
+
+#ifdef SOFT_SHADOWS
+	EnableShadowPCF(128);
+#endif
 
 	for ( int32 i = 0; i < MAX_STATICSHADOWS; i++ )
 		aStaticShadows[i].m_bRendered = false;
@@ -1311,6 +1355,10 @@ CShadows::RenderStaticShadows(void)
 		}
 	}
 	RestoreAlphaTest();
+
+#ifdef SOFT_SHADOWS
+	DisableShadowPCF();
+#endif
 
 	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void *)FALSE);
 	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE,      (void *)TRUE);

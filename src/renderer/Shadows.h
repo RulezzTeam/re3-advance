@@ -1,9 +1,12 @@
 #pragma once
 
-#define MAX_STOREDSHADOWS    48
-#define MAX_POLYBUNCHES      380
-#define MAX_STATICSHADOWS    48
-#define MAX_PERMAMENTSHADOWS 48
+// Bumped from the original 48/380 limits — modern hardware easily handles
+// a dense Vice City night with hundreds of pedestrians, vehicles and
+// lampposts. ~64KB extra RAM per array entry × 4 arrays = trivially small.
+#define MAX_STOREDSHADOWS    256
+#define MAX_POLYBUNCHES      2048
+#define MAX_STATICSHADOWS    256
+#define MAX_PERMAMENTSHADOWS 256
 
 
 

@@ -13,6 +13,7 @@
 #include "TxdStore.h"
 #include "Renderer.h"
 #include "World.h"
+#include "Camera.h"
 #include "custompipes.h"
 
 #ifndef LIBRW
@@ -47,9 +48,33 @@ CustomMatCopy(void *dst, void *src, int32, int32)
 rw::TexDictionary *neoTxd;
 
 bool bRenderingEnvMap;
-int32 EnvMapSize = 128;
+// Menu-tweakable resolution preference. The actual EnvMapSize is sampled
+// from this at CustomPipeInit() (next game launch after a change).
+int32 EnvMapSizePref = 1024;
+int8  EnvMapSizeIndex = 2;	// 0=256, 1=512, 2=1024, 3=2048
+int32 EnvMapSize = 1024;	// 8x sharper than the original 128 default
+#ifdef MULTI_ENVMAP
+// Round-robin slots. Slot 0 follows the player; the others sample different
+// forward distances so neighbouring vehicles get more representative reflections.
+rw::Camera *EnvMapCams[NUM_ENVMAPS];
+rw::Texture *EnvMapTexs[NUM_ENVMAPS];
+rw::Camera *EnvMapCam;            // alias for EnvMapCams[0] — keeps old call sites working
+rw::Texture *EnvMapTex;           // alias for EnvMapTexs[0]
+static int  envMapCurrentSlot;    // which slot to update this frame
+// 16 sample-point distances with a near-quadratic spacing — denser sampling
+// close to the player (where most vehicles are visible) and sparser at
+// distance (where reflection accuracy matters less). Slot 0 stays on the
+// player.
+static const float envMapForwardOffsets[NUM_ENVMAPS] = {
+	  0.0f,   8.0f,  18.0f,  30.0f,
+	 44.0f,  60.0f,  78.0f,  98.0f,
+	120.0f, 144.0f, 170.0f, 200.0f,
+	232.0f, 268.0f, 308.0f, 350.0f
+};
+#else
 rw::Camera *EnvMapCam;
 rw::Texture *EnvMapTex;
+#endif
 rw::Texture *EnvMaskTex;
 static rw::RWDEVICE::Im2DVertex EnvScreenQuad[4];
 static int16 QuadIndices[6] = { 0, 1, 2, 0, 2, 3 };
@@ -120,6 +145,37 @@ RenderEnvMapScene(void)
 	CRenderer::RenderFadingInEntities();
 }
 
+#ifdef MULTI_ENVMAP
+static void
+RenderOneEnvMap(rw::Camera *cam, const rw::V3d &samplePos)
+{
+	cam->getFrame()->matrix.pos = samplePos;
+	cam->getFrame()->transform(&cam->getFrame()->matrix, rw::COMBINEREPLACE);
+
+	rw::RGBA skycol;
+	skycol.red = CTimeCycle::GetSkyBottomRed();
+	skycol.green = CTimeCycle::GetSkyBottomGreen();
+	skycol.blue = CTimeCycle::GetSkyBottomBlue();
+	skycol.alpha = 255;
+	cam->clear(&skycol, rwCAMERACLEARZ|rwCAMERACLEARIMAGE);
+	RwCameraBeginUpdate(cam);
+	bRenderingEnvMap = true;
+	RenderEnvMapScene();
+	bRenderingEnvMap = false;
+
+	if(EnvMaskTex){
+		rw::SetRenderState(rw::VERTEXALPHA, TRUE);
+		rw::SetRenderState(rw::SRCBLEND, rw::BLENDZERO);
+		rw::SetRenderState(rw::DESTBLEND, rw::BLENDSRCCOLOR);
+		rw::SetRenderStatePtr(rw::TEXTURERASTER, EnvMaskTex->raster);
+		rw::im2d::RenderIndexedPrimitive(rw::PRIMTYPETRILIST, EnvScreenQuad, 4, QuadIndices, 6);
+		rw::SetRenderState(rw::SRCBLEND, rw::BLENDSRCALPHA);
+		rw::SetRenderState(rw::DESTBLEND, rw::BLENDINVSRCALPHA);
+	}
+	RwCameraEndUpdate(cam);
+}
+#endif
+
 void
 EnvMapRender(void)
 {
@@ -128,6 +184,22 @@ EnvMapRender(void)
 
 	RwCameraEndUpdate(Scene.camera);
 
+#ifdef MULTI_ENVMAP
+	// Update one slot per frame round-robin to spread cost. Each slot is
+	// centred at a different forward offset from the camera so vehicles at
+	// varying distances get plausible reflections.
+	int slot = envMapCurrentSlot;
+	envMapCurrentSlot = (envMapCurrentSlot + 1) % NUM_ENVMAPS;
+
+	rw::V3d camPos = FindPlayerCoors();
+	rw::V3d camAt = TheCamera.GetForward();	// world-space forward vector
+	rw::V3d samplePos;
+	samplePos.x = camPos.x + camAt.x * envMapForwardOffsets[slot];
+	samplePos.y = camPos.y + camAt.y * envMapForwardOffsets[slot];
+	samplePos.z = camPos.z + camAt.z * envMapForwardOffsets[slot];
+	if(EnvMapCams[slot])
+		RenderOneEnvMap(EnvMapCams[slot], samplePos);
+#else
 	// Neo does this differently, but i'm not quite convinced it's much better
 	rw::V3d camPos = FindPlayerCoors();
 	EnvMapCam->getFrame()->matrix.pos = camPos;
@@ -154,6 +226,7 @@ EnvMapRender(void)
 		rw::SetRenderState(rw::DESTBLEND, rw::BLENDINVSRCALPHA);
 	}
 	RwCameraEndUpdate(EnvMapCam);
+#endif
 
 
 	RwCameraBeginUpdate(Scene.camera);
@@ -163,13 +236,49 @@ EnvMapRender(void)
 //	rw::im2d::RenderIndexedPrimitive(rw::PRIMTYPETRILIST, EnvScreenQuad, 4, QuadIndices, 6);
 }
 
+#ifdef MULTI_ENVMAP
+// Pick the slot whose sample point is closest to the vehicle. Works for any
+// NUM_ENVMAPS by walking the offset table.
+int
+EnvMapSlotFor(const rw::V3d &worldPos)
+{
+	rw::V3d camPos = TheCamera.GetPosition();
+	rw::V3d delta;
+	delta.x = worldPos.x - camPos.x;
+	delta.y = worldPos.y - camPos.y;
+	delta.z = worldPos.z - camPos.z;
+	float dist = sqrtf(delta.x*delta.x + delta.y*delta.y + delta.z*delta.z);
+	int best = 0;
+	float bestDelta = 1e30f;
+	for(int i = 0; i < NUM_ENVMAPS; i++){
+		float d = dist - envMapForwardOffsets[i];
+		if(d < 0) d = -d;
+		if(d < bestDelta){
+			bestDelta = d;
+			best = i;
+		}
+	}
+	return best;
+}
+#endif
+
 static void
 EnvMapInit(void)
 {
 	if(neoTxd)
 		EnvMaskTex = neoTxd->find("CarReflectionMask");
 
+#ifdef MULTI_ENVMAP
+	for(int i = 0; i < NUM_ENVMAPS; i++){
+		EnvMapCams[i] = CreateEnvMapCam(Scene.world);
+		EnvMapTexs[i] = EnvMapTex;	// CreateEnvMapCam wrote into the global
+		EnvMapTex = nil;
+	}
+	EnvMapCam = EnvMapCams[0];	// alias for legacy callers
+	EnvMapTex = EnvMapTexs[0];
+#else
 	EnvMapCam = CreateEnvMapCam(Scene.world);
+#endif
 
 	int width = EnvMapCam->frameBuffer->width;
 	int height = EnvMapCam->frameBuffer->height;
@@ -213,14 +322,63 @@ EnvMapInit(void)
 	EnvScreenQuad[3].setV(0.0f, recipZ);
 }
 
+#ifdef MULTI_ENVMAP
+static void EnvMapShutdown(void);
+static void EnvMapInit(void);
+
+void
+RebuildEnvMaps(void)
+{
+	if(EnvMapCams[0] == nil)
+		return;	// not initialised yet — first CustomPipeInit will pick up the new size
+	int32 size = EnvMapSizePref;
+	if(size <= 256) size = 256;
+	else if(size <= 512) size = 512;
+	else if(size <= 1024) size = 1024;
+	else size = 2048;
+	if(size == EnvMapSize)
+		return;
+	EnvMapShutdown();
+	EnvMapSize = size;
+	EnvMapInit();
+}
+
+void
+EnvMapSizeAfterChange(int8 before, int8 after)
+{
+	static const int32 kSizeTable[4] = { 256, 512, 1024, 2048 };
+	int8 idx = after;
+	if(idx < 0) idx = 0;
+	if(idx > 3) idx = 3;
+	EnvMapSizePref = kSizeTable[idx];
+	RebuildEnvMaps();
+}
+#endif
+
 static void
 EnvMapShutdown(void)
 {
+#ifdef MULTI_ENVMAP
+	for(int i = 0; i < NUM_ENVMAPS; i++){
+		if(EnvMapTexs[i]){
+			EnvMapTexs[i]->raster = nil;
+			EnvMapTexs[i]->destroy();
+			EnvMapTexs[i] = nil;
+		}
+		if(EnvMapCams[i]){
+			DestroyCam(EnvMapCams[i]);
+			EnvMapCams[i] = nil;
+		}
+	}
+	EnvMapCam = nil;
+	EnvMapTex = nil;
+#else
 	EnvMapTex->raster = nil;
 	EnvMapTex->destroy();
 	EnvMapTex = nil;
 	DestroyCam(EnvMapCam);
 	EnvMapCam = nil;
+#endif
 }
 
 /*
@@ -466,6 +624,23 @@ AttachRimPipe(rw::Clump *clump)
 void
 CustomPipeInit(void)
 {
+#if defined(PER_PIXEL_LIGHTING) && defined(RW_D3D9)
+	// Switch librw's default/skin render path to the per-pixel lighting
+	// variants. This must happen before any geometry is drawn.
+	rw::d3d::perPixelLightingEnabled = true;
+#endif
+#ifdef MULTI_ENVMAP
+	// Snapshot the user-selected resolution at init time. Valid values are
+	// 256, 512, 1024, 2048; anything else gets clamped to the next valid
+	// step.
+	int32 size = EnvMapSizePref;
+	if(size < 256) size = 256;
+	else if(size < 512) size = 256;
+	else if(size < 1024) size = 512;
+	else if(size < 2048) size = 1024;
+	else size = 2048;
+	EnvMapSize = size;
+#endif
 	RwStream *stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, "neo/neo.txd");
 	if(stream == nil)
 		printf("Error: couldn't open 'neo/neo.txd'\n");

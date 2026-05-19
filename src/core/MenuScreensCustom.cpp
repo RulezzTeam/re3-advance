@@ -88,7 +88,63 @@
 		MENUACTION_CFO_SELECT, "FED_MBL", { new CCFOSelect((int8*)&CPostFX::MotionBlurOn, "Graphics", "MotionBlur", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
 #else
 	#define POSTFX_SELECTORS
-#endif	
+#endif
+
+// Advanced postfx selectors. Each block is gated behind its compile-time
+// flag so platforms without the corresponding shaders just compile them out.
+#ifdef POSTFX_BLOOM
+	#define POSTFX_BLOOM_SELECTORS \
+		MENUACTION_CFO_SELECT, "FED_BLM", { new CCFOSelect((int8*)&CPostFX::BloomEnable, "Graphics", "Bloom", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_BLT", { new CCFOSlider(&CPostFX::BloomThreshold, "Graphics", "BloomThreshold", 0.0f, 2.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_BLI", { new CCFOSlider(&CPostFX::BloomIntensity, "Graphics", "BloomIntensity", 0.0f, 2.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_BLS", { new CCFOSlider(&CPostFX::BloomSaturation, "Graphics", "BloomSaturation", 0.0f, 3.0f) }, 0, 0, MENUALIGN_LEFT,
+#else
+	#define POSTFX_BLOOM_SELECTORS
+#endif
+
+#ifdef POSTFX_TONEMAP
+	#define POSTFX_TONEMAP_SELECTORS \
+		MENUACTION_CFO_SELECT, "FED_ACS", { new CCFOSelect((int8*)&CPostFX::TonemapACES, "Graphics", "TonemapACES", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_GAM", { new CCFOSelect((int8*)&CPostFX::TonemapGamma, "Graphics", "TonemapGamma", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_EXP", { new CCFOSlider(&CPostFX::Exposure, "Graphics", "Exposure", 0.25f, 3.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_SAT", { new CCFOSlider(&CPostFX::Saturation, "Graphics", "Saturation", 0.0f, 2.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_VGI", { new CCFOSlider(&CPostFX::VignetteIntensity, "Graphics", "VignetteIntensity", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_VGS", { new CCFOSlider(&CPostFX::VignetteSoftness, "Graphics", "VignetteSoftness", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_CAS", { new CCFOSlider(&CPostFX::CAStrength, "Graphics", "ChromaticAberration", 0.0f, 0.02f) }, 0, 0, MENUALIGN_LEFT,
+#else
+	#define POSTFX_TONEMAP_SELECTORS
+#endif
+
+#ifdef POSTFX_FXAA
+	#define POSTFX_FXAA_SELECTORS \
+		MENUACTION_CFO_SELECT, "FED_FXA", { new CCFOSelect((int8*)&CPostFX::FxaaEnable, "Graphics", "FXAA", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_FXS", { new CCFOSlider(&CPostFX::FxaaStrength, "Graphics", "FXAAStrength", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT,
+#else
+	#define POSTFX_FXAA_SELECTORS
+#endif
+
+#ifdef POSTFX_GODRAYS
+	#define POSTFX_GODRAYS_SELECTORS \
+		MENUACTION_CFO_SELECT, "FED_GDR", { new CCFOSelect((int8*)&CPostFX::GodRaysEnable, "Graphics", "GodRays", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_GDE", { new CCFOSlider(&CPostFX::GodRaysExposure, "Graphics", "GodRaysExposure", 0.0f, 2.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_GDD", { new CCFOSlider(&CPostFX::GodRaysDensity, "Graphics", "GodRaysDensity", 0.3f, 1.5f) }, 0, 0, MENUALIGN_LEFT,
+#else
+	#define POSTFX_GODRAYS_SELECTORS
+#endif
+
+#ifdef SOFT_SHADOWS
+	#define POSTFX_SHADOWS_SELECTORS \
+		MENUACTION_CFO_SLIDER, "FED_PCR", { new CCFOSlider(&shadowPCFRadius, "Graphics", "ShadowPCFRadius", 0.5f, 3.5f) }, 0, 0, MENUALIGN_LEFT,
+#else
+	#define POSTFX_SHADOWS_SELECTORS
+#endif
+
+#ifdef MULTI_ENVMAP
+	#define POSTFX_ENVMAP_SELECTORS \
+		MENUACTION_CFO_SELECT, "FED_EMR", { new CCFOSelect(&CustomPipes::EnvMapSizeIndex, "Graphics", "EnvMapSize", envMapSizes, ARRAY_SIZE(envMapSizes), false, CustomPipes::EnvMapSizeAfterChange) }, 0, 0, MENUALIGN_LEFT,
+#else
+	#define POSTFX_ENVMAP_SELECTORS
+#endif
 
 #ifdef INVERT_LOOK_FOR_PAD
 	#define INVERT_PAD_SELECTOR MENUACTION_CFO_SELECT, "FEC_ILU", { new CCFOSelect((int8*)&CPad::bInvertLook4Pad, "Controller", "InvertPad", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
@@ -104,6 +160,9 @@
 
 const char *filterNames[] = { "FEM_NON", "FEM_SIM", "FEM_NRM", "FEM_MOB" };
 const char *off_on[] = { "FEM_OFF", "FEM_ON" };
+#ifdef MULTI_ENVMAP
+const char *envMapSizes[] = { "256", "512", "1024", "2048" };
+#endif
 
 void RestoreDefGraphics(int8 action) {
 	if (action != FEOPTION_ACTION_SELECT)
@@ -785,6 +844,12 @@ CMenuScreenCustom aScreens[] = {
 #elif defined LEGACY_MENU_OPTIONS
 		MENUACTION_TRAILS,		"FED_TRA", { nil, SAVESLOT_NONE, MENUPAGE_GRAPHICS_SETTINGS }, 0, 0, MENUALIGN_LEFT,
 #endif
+		POSTFX_BLOOM_SELECTORS
+		POSTFX_TONEMAP_SELECTORS
+		POSTFX_FXAA_SELECTORS
+		POSTFX_GODRAYS_SELECTORS
+		POSTFX_SHADOWS_SELECTORS
+		POSTFX_ENVMAP_SELECTORS
 		// re3.cpp inserts here pipeline selectors if neo/neo.txd exists and EXTENDED_PIPELINES defined
 		MENUACTION_CFO_DYNAMIC,	"FET_DEF", { new CCFODynamic(nil, nil, nil, nil, RestoreDefGraphics) }, 320, 0, MENUALIGN_CENTER,
 		MENUACTION_GOBACK,		"FEDS_TB", {nil, SAVESLOT_NONE, MENUPAGE_NONE}, 320, 0, MENUALIGN_CENTER,

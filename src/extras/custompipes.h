@@ -79,6 +79,26 @@ extern bool bRenderingEnvMap;
 extern int32 EnvMapSize;
 extern rw::Camera *EnvMapCam;
 extern rw::Texture *EnvMapTex;
+#ifdef MULTI_ENVMAP
+// 16 cubemap-style sample slots covering player, mid-range traffic, and
+// distant skyline. At 1024x1024 this is ~128MB VRAM (color + depth), which
+// is comfortable on any GPU with 2+ GB.
+#define NUM_ENVMAPS 16
+extern rw::Camera *EnvMapCams[NUM_ENVMAPS];
+extern rw::Texture *EnvMapTexs[NUM_ENVMAPS];
+// Returns the slot best matched to a world-space vehicle position.
+int EnvMapSlotFor(const rw::V3d &worldPos);
+// Live-tweakable resolution selector (menu-bound). The value is read at
+// CustomPipeInit() time so changes apply on next launch.
+extern int32 EnvMapSizePref;
+// Menu-friendly index: 0=256, 1=512, 2=1024, 3=2048 (saved as int8).
+extern int8 EnvMapSizeIndex;
+// Rebuilds every EnvMap camera/texture with the current EnvMapSizePref.
+// Safe to call after Scene.world is initialised.
+void RebuildEnvMaps(void);
+// Menu AfterChange callback — translates index to size and rebuilds.
+void EnvMapSizeAfterChange(int8 before, int8 after);
+#endif
 extern rw::Texture *EnvMaskTex;
 void EnvMapRender(void);
 

@@ -73,6 +73,9 @@ uploadSpecLights(void)
 		}
 	}
 	rw::d3d::d3ddevice->SetVertexShaderConstantF(VSLOC_specLights, (float*)&specLights, 3*(1 + NUMEXTRADIRECTIONALS));
+	// Mirror to pixel shader registers — neoVehicle_PS evaluates specular
+	// highlights per-pixel.
+	rw::d3d::d3ddevice->SetPixelShaderConstantF(VSLOC_specLights, (float*)&specLights, 3*(1 + NUMEXTRADIRECTIONALS));
 }
 
 void
@@ -102,12 +105,22 @@ vehicleRenderCB(rw::Atomic *atomic, rw::d3d9::InstanceDataHeader *header)
 
 	V3d eyePos = rw::engine->currentCamera->getFrame()->getLTM()->pos;
 	d3ddevice->SetVertexShaderConstantF(VSLOC_eye, (float*)&eyePos, 1);
+	// neoVehicle_PS reads the eye position from c41 too.
+	d3ddevice->SetPixelShaderConstantF(VSLOC_eye, (float*)&eyePos, 1);
 
 	float reflProps[4];
 	reflProps[0] = Fresnel.Get();
 	reflProps[1] = SpecColor.Get().a;
 
+#ifdef MULTI_ENVMAP
+	// Pick the cubemap slot whose sample point is closest to this vehicle.
+	rw::V3d vehPos = atomic->getFrame()->getLTM()->pos;
+	int envSlot = EnvMapSlotFor(vehPos);
+	rw::Texture *envTex = EnvMapTexs[envSlot] ? EnvMapTexs[envSlot] : EnvMapTex;
+	d3d::setTexture(1, envTex);
+#else
 	d3d::setTexture(1, EnvMapTex);
+#endif
 
 	SetRenderState(SRCBLEND, BLENDONE);
 
@@ -120,6 +133,7 @@ vehicleRenderCB(rw::Atomic *atomic, rw::d3d9::InstanceDataHeader *header)
 		reflProps[2] = m->surfaceProps.specular * VehicleShininess;
 		reflProps[3] = m->surfaceProps.specular == 0.0f ? 0.0f : VehicleSpecularity;
 		d3ddevice->SetVertexShaderConstantF(VSLOC_reflProps, reflProps, 1);
+		d3ddevice->SetPixelShaderConstantF(VSLOC_reflProps, reflProps, 1);
 
 		setMaterial(flags, m->color, m->surfaceProps);
 
