@@ -13,7 +13,8 @@ struct VS_out {
 };
 
 sampler2D tex0 : register(s0);	// vehicle albedo
-sampler2D tex1 : register(s1);	// environment map (slot picked by host)
+sampler2D tex1 : register(s1);	// planar environment map (slot picked by host)
+samplerCUBE iblCaptureCube : register(s2);	// real-time sky+sun reflection cube (CIBL::captureCube)
 
 float4 fogColor   : register(c0);
 float3 eyePosPS   : register(c41);
@@ -22,6 +23,13 @@ float4 reflProps  : register(c42);
 // .y = light strength multiplier
 // .z = shininess (mix to reflection)
 // .w = specularity (specular highlight scale)
+
+// specLights array runs c43..c57 (5 entries × 3 vec4); c58+ is free.
+// .x = cube reflection blend (0 = legacy planar only, 1 = cube only)
+// .y = unused
+// .z = unused
+// .w = unused
+float4 reflProps2 : register(c58);
 
 struct SpecLight {
 	float4 color;	// .a = power
@@ -54,12 +62,18 @@ float4 main(VS_out input) : COLOR
 	float fresnel = lerp(f, 1.0, reflProps.x);
 	float reflStrength = saturate(fresnel * reflProps.z);
 
-	// Per-pixel reflection lookup using the planar unwrap.
+	// Per-pixel reflection lookup. The legacy 2D env-map gets a planar
+	// unwrap; the new IBL capture cube takes the world-space reflection
+	// vector directly — much more accurate at grazing angles. Blend
+	// factor (reflProps2.x) lets the host pick how cube-driven the
+	// reflection is at runtime.
 	float3 R = ReflectV(V, N);
 	float2 reflUv = R.xy * 0.5 + 0.5;
 
 	float4 diffuse = input.Color * tex2D(tex0, input.TexCoord0.xy);
-	float3 envmap = tex2D(tex1, reflUv).rgb;
+	float3 envmapPlanar = tex2D(tex1, reflUv).rgb;
+	float3 envmapCube   = texCUBE(iblCaptureCube, R).rgb;
+	float3 envmap = lerp(envmapPlanar, envmapCube, saturate(reflProps2.x));
 
 	float3 base = lerp(diffuse.rgb, envmap, reflStrength);
 

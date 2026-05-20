@@ -308,4 +308,13 @@ CIBL::UnbindReceiver(void)
 #endif
 }
 
+// External hook for vehiclePipe (custompipes_d3d9.cpp) — returns the
+// captureCube handle when CIBL is enabled and populated. Kept as a free
+// function so we don't have to drag the full ibl.h into custompipes.
+extern "C" void*
+CIBL_GetCaptureCube(void)
+{
+	return CIBL::Enabled ? CIBL::captureCube : nullptr;
+}
+
 #endif

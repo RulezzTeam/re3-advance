@@ -22,6 +22,12 @@
 
 extern RwTexture *gpWhiteTexture;	// from vehicle model info
 
+// CIBL captureCube accessor — implemented in src/extras/ibl.cpp under
+// POSTFX_HDR. extern "C" so name mangling can't desync the link path.
+#ifdef POSTFX_HDR
+extern "C" void *CIBL_GetCaptureCube(void);
+#endif
+
 namespace CustomPipes {
 
 enum {
@@ -130,6 +136,21 @@ vehicleRenderCB(rw::Atomic *atomic, rw::d3d9::InstanceDataHeader *header)
 	d3d::setTexture(1, EnvMapTex);
 #endif
 
+#ifdef POSTFX_HDR
+	// Bind the live sky+sun capture cube on s2 and tell the PS how much
+	// to blend it over the legacy planar env-map. When CIBL is off the
+	// blend is 0 and the planar reflection stays as-is — the cube
+	// branch costs only a sample that gets multiplied out. Declared
+	// extern at file scope so this lookup resolves to the global C
+	// symbol exported by ibl.cpp (not a CustomPipes::CIBL_GetCaptureCube
+	// that the namespace-default lookup would synthesise here).
+	void *capCube = ::CIBL_GetCaptureCube();
+	if(capCube)
+		rw::d3d::bindCubeToSampler(2, capCube);
+	float reflProps2[4] = { capCube ? 0.65f : 0.0f, 0.0f, 0.0f, 0.0f };
+	d3ddevice->SetPixelShaderConstantF(58, reflProps2, 1);
+#endif
+
 	SetRenderState(SRCBLEND, BLENDONE);
 
 	InstanceData *inst = header->inst;
@@ -156,6 +177,9 @@ vehicleRenderCB(rw::Atomic *atomic, rw::d3d9::InstanceDataHeader *header)
 	}
 
 	d3d::setTexture(1, nil);
+#ifdef POSTFX_HDR
+	rw::d3d::bindCubeToSampler(2, nil);
+#endif
 
 	SetRenderState(SRCBLEND, BLENDSRCALPHA);
 }
