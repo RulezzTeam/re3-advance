@@ -89,13 +89,19 @@ void*
 createIndexBuffer(uint32 length, bool dynamic)
 {
 #ifdef RW_D3D9
-	IDirect3DIndexBuffer9 *ibuf;
+	// Explicit null-init — D3D9 drivers may leave the out parameter
+	// untouched on failure, and an uninitialised stack pointer (MSVC
+	// /RTC fills 0xCC) would otherwise propagate back as a valid-looking
+	// COM handle. Check the HRESULT, not just the pointer.
+	IDirect3DIndexBuffer9 *ibuf = nullptr;
+	HRESULT hr;
 	if(dynamic)
-		d3ddevice->CreateIndexBuffer(length, D3DUSAGE_WRITEONLY|D3DUSAGE_DYNAMIC, D3DFMT_INDEX16, D3DPOOL_DEFAULT, &ibuf, 0);
+		hr = d3ddevice->CreateIndexBuffer(length, D3DUSAGE_WRITEONLY|D3DUSAGE_DYNAMIC, D3DFMT_INDEX16, D3DPOOL_DEFAULT, &ibuf, 0);
 	else
-		d3ddevice->CreateIndexBuffer(length, D3DUSAGE_WRITEONLY, D3DFMT_INDEX16, D3DPOOL_MANAGED, &ibuf, 0);
-	if(ibuf)
-		d3d9Globals.numIndexBuffers++;
+		hr = d3ddevice->CreateIndexBuffer(length, D3DUSAGE_WRITEONLY, D3DFMT_INDEX16, D3DPOOL_MANAGED, &ibuf, 0);
+	if(FAILED(hr) || ibuf == nullptr)
+		return nullptr;
+	d3d9Globals.numIndexBuffers++;
 	return ibuf;
 #else
 	return rwNewT(uint8, length, MEMDUR_EVENT | ID_DRIVER);
@@ -122,9 +128,14 @@ lockIndices(void *indexBuffer, uint32 offset, uint32 size, uint32 flags)
 	if(indexBuffer == nil)
 		return nil;
 #ifdef RW_D3D9
-	uint16 *indices;
+	// Null-init the out pointer + check HRESULT — Lock can fail on
+	// a lost device or invalid range. Return nullptr so callers can
+	// notice and skip, instead of writing into stack-uninit pattern.
+	uint16 *indices = nullptr;
 	IDirect3DIndexBuffer9 *ibuf = (IDirect3DIndexBuffer9*)indexBuffer;
-	ibuf->Lock(offset, size, (void**)&indices, flags);
+	HRESULT hr = ibuf->Lock(offset, size, (void**)&indices, flags);
+	if(FAILED(hr) || indices == nullptr)
+		return nullptr;
 	return indices;
 #else
 	(void)offset;
@@ -149,13 +160,16 @@ void*
 createVertexBuffer(uint32 length, uint32 fvf, bool dynamic)
 {
 #ifdef RW_D3D9
-	IDirect3DVertexBuffer9 *vbuf;
+	// Same null-init + HRESULT pattern as createIndexBuffer above.
+	IDirect3DVertexBuffer9 *vbuf = nullptr;
+	HRESULT hr;
 	if(dynamic)
-		d3ddevice->CreateVertexBuffer(length, D3DUSAGE_WRITEONLY|D3DUSAGE_DYNAMIC, fvf, D3DPOOL_DEFAULT, &vbuf, 0);
+		hr = d3ddevice->CreateVertexBuffer(length, D3DUSAGE_WRITEONLY|D3DUSAGE_DYNAMIC, fvf, D3DPOOL_DEFAULT, &vbuf, 0);
 	else
-		d3ddevice->CreateVertexBuffer(length, D3DUSAGE_WRITEONLY, fvf, D3DPOOL_MANAGED, &vbuf, 0);
-	if(vbuf)
-		d3d9Globals.numVertexBuffers++;
+		hr = d3ddevice->CreateVertexBuffer(length, D3DUSAGE_WRITEONLY, fvf, D3DPOOL_MANAGED, &vbuf, 0);
+	if(FAILED(hr) || vbuf == nullptr)
+		return nullptr;
+	d3d9Globals.numVertexBuffers++;
 	return vbuf;
 #else
 	(void)fvf;
@@ -183,9 +197,11 @@ lockVertices(void *vertexBuffer, uint32 offset, uint32 size, uint32 flags)
 	if(vertexBuffer == nil)
 		return nil;
 #ifdef RW_D3D9
-	uint8 *verts;
+	uint8 *verts = nullptr;
 	IDirect3DVertexBuffer9 *vertbuf = (IDirect3DVertexBuffer9*)vertexBuffer;
-	vertbuf->Lock(offset, size, (void**)&verts, flags);
+	HRESULT hr = vertbuf->Lock(offset, size, (void**)&verts, flags);
+	if(FAILED(hr) || verts == nullptr)
+		return nullptr;
 	return verts;
 #else
 	(void)offset;
@@ -210,11 +226,27 @@ void*
 createTexture(int32 width, int32 height, int32 numlevels, uint32 usage, uint32 format)
 {
 #ifdef RW_D3D9
-	IDirect3DTexture9 *tex;
-	d3ddevice->CreateTexture(width, height, numlevels, usage,
-	                      (D3DFORMAT)format, D3DPOOL_MANAGED, &tex, nil);
-	if(tex)
-		d3d9Globals.numTextures++;
+	// === Root-cause fix for "0xCCCCCCCC in natras->texture" crash ===
+	//
+	// MSVC debug builds with /RTC1 fill uninitialised stack locals with
+	// 0xCC. The previous code had `IDirect3DTexture9 *tex;` (no init).
+	// When CreateTexture fails on certain drivers (out of VRAM, format
+	// not supported as MANAGED, lost device, etc) it returns FAILED(hr)
+	// WITHOUT touching the out parameter — leaving `tex` as 0xCCCCCCCC.
+	// `if(tex)` then evaluated 0xCC as truthy, the bogus pointer
+	// propagated to natras->texture, and later `tex->GetLevelCount()`
+	// inside readNativeTexture would access-violate at the bogus addr.
+	//
+	// Fix: zero-init `tex`, check HRESULT, return nullptr on failure.
+	IDirect3DTexture9 *tex = nullptr;
+	HRESULT hr = d3ddevice->CreateTexture(width, height, numlevels, usage,
+	                                      (D3DFORMAT)format, D3DPOOL_MANAGED, &tex, nil);
+	if(FAILED(hr) || tex == nullptr){
+		// Callers (rasterCreateTexture, allocateDXT, …) handle the
+		// nullptr return cleanly by setting DONTALLOCATE / RWERROR.
+		return nullptr;
+	}
+	d3d9Globals.numTextures++;
 	return tex;
 #else
 	int32 w = width;
@@ -457,17 +489,21 @@ rasterCreateCameraTexture(Raster *raster)
 	else
 		levels = 1;
 
-	IDirect3DTexture9 *tex;
-	d3ddevice->CreateTexture(raster->width, raster->height,
+	// Null-init + HRESULT check — same root-cause discipline as
+	// createTexture. CAMERATEXTURE in D3DPOOL_DEFAULT is more failure-
+	// prone than MANAGED textures (VRAM pressure, MSAA mismatch, format
+	// caps) so this path is the more frequent trigger of the bug.
+	IDirect3DTexture9 *tex = nullptr;
+	HRESULT hr = d3ddevice->CreateTexture(raster->width, raster->height,
 				levels,
 				(natras->autogenMipmap ? D3DUSAGE_AUTOGENMIPMAP : 0) | D3DUSAGE_RENDERTARGET,
 				(D3DFORMAT)natras->format, D3DPOOL_DEFAULT, &tex, nil);
-	assert(natras->texture == nil);
-	natras->texture = tex;
-	if(natras->texture == nil){
+	if(FAILED(hr) || tex == nullptr){
 		RWERROR((ERR_NOTEXTURE));
+		natras->texture = nil;	// already nil from createNativeRaster but be explicit
 		return nil;
 	}
+	natras->texture = tex;
 	d3d9Globals.numTextures++;
 	addVidmemRaster(raster);
 	return raster;
@@ -504,16 +540,19 @@ rasterCreateZbuffer(Raster *raster)
 	if(rect.right == raster->width && rect.bottom == raster->height)
 		natras->texture = d3d9Globals.defaultDepthSurf;
 	else{
-		IDirect3DSurface9 *surf = nil;
-		d3ddevice->CreateDepthStencilSurface(raster->width, raster->height, (D3DFORMAT)natras->format,
+		// Null-init + HRESULT. Depth-stencil creation can fail when
+		// format isn't supported with current MSAA mode — common with
+		// 16F depth requests on older hardware.
+		IDirect3DSurface9 *surf = nullptr;
+		HRESULT hr = d3ddevice->CreateDepthStencilSurface(raster->width, raster->height, (D3DFORMAT)natras->format,
 			d3d9Globals.present.MultiSampleType, d3d9Globals.present.MultiSampleQuality,
 			FALSE, &surf, nil);
-		assert(natras->texture == nil);
-		natras->texture = surf;
-		if(natras->texture == nil){
+		if(FAILED(hr) || surf == nullptr){
 			RWERROR((ERR_NOTEXTURE));
+			natras->texture = nil;
 			return nil;
 		}
+		natras->texture = surf;
 	}
 	addVidmemRaster(raster);
 
@@ -581,16 +620,32 @@ rasterLock(Raster *raster, int32 level, int32 lockMode)
 	if(lockMode & Raster::LOCKREAD)
 		flags |= D3DLOCK_READONLY | D3DLOCK_NO_DIRTY_UPDATE;
 	IDirect3DTexture9 *tex = (IDirect3DTexture9*)natras->texture;
-	IDirect3DSurface9 *surf, *rt;
-	D3DLOCKED_RECT lr;
+	// Defensive: if rasterCreateTexture / allocateDXT / camera-tex
+	// creation paths produced a raster with no underlying d3d resource
+	// (CreateTexture failed, format unsupported, …), `tex` is nullptr.
+	// Return nil — that's the lock() contract for "couldn't lock", and
+	// callers (rasterFromImage, readNativeTexture, …) handle it.
+	if(tex == nullptr)
+		return nil;
+	// All out-pointers explicitly null-init so a failed GetSurfaceLevel
+	// or CreateOffscreenPlainSurface doesn't propagate stack garbage.
+	IDirect3DSurface9 *surf = nullptr;
+	IDirect3DSurface9 *rt   = nullptr;
+	D3DLOCKED_RECT lr = {};
 
 	switch(raster->type){
 	case Raster::NORMAL:
 	case Raster::TEXTURE: {
-		tex->GetSurfaceLevel(level, &surf);
+		HRESULT hr = tex->GetSurfaceLevel(level, &surf);
+		if(FAILED(hr) || surf == nullptr)
+			return nil;
 		natras->lockedSurf = surf;
 		HRESULT res = surf->LockRect(&lr, 0, flags);
-		assert(res == D3D_OK);
+		if(FAILED(res) || lr.pBits == nullptr){
+			surf->Release();
+			natras->lockedSurf = nullptr;
+			return nil;
+		}
 		break;
 		}
 
@@ -598,24 +653,44 @@ rasterLock(Raster *raster, int32 level, int32 lockMode)
 	case Raster::CAMERA: {
 		if(lockMode & Raster::PRIVATELOCK_WRITE)
 			assert(0 && "can't lock framebuffer for writing");
-		if(raster->type == Raster::CAMERA)
+		HRESULT hr;
+		if(raster->type == Raster::CAMERA){
 			rt = d3d9Globals.defaultRenderTarget;
-		else
-			tex->GetSurfaceLevel(level, &rt);
-		D3DSURFACE_DESC desc;
-		rt->GetDesc(&desc);
-		HRESULT res = d3ddevice->CreateOffscreenPlainSurface(desc.Width, desc.Height, desc.Format, D3DPOOL_SYSTEMMEM, &surf, nil);
-		if(res != D3D_OK)
+			if(rt == nullptr) return nil;
+		}else{
+			hr = tex->GetSurfaceLevel(level, &rt);
+			if(FAILED(hr) || rt == nullptr) return nil;
+		}
+		D3DSURFACE_DESC desc = {};
+		if(FAILED(rt->GetDesc(&desc))){
+			if(raster->type == Raster::CAMERATEXTURE) rt->Release();
 			return nil;
-		d3ddevice->GetRenderTargetData(rt, surf);
+		}
+		HRESULT res = d3ddevice->CreateOffscreenPlainSurface(desc.Width, desc.Height, desc.Format, D3DPOOL_SYSTEMMEM, &surf, nil);
+		if(FAILED(res) || surf == nullptr){
+			if(raster->type == Raster::CAMERATEXTURE) rt->Release();
+			return nil;
+		}
+		hr = d3ddevice->GetRenderTargetData(rt, surf);
+		// rt was AddRef'd by GetSurfaceLevel — release the CAMERATEXTURE one
+		if(raster->type == Raster::CAMERATEXTURE) rt->Release();
+		if(FAILED(hr)){
+			surf->Release();
+			return nil;
+		}
 		natras->lockedSurf = surf;
 		res = surf->LockRect(&lr, 0, flags);
-		assert(res == D3D_OK);
+		if(FAILED(res) || lr.pBits == nullptr){
+			surf->Release();
+			natras->lockedSurf = nullptr;
+			return nil;
+		}
 		break;
 		}
 
 	default:
 		assert(0 && "can't lock this raster type (yet)");
+		return nil;
 	}
 
 	raster->pixels = (uint8*)lr.pBits;
@@ -999,6 +1074,13 @@ allocateDXT(Raster *raster, int32 dxt, int32 numLevels, bool32 hasAlpha)
 	                             numLevels,
 	                             ras->autogenMipmap ? D3DUSAGE_AUTOGENMIPMAP : 0,
 	                             ras->format);
+	// If CreateTexture failed (out of VRAM, unsupported DXT+AUTOGENMIPMAP
+	// combo, …), keep DONTALLOCATE set so subsequent setTexels skips this
+	// raster gracefully rather than dereferencing nullptr texture.
+	if(ras->texture == nullptr){
+		raster->flags |= Raster::DONTALLOCATE;
+		return;
+	}
 	raster->flags &= ~Raster::DONTALLOCATE;
 }
 
@@ -1020,13 +1102,20 @@ setTexels(Raster *raster, void *texels, int32 level)
 static void*
 createNativeRaster(void *object, int32 offset, int32)
 {
-	D3dRaster *raster = PLUGINOFFSET(D3dRaster, object, offset);
-	raster->texture = nil;
-	raster->palette = nil;
-	raster->lockedSurf = nil;
-	raster->format = 0;
-	raster->hasAlpha = 0;
-	raster->customFormat = 0;
+	// Zero EVERY field. The previous version left bpp and
+	// autogenMipmap uninitialised — those get overwritten later by
+	// rasterSetFormat, but any code path that reads them between
+	// construct and setFormat would see MSVC /RTC stack-fill (0xCC)
+	// or heap-fill (0xCD). Belt-and-suspenders: explicit zero.
+	D3dRaster *r = PLUGINOFFSET(D3dRaster, object, offset);
+	r->texture       = nil;
+	r->palette       = nil;
+	r->lockedSurf    = nil;
+	r->format        = 0;
+	r->bpp           = 0;
+	r->hasAlpha      = 0;
+	r->customFormat  = 0;
+	r->autogenMipmap = 0;
 	return object;
 }
 
@@ -1043,35 +1132,55 @@ destroyNativeRaster(void *object, int32 offset, int32)
 	case Raster::NORMAL:
 	case Raster::TEXTURE:
 	case Raster::CAMERATEXTURE:
-		destroyTexture(natras->texture);
+		// destroyTexture is null-safe (early-out on nullptr) but we
+		// explicit-nil the handle afterwards so a stray double-destroy
+		// can't try to re-Release the same COM object.
+		if(natras->texture){
+			destroyTexture(natras->texture);
+			natras->texture = nil;
+		}
 		break;
 
 	case Raster::ZBUFFER:
 #ifdef RW_D3D9
 		if(raster->flags & Raster::DONTALLOCATE)
 			break;
-		if(natras->texture != d3d9Globals.defaultDepthSurf)
+		if(natras->texture && natras->texture != d3d9Globals.defaultDepthSurf)
 			((IDirect3DSurface9*)natras->texture)->Release();
 		natras->texture = nil;
 #endif
 		break;
 	case Raster::CAMERA:
+		// Camera rasters don't own their backing surface (it's the
+		// device's default render target). Just clear the handle.
+		natras->texture = nil;
 		break;
 	}
-	rwFree(natras->palette);
+	if(natras->palette){
+		rwFree(natras->palette);
+		natras->palette = nil;
+	}
+	natras->lockedSurf = nil;
 	return object;
 }
 
 static void*
 copyNativeRaster(void *dst, void *, int32 offset, int32)
 {
-	D3dRaster *raster = PLUGINOFFSET(D3dRaster, dst, offset);
-	raster->texture = nil;
-	raster->palette = nil;
-	raster->lockedSurf = nil;
-	raster->format = 0;
-	raster->hasAlpha = 0;
-	raster->customFormat = 0;
+	// Don't share the source texture/palette — the new Raster will
+	// allocate its own through the usual rasterCreate path. Mirror
+	// createNativeRaster: explicitly zero every D3dRaster field so the
+	// new raster starts in a known-clean state regardless of MSVC
+	// debug heap-fill patterns.
+	D3dRaster *r = PLUGINOFFSET(D3dRaster, dst, offset);
+	r->texture       = nil;
+	r->palette       = nil;
+	r->lockedSurf    = nil;
+	r->format        = 0;
+	r->bpp           = 0;
+	r->hasAlpha      = 0;
+	r->customFormat  = 0;
+	r->autogenMipmap = 0;
 	return dst;
 }
 
