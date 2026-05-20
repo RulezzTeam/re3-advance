@@ -89,6 +89,17 @@ public:
 	static float SsaoContactRadius;	// screen-space pixels (2..6 typical)
 	static float SsaoContactMaxDz;	// metres — discard farther occluders
 
+	// Screen-Space Reflections — half-res world-space march that samples
+	// pHdrScene on hit. Composed into hdrResolve_PS via Fresnel weight.
+	static RwRaster *pSsrA;		// half-res RGBA8 reflection RT
+	static bool SsrEnable;
+	static float SsrMaxDistance;	// world units (10..80 typical)
+	static int SsrStepCount;	// 8..32
+	static float SsrThickness;	// depth-window for accepting hits
+	static float SsrStrength;	// compose lerp in hdrResolve_PS
+	static float SsrFresnelBias;	// Schlick F0 (0.04 = dielectric default)
+	static void RenderSSR(RwCamera *cam);
+
 	// Image-Based Lighting — procedural hemisphere gradient (sky + horizon
 	// + ground) sampled by world normal inside default_pp_PS as a soft
 	// ambient term. Colours are derived from CTimeCycle's SkyTop/SkyBottom

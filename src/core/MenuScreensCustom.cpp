@@ -177,6 +177,11 @@
 		MENUACTION_CFO_SLIDER, "FED_IBI", { new CCFOSlider(&CPostFX::IblIntensity, "Graphics", "IblIntensity", 0.0f, 2.5f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_IBH", { new CCFOSlider(&CPostFX::IblHorizonExp, "Graphics", "IblHorizonExp", 0.5f, 6.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_IBG", { new CCFOSlider(&CPostFX::IblGroundTint, "Graphics", "IblGroundTint", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_SSR", { new CCFOSelect((int8*)&CPostFX::SsrEnable, "Graphics", "SSR", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_SSS", { new CCFOSlider(&CPostFX::SsrStrength, "Graphics", "SsrStrength", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_SSD", { new CCFOSlider(&CPostFX::SsrMaxDistance, "Graphics", "SsrDistance", 5.0f, 120.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_SST", { new CCFOSlider(&CPostFX::SsrThickness, "Graphics", "SsrThickness", 0.1f, 3.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_SSF", { new CCFOSlider(&CPostFX::SsrFresnelBias, "Graphics", "SsrFresnel", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_VOL", { new CCFOSelect((int8*)&CPostFX::VolFogEnable, "Graphics", "VolFog", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_VFS", { new CCFOSlider(&CPostFX::VolFogStrength, "Graphics", "VolFogStrength", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_VFD", { new CCFOSlider(&CPostFX::VolFogDensity, "Graphics", "VolFogDensity", 0.0f, 0.08f) }, 0, 0, MENUALIGN_LEFT, \
@@ -296,6 +301,12 @@ void RestoreDefGraphics(int8 action) {
 		CPostFX::IblIntensity = 0.55f;
 		CPostFX::IblHorizonExp = 2.2f;
 		CPostFX::IblGroundTint = 0.6f;
+		CPostFX::SsrEnable = false;
+		CPostFX::SsrMaxDistance = 30.0f;
+		CPostFX::SsrStepCount = 18;
+		CPostFX::SsrThickness = 0.5f;
+		CPostFX::SsrStrength = 0.6f;
+		CPostFX::SsrFresnelBias = 0.04f;
 		CPostFX::TaaEnable = false;
 		CPostFX::TaaBlend = 0.12f;
 		CPostFX::TaaClamp = 1.0f;

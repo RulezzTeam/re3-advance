@@ -97,6 +97,15 @@ float CPostFX::IblGroundTint = 0.6f;
 float CPostFX::SsaoContactStrength = 0.35f;
 float CPostFX::SsaoContactRadius = 3.5f;	// ~3-4 pixels at 1080p
 float CPostFX::SsaoContactMaxDz = 0.6f;	// 60 cm window — bigger gaps are not contact
+
+// Screen-Space Reflections — off by default until the player opts in.
+RwRaster *CPostFX::pSsrA;
+bool CPostFX::SsrEnable = false;
+float CPostFX::SsrMaxDistance = 30.0f;
+int CPostFX::SsrStepCount = 18;
+float CPostFX::SsrThickness = 0.5f;
+float CPostFX::SsrStrength = 0.6f;
+float CPostFX::SsrFresnelBias = 0.04f;
 // Volumetric fog — defaults tuned for Vice City's daytime haze look.
 // Density is modest so the scene doesn't read as foggy; the in-scatter is
 // what gives the warm "filled" feel toward the sun. Disabled by default
@@ -155,6 +164,8 @@ static int32 g_ssaoW, g_ssaoH;
 static void *taa_PS;
 static rw::Camera *taaCamA;
 static rw::Camera *taaCamB;
+static void *ssr_PS;
+static rw::Camera *ssrCam;	// half-res RGBA8 SSR target
 #endif
 #ifdef SOFT_SHADOWS
 void *shadowPCF_PS;
@@ -293,6 +304,14 @@ CPostFX::Open(RwCamera *cam)
 	ssaoCamB = CreateBloomCam(pSsaoB);
 	g_ssaoW = sw;
 	g_ssaoH = sh;
+
+	// SSR shares the half-res target size with SSAO. RGBA8 is enough — the
+	// reflection signal is LDR-ish (it's already gone through the same path
+	// hdrResolve does) so we tonemap before storing. Camera reuses the
+	// existing helper so SSR draws into a real librw camera bound to the
+	// raster.
+	pSsrA = RwRasterCreate(sw, sh, depth, rwRASTERTYPECAMERATEXTURE);
+	ssrCam = CreateBloomCam(pSsrA);
 
 	// Half-res quad for SSAO passes. The destination RTs are exactly sw x sh
 	// (non-pow2), so UV=0..1 must map to (0, 0)..(sw, sh) screen coords.
@@ -542,6 +561,10 @@ CPostFX::Open(RwCamera *cam)
 #include "shaders/obj/taa_PS.inc"
 	taa_PS = rw::d3d::createPixelShader(taa_PS_cso);
 	}
+	{
+#include "shaders/obj/ssr_PS.inc"
+	ssr_PS = rw::d3d::createPixelShader(ssr_PS_cso);
+	}
 #endif
 #ifdef SOFT_SHADOWS
 	{
@@ -596,6 +619,8 @@ CPostFX::Close(void)
 	if(ssaoCamB){ DestroyBloomCam(ssaoCamB); ssaoCamB = nil; }
 	if(pSsaoA){ RwRasterDestroy(pSsaoA); pSsaoA = nil; }
 	if(pSsaoB){ RwRasterDestroy(pSsaoB); pSsaoB = nil; }
+	if(ssrCam){ DestroyBloomCam(ssrCam); ssrCam = nil; }
+	if(pSsrA){ RwRasterDestroy(pSsrA); pSsrA = nil; }
 	if(taaCamA){ DestroyBloomCam(taaCamA); taaCamA = nil; }
 	if(taaCamB){ DestroyBloomCam(taaCamB); taaCamB = nil; }
 	if(pTaaHistA){ RwRasterDestroy(pTaaHistA); pTaaHistA = nil; }
@@ -633,6 +658,7 @@ CPostFX::Close(void)
 	if(ssao_PS){ rw::d3d::destroyPixelShader(ssao_PS); ssao_PS = nil; }
 	if(ssaoBlur_PS){ rw::d3d::destroyPixelShader(ssaoBlur_PS); ssaoBlur_PS = nil; }
 	if(taa_PS){ rw::d3d::destroyPixelShader(taa_PS); taa_PS = nil; }
+	if(ssr_PS){ rw::d3d::destroyPixelShader(ssr_PS); ssr_PS = nil; }
 #endif
 #ifdef SOFT_SHADOWS
 	if(shadowPCF_PS){ rw::d3d::destroyPixelShader(shadowPCF_PS); shadowPCF_PS = nil; }
@@ -935,6 +961,83 @@ CPostFX::RenderSSAO(RwCamera *cam)
 }
 
 void
+CPostFX::RenderSSR(RwCamera *cam)
+{
+	if(!CGBuffer::HdrEnabled || !CGBuffer::GbufEnabled || !SsrEnable)
+		return;
+	if(CGBuffer::pGbufNormalDepth == nil || CGBuffer::pHdrScene == nil ||
+	   ssr_PS == nil || pSsrA == nil || ssrCam == nil)
+		return;
+
+	PUSH_RENDERGROUP("CPostFX::RenderSSR");
+
+	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEFOGENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDONE);
+	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDZERO);
+
+	RwCameraEndUpdate(cam);
+	RwCameraBeginUpdate((RwCamera*)ssrCam);
+	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, CGBuffer::pGbufNormalDepth);
+	BindRasterToSampler(1, CGBuffer::pHdrScene);
+
+#ifdef RW_D3D9
+	{
+		rw::Camera *rwcam = (rw::Camera*)cam;
+		rw::V3d camPos = rwcam->getFrame()->getLTM()->pos;
+		float farClip = rwcam->farPlane;
+
+		// c10: camera + farClip
+		float cCam[4] = { camPos.x, camPos.y, camPos.z, farClip };
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(10, cCam, 1);
+
+		// c11..c14: frustum corner rays — same layout/order as the
+		// volumetric fog (TL, TR, BR, BL).
+		const rw::V3d *fc = rwcam->frustumCorners;
+		float corners[4][4] = {
+			{ fc[0].x, fc[0].y, fc[0].z, 0 },
+			{ fc[1].x, fc[1].y, fc[1].z, 0 },
+			{ fc[2].x, fc[2].y, fc[2].z, 0 },
+			{ fc[3].x, fc[3].y, fc[3].z, 0 },
+		};
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(11, &corners[0][0], 4);
+
+		// c15..c18: world-to-clip matrix. librw already maintains devView
+		// (world→view) and devProj (view→clip); combine them in row-major
+		// form for SetPixelShaderConstantF which uploads as float4×N.
+		rw::RawMatrix vp;
+		rw::RawMatrix::mult(&vp, &rwcam->devView, &rwcam->devProj);
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(15, (const float*)&vp, 4);
+
+		// c19: params
+		float pp[4] = {
+			SsrMaxDistance,
+			(float)SsrStepCount,
+			SsrThickness,
+			SsrStrength,
+		};
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(19, pp, 1);
+
+		rw::d3d::im2dOverridePS = ssr_PS;
+	}
+#endif
+
+	RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, SsaoVertex, 4, Index, 6);
+
+	RwCameraEndUpdate((RwCamera*)ssrCam);
+	BindRasterToSampler(1, nil);
+	RwCameraBeginUpdate(cam);
+
+#ifdef RW_D3D9
+	rw::d3d::im2dOverridePS = nil;
+#endif
+
+	POP_RENDERGROUP();
+}
+
+void
 CPostFX::ResolveHDR(RwCamera *cam)
 {
 	if(!CGBuffer::HdrEnabled || CGBuffer::pHdrScene == nil || hdrResolve_PS == nil)
@@ -960,11 +1063,16 @@ CPostFX::ResolveHDR(RwCamera *cam)
 	// Bind the G-buffer (slot 1 = packed world-normal + linear depth) on
 	// sampler 2. Required by the volumetric fog ray-march to find the
 	// march endpoint per pixel; sky/uncovered pixels read alpha=0 and the
-	// shader treats them as "march to volParams.z".
+	// shader treats them as "march to volParams.z". Also reused by the
+	// SSR compose for the per-pixel world normal.
+	bool ssrActive = SsrEnable && CGBuffer::GbufEnabled && pSsrA != nil;
 	bool volFogActive = VolFogEnable && CGBuffer::GbufEnabled
 	                 && CGBuffer::pGbufNormalDepth != nil;
-	if(volFogActive)
+	bool gbufNeeded = volFogActive || ssrActive;
+	if(gbufNeeded)
 		BindRasterToSampler(2, CGBuffer::pGbufNormalDepth);
+	if(ssrActive)
+		BindRasterToSampler(3, pSsrA);
 
 #ifdef RW_D3D9
 	// .x = exposure, .y = ACES toggle, .z = gamma toggle, .w = saturation
@@ -1040,6 +1148,20 @@ CPostFX::ResolveHDR(RwCamera *cam)
 			volFogActive ? VolFogStrength : 0.0f,
 		};
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(19, volPar, 1);
+
+		// c20: SSR compose strength + Fresnel F0 bias.
+		float ssrPar[4] = {
+			ssrActive ? SsrStrength : 0.0f,
+			SsrFresnelBias,
+			0.0f, 0.0f,
+		};
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(20, ssrPar, 1);
+
+		// c21: camera world pos again (the SSR compose path needs it but
+		// volCamera is already loaded; redundant write keeps the bindings
+		// independent so we can drop volumetric without breaking SSR).
+		float cView[4] = { camPos.x, camPos.y, camPos.z, 0.0f };
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(21, cView, 1);
 	}
 
 	rw::d3d::im2dOverridePS = hdrResolve_PS;
@@ -1054,8 +1176,10 @@ CPostFX::ResolveHDR(RwCamera *cam)
 	rw::d3d::im2dOverridePS = nil;
 	if(ssaoActive)
 		BindRasterToSampler(1, nil);
-	if(volFogActive)
+	if(gbufNeeded)
 		BindRasterToSampler(2, nil);
+	if(ssrActive)
+		BindRasterToSampler(3, nil);
 #endif
 	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
 	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);

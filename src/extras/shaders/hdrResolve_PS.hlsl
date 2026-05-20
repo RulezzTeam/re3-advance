@@ -9,6 +9,7 @@
 sampler2D hdrTex  : register(s0);
 sampler2D ssaoTex : register(s1);	// R8 AO; 1.0 = fully lit
 sampler2D gbufTex : register(s2);	// RGB = world-normal*0.5+0.5, A = linearDepth (viewZ/farClip)
+sampler2D ssrTex  : register(s3);	// RGBA = reflection colour + confidence
 
 // .x = exposure (linear multiplier, 1.0 = neutral)
 // .y = ACES toggle (0..1, lerps toward filmic curve)
@@ -42,6 +43,13 @@ float4 volColor : register(c18);
 // .z = max march distance in metres (used when the fragment is sky / depth=0)
 // .w = enable flag (0 = bypass, >0 = on; also controls overall strength lerp)
 float4 volParams : register(c19);
+
+// SSR compose. .x = strength (0 = off), .y = Schlick F0 bias, .z = reserved
+float4 ssrCompose : register(c20);
+
+// Camera world position again (matches volCamera.xyz) — kept separate so
+// SSR-only frames don't depend on the volumetric block. .w = unused.
+float4 ssrViewer : register(c21);
 
 float3 ACES(float3 x)
 {
@@ -135,8 +143,31 @@ float4 main(in float2 uv : TEXCOORD0) : COLOR0
 		col = lerp(col, fogged, saturate(volParams.w));
 	}
 
-	// Exposure (linear).
-	col *= hdrTonemap.x;
+	// Screen-Space Reflections — bilinearly up-sampled from the half-res
+	// SSR raster, weighted by a view-dependent Fresnel term so glancing
+	// angles get full reflection and head-on views fade to nothing.
+	[branch]
+	if(ssrCompose.x > 0.001){
+		float4 ssr = tex2D(ssrTex, uv);
+		float4 gbuf = tex2D(gbufTex, uv);
+		float3 N = normalize(gbuf.rgb * 2.0 - 1.0);
+
+		// View direction at this fragment — use the volumetric ray since
+		// it carries the same world-space ray we want here.
+		float3 fwd = normalize(lerp(lerp(volRayTL.xyz, volRayTR.xyz, uv.x),
+		                            lerp(volRayBL.xyz, volRayBR.xyz, uv.x),
+		                            uv.y));
+		float NoV = saturate(dot(N, -fwd));
+		// Schlick Fresnel: F = F0 + (1 - F0) * (1 - NoV)^5
+		float F0 = ssrCompose.y;
+		float oneMinus = 1.0 - NoV;
+		float f5 = oneMinus * oneMinus; f5 *= f5 * oneMinus;
+		float fresnel = F0 + (1.0 - F0) * f5;
+
+		float w = ssr.a * fresnel * ssrCompose.x;
+		col = lerp(col, ssr.rgb, saturate(w));
+	}
+
 
 	// ACES filmic tonemap, blendable.
 	float3 aces = ACES(col);

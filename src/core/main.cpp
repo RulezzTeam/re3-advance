@@ -1647,6 +1647,9 @@ Idle(void *arg)
 		// SSAO runs between the scene pass (which filled the G-buffer)
 		// and the tonemap-resolve (which composes AO into the output).
 		CPostFX::RenderSSAO(Scene.camera);
+		// SSR also feeds the resolve. Ordered after SSAO so the half-res
+		// camera dispatch can reuse the SSAO vertex quad / bound state.
+		CPostFX::RenderSSR(Scene.camera);
 		CPostFX::ResolveHDR(Scene.camera);
 #endif
 
