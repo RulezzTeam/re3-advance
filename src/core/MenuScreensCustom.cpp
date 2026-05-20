@@ -138,11 +138,17 @@
 #endif
 
 #ifdef POSTFX_HDR
+	// AaMode 0 = Off, 1 = FXAA, 2 = TAA, 3 = TAA+FXAA. TaaBlend matters
+	// only for modes 2/3, but the dependency hook here takes a single
+	// int8* — so we let TaaBlend gate on AaMode != 0 (any AA active).
+	// The AaMode selector itself + MotionVecBlur gate on HDR being on
+	// since both run inside the HDR resolve pipeline. MotionVecBlur
+	// strength gates on the toggle itself.
 	#define POSTFX_TAA_SELECTORS \
-		MENUACTION_CFO_SELECT, "FED_AAM", { new CCFOSelect((int8*)&CPostFX::AaMode, "Graphics", "AaMode", aaModeNames, 4, false) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_TAB", { new CCFOSlider(&CPostFX::TaaBlend, "Graphics", "TaaBlend", 0.02f, 0.5f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SELECT, "FED_MVB", { new CCFOSelect((int8*)&CPostFX::MotionVecBlurEnable, "Graphics", "MotionVecBlur", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_MBS", { new CCFOSlider(&CPostFX::MotionVecBlurStrength, "Graphics", "MotionVecBlurStrength", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_SELECT, "FED_AAM", { new CCFOSelect((int8*)&CPostFX::AaMode, "Graphics", "AaMode", aaModeNames, 4, false, nil, false, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_TAB", { new CCFOSlider(&CPostFX::TaaBlend, "Graphics", "TaaBlend", 0.02f, 0.5f, nil, (int8*)&CPostFX::AaMode) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_MVB", { new CCFOSelect((int8*)&CPostFX::MotionVecBlurEnable, "Graphics", "MotionVecBlur", off_on, 2, false, nil, false, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_MBS", { new CCFOSlider(&CPostFX::MotionVecBlurStrength, "Graphics", "MotionVecBlurStrength", 0.0f, 1.0f, nil, (int8*)&CPostFX::MotionVecBlurEnable) }, 0, 0, MENUALIGN_LEFT,
 #else
 	#define POSTFX_TAA_SELECTORS
 #endif
@@ -171,56 +177,62 @@
 #endif
 
 #ifdef POSTFX_HDR
+	// Menu sub-option dependencies (enableDep, last constructor arg):
+	//   sub-options of an effect gate on the effect's own enable toggle
+	//   so the sliders gray out when the parent is off. Pattern is
+	//   `(int8*)&CPostFX::FooEnable` for the bool toggle, or the int8
+	//   directly when the dep already lives in int8 storage. Pairs with
+	//   the dim-render + input-skip in Frontend.cpp.
 	#define POSTFX_HDR_SELECTORS \
 		MENUACTION_CFO_SELECT, "FED_HDR", { new CCFOSelect((int8*)&CGBuffer::HdrEnabled, "Graphics", "HDR", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SELECT, "FED_GBF", { new CCFOSelect((int8*)&CGBuffer::GbufEnabled, "Graphics", "GBuffer", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SELECT, "FED_SAO", { new CCFOSelect((int8*)&CPostFX::SsaoEnable, "Graphics", "SSAO", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SELECT, "FED_SAA", { new CCFOSelect((int8*)&CPostFX::SsaoAlgorithm, "Graphics", "SsaoAlgo", ssaoAlgoNames, 4, false) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SELECT, "FED_SAM", { new CCFOSelect((int8*)&CPostFX::SsaoMixMode, "Graphics", "SsaoMix", ssaoMixNames, 3, false) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_SAR", { new CCFOSlider(&CPostFX::SsaoRadius, "Graphics", "SsaoRadius", 0.2f, 3.0f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_SAI", { new CCFOSlider(&CPostFX::SsaoIntensity, "Graphics", "SsaoIntensity", 0.0f, 4.0f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_SAS", { new CCFOSlider(&CPostFX::SsaoStrength, "Graphics", "SsaoStrength", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_CAO", { new CCFOSlider(&CPostFX::SsaoContactStrength, "Graphics", "SsaoContact", 0.0f, 1.5f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_CAR", { new CCFOSlider(&CPostFX::SsaoContactRadius, "Graphics", "SsaoContactRadius", 1.0f, 8.0f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_CSS", { new CCFOSlider(&CPostFX::ContactShadowStrength, "Graphics", "ContactShadow", 0.0f, 1.5f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_CST", { new CCFOSlider(&CPostFX::ContactShadowThickness, "Graphics", "ContactShadowThick", 0.3f, 4.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_GBF", { new CCFOSelect((int8*)&CGBuffer::GbufEnabled, "Graphics", "GBuffer", off_on, 2, false, nil, false, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_SAO", { new CCFOSelect((int8*)&CPostFX::SsaoEnable, "Graphics", "SSAO", off_on, 2, false, nil, false, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_SAA", { new CCFOSelect((int8*)&CPostFX::SsaoAlgorithm, "Graphics", "SsaoAlgo", ssaoAlgoNames, 4, false, nil, false, (int8*)&CPostFX::SsaoEnable) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_SAM", { new CCFOSelect((int8*)&CPostFX::SsaoMixMode, "Graphics", "SsaoMix", ssaoMixNames, 3, false, nil, false, (int8*)&CPostFX::SsaoEnable) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_SAR", { new CCFOSlider(&CPostFX::SsaoRadius, "Graphics", "SsaoRadius", 0.2f, 3.0f, nil, (int8*)&CPostFX::SsaoEnable) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_SAI", { new CCFOSlider(&CPostFX::SsaoIntensity, "Graphics", "SsaoIntensity", 0.0f, 4.0f, nil, (int8*)&CPostFX::SsaoEnable) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_SAS", { new CCFOSlider(&CPostFX::SsaoStrength, "Graphics", "SsaoStrength", 0.0f, 1.0f, nil, (int8*)&CPostFX::SsaoEnable) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_CAO", { new CCFOSlider(&CPostFX::SsaoContactStrength, "Graphics", "SsaoContact", 0.0f, 1.5f, nil, (int8*)&CPostFX::SsaoEnable) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_CAR", { new CCFOSlider(&CPostFX::SsaoContactRadius, "Graphics", "SsaoContactRadius", 1.0f, 8.0f, nil, (int8*)&CPostFX::SsaoEnable) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_CSS", { new CCFOSlider(&CPostFX::ContactShadowStrength, "Graphics", "ContactShadow", 0.0f, 1.5f, nil, (int8*)&CPostFX::SsaoEnable) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_CST", { new CCFOSlider(&CPostFX::ContactShadowThickness, "Graphics", "ContactShadowThick", 0.3f, 4.0f, nil, (int8*)&CPostFX::SsaoEnable) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_IBL", { new CCFOSelect((int8*)&CPostFX::IblEnabled, "Graphics", "IBL", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_IBI", { new CCFOSlider(&CPostFX::IblIntensity, "Graphics", "IblIntensity", 0.0f, 2.5f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_IBH", { new CCFOSlider(&CPostFX::IblHorizonExp, "Graphics", "IblHorizonExp", 0.5f, 6.0f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_IBG", { new CCFOSlider(&CPostFX::IblGroundTint, "Graphics", "IblGroundTint", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_IBI", { new CCFOSlider(&CPostFX::IblIntensity, "Graphics", "IblIntensity", 0.0f, 2.5f, nil, (int8*)&CPostFX::IblEnabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_IBH", { new CCFOSlider(&CPostFX::IblHorizonExp, "Graphics", "IblHorizonExp", 0.5f, 6.0f, nil, (int8*)&CPostFX::IblEnabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_IBG", { new CCFOSlider(&CPostFX::IblGroundTint, "Graphics", "IblGroundTint", 0.0f, 1.0f, nil, (int8*)&CPostFX::IblEnabled) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_IBC", { new CCFOSelect((int8*)&CIBL::Enabled, "Graphics", "IblCube", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_IBR", { new CCFOSlider(&CIBL::ReflStrength, "Graphics", "IblRefl", 0.0f, 3.0f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SELECT, "FED_ICS", { new CCFOSelect(&CIBL::CaptureSizeIndex, "Graphics", "IblCubeSize", iblCubeCaptureSizes, 4, false, CIBL::CaptureSizeAfterChange) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SELECT, "FED_IIS", { new CCFOSelect(&CIBL::IrradianceSizeIndex, "Graphics", "IblIrrSize", iblIrradianceSizes, 4, false, CIBL::IrradianceSizeAfterChange) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_IBR", { new CCFOSlider(&CIBL::ReflStrength, "Graphics", "IblRefl", 0.0f, 3.0f, nil, (int8*)&CIBL::Enabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_ICS", { new CCFOSelect(&CIBL::CaptureSizeIndex, "Graphics", "IblCubeSize", iblCubeCaptureSizes, 4, false, CIBL::CaptureSizeAfterChange, false, (int8*)&CIBL::Enabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_IIS", { new CCFOSelect(&CIBL::IrradianceSizeIndex, "Graphics", "IblIrrSize", iblIrradianceSizes, 4, false, CIBL::IrradianceSizeAfterChange, false, (int8*)&CIBL::Enabled) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_DPL", { new CCFOSelect((int8*)&CDynamicLights::Enabled, "Graphics", "DynLights", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_DPI", { new CCFOSlider(&CDynamicLights::Intensity, "Graphics", "DynLightInt", 0.0f, 3.0f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_DPR", { new CCFOSlider(&CDynamicLights::Reach, "Graphics", "DynLightReach", 0.5f, 4.0f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SELECT, "FED_SSR", { new CCFOSelect((int8*)&CPostFX::SsrEnable, "Graphics", "SSR", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_SSS", { new CCFOSlider(&CPostFX::SsrStrength, "Graphics", "SsrStrength", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_SSD", { new CCFOSlider(&CPostFX::SsrMaxDistance, "Graphics", "SsrDistance", 5.0f, 120.0f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_SST", { new CCFOSlider(&CPostFX::SsrThickness, "Graphics", "SsrThickness", 0.1f, 3.0f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_SSF", { new CCFOSlider(&CPostFX::SsrFresnelBias, "Graphics", "SsrFresnel", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_SSK", { new CCFOSlider(&CPostFX::SsrSkyFallback, "Graphics", "SsrSkyFallback", 0.0f, 1.5f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_DPI", { new CCFOSlider(&CDynamicLights::Intensity, "Graphics", "DynLightInt", 0.0f, 3.0f, nil, (int8*)&CDynamicLights::Enabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_DPR", { new CCFOSlider(&CDynamicLights::Reach, "Graphics", "DynLightReach", 0.5f, 4.0f, nil, (int8*)&CDynamicLights::Enabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_SSR", { new CCFOSelect((int8*)&CPostFX::SsrEnable, "Graphics", "SSR", off_on, 2, false, nil, false, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_SSS", { new CCFOSlider(&CPostFX::SsrStrength, "Graphics", "SsrStrength", 0.0f, 1.0f, nil, (int8*)&CPostFX::SsrEnable) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_SSD", { new CCFOSlider(&CPostFX::SsrMaxDistance, "Graphics", "SsrDistance", 5.0f, 120.0f, nil, (int8*)&CPostFX::SsrEnable) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_SST", { new CCFOSlider(&CPostFX::SsrThickness, "Graphics", "SsrThickness", 0.1f, 3.0f, nil, (int8*)&CPostFX::SsrEnable) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_SSF", { new CCFOSlider(&CPostFX::SsrFresnelBias, "Graphics", "SsrFresnel", 0.0f, 1.0f, nil, (int8*)&CPostFX::SsrEnable) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_SSK", { new CCFOSlider(&CPostFX::SsrSkyFallback, "Graphics", "SsrSkyFallback", 0.0f, 1.5f, nil, (int8*)&CPostFX::SsrEnable) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_WET", { new CCFOSelect((int8*)&CPostFX::WetSurfacesEnable, "Graphics", "WetSurfaces", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_WTI", { new CCFOSlider(&CPostFX::WetSurfacesIntensity, "Graphics", "WetIntensity", 0.0f, 2.0f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_WTS", { new CCFOSlider(&CPostFX::WetSurfacesSpec, "Graphics", "WetSpec", 1.0f, 6.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_WTI", { new CCFOSlider(&CPostFX::WetSurfacesIntensity, "Graphics", "WetIntensity", 0.0f, 2.0f, nil, (int8*)&CPostFX::WetSurfacesEnable) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_WTS", { new CCFOSlider(&CPostFX::WetSurfacesSpec, "Graphics", "WetSpec", 1.0f, 6.0f, nil, (int8*)&CPostFX::WetSurfacesEnable) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_PUD", { new CCFOSelect((int8*)&CPostFX::PuddlesEnable, "Graphics", "Puddles", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_CAU", { new CCFOSelect((int8*)&CPostFX::CausticsEnable, "Graphics", "Caustics", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_CAS", { new CCFOSlider(&CPostFX::CausticsStrength, "Graphics", "CausticsStrength", 0.0f, 2.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_CAS", { new CCFOSlider(&CPostFX::CausticsStrength, "Graphics", "CausticsStrength", 0.0f, 2.0f, nil, (int8*)&CPostFX::CausticsEnable) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_FOA", { new CCFOSelect((int8*)&CPostFX::FoamEnable, "Graphics", "ShoreFoam", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_FAS", { new CCFOSlider(&CPostFX::FoamStrength, "Graphics", "ShoreFoamStrength", 0.0f, 2.0f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SELECT, "FED_DOF", { new CCFOSelect((int8*)&CPostFX::DofEnable, "Graphics", "DoF", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_DFD", { new CCFOSlider(&CPostFX::DofFocusDistance, "Graphics", "DofFocus", 1.0f, 80.0f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_DFR", { new CCFOSlider(&CPostFX::DofFocusRange, "Graphics", "DofRange", 0.5f, 30.0f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_DFA", { new CCFOSlider(&CPostFX::DofAperture, "Graphics", "DofAperture", 0.0f, 0.04f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SELECT, "FED_VOL", { new CCFOSelect((int8*)&CPostFX::VolFogEnable, "Graphics", "VolFog", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_VFS", { new CCFOSlider(&CPostFX::VolFogStrength, "Graphics", "VolFogStrength", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_VFD", { new CCFOSlider(&CPostFX::VolFogDensity, "Graphics", "VolFogDensity", 0.0f, 0.08f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_VFH", { new CCFOSlider(&CPostFX::VolFogHeightFalloff, "Graphics", "VolFogHeight", 0.0f, 0.1f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_VFG", { new CCFOSlider(&CPostFX::VolFogHG, "Graphics", "VolFogHG", 0.0f, 0.95f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_VFB", { new CCFOSlider(&CPostFX::VolFogSunBoost, "Graphics", "VolFogSunBoost", 0.0f, 4.0f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SELECT, "FED_VFQ", { new CCFOSelect(&CPostFX::VolFogStepsIndex, "Graphics", "VolFogSteps", volFogStepCounts, 5, false, CPostFX::VolFogStepsAfterChange) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SELECT, "FED_VSP", { new CCFOSelect((int8*)&CPostFX::VolSpotEnable, "Graphics", "VolSpot", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_SLIDER, "FED_FAS", { new CCFOSlider(&CPostFX::FoamStrength, "Graphics", "ShoreFoamStrength", 0.0f, 2.0f, nil, (int8*)&CPostFX::FoamEnable) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_DOF", { new CCFOSelect((int8*)&CPostFX::DofEnable, "Graphics", "DoF", off_on, 2, false, nil, false, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_DFD", { new CCFOSlider(&CPostFX::DofFocusDistance, "Graphics", "DofFocus", 1.0f, 80.0f, nil, (int8*)&CPostFX::DofEnable) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_DFR", { new CCFOSlider(&CPostFX::DofFocusRange, "Graphics", "DofRange", 0.5f, 30.0f, nil, (int8*)&CPostFX::DofEnable) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_DFA", { new CCFOSlider(&CPostFX::DofAperture, "Graphics", "DofAperture", 0.0f, 0.04f, nil, (int8*)&CPostFX::DofEnable) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_VOL", { new CCFOSelect((int8*)&CPostFX::VolFogEnable, "Graphics", "VolFog", off_on, 2, false, nil, false, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_VFS", { new CCFOSlider(&CPostFX::VolFogStrength, "Graphics", "VolFogStrength", 0.0f, 1.0f, nil, (int8*)&CPostFX::VolFogEnable) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_VFD", { new CCFOSlider(&CPostFX::VolFogDensity, "Graphics", "VolFogDensity", 0.0f, 0.08f, nil, (int8*)&CPostFX::VolFogEnable) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_VFH", { new CCFOSlider(&CPostFX::VolFogHeightFalloff, "Graphics", "VolFogHeight", 0.0f, 0.1f, nil, (int8*)&CPostFX::VolFogEnable) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_VFG", { new CCFOSlider(&CPostFX::VolFogHG, "Graphics", "VolFogHG", 0.0f, 0.95f, nil, (int8*)&CPostFX::VolFogEnable) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_VFB", { new CCFOSlider(&CPostFX::VolFogSunBoost, "Graphics", "VolFogSunBoost", 0.0f, 4.0f, nil, (int8*)&CPostFX::VolFogEnable) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_VFQ", { new CCFOSelect(&CPostFX::VolFogStepsIndex, "Graphics", "VolFogSteps", volFogStepCounts, 5, false, CPostFX::VolFogStepsAfterChange, false, (int8*)&CPostFX::VolFogEnable) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_VSP", { new CCFOSelect((int8*)&CPostFX::VolSpotEnable, "Graphics", "VolSpot", off_on, 2, false, nil, false, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT,
 #else
 	#define POSTFX_HDR_SELECTORS
 #endif
@@ -228,21 +240,26 @@
 #ifdef POSTFX_WATER_REFLECTION
 	#define POSTFX_WATER_REFLECTION_SELECTORS \
 		MENUACTION_CFO_SELECT, "FED_WRR", { new CCFOSelect((int8*)&CWaterReflection::Enabled, "Graphics", "WaterReflection", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SELECT, "FED_WRZ", { new CCFOSelect(&CWaterReflection::ResolutionIndex, "Graphics", "WaterReflectionSize", waterReflectionSizes, 4, false, CWaterReflection::ResolutionAfterChange) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_SELECT, "FED_WRZ", { new CCFOSelect(&CWaterReflection::ResolutionIndex, "Graphics", "WaterReflectionSize", waterReflectionSizes, 4, false, CWaterReflection::ResolutionAfterChange, false, (int8*)&CWaterReflection::Enabled) }, 0, 0, MENUALIGN_LEFT,
 #else
 	#define POSTFX_WATER_REFLECTION_SELECTORS
 #endif
 
 #ifdef POSTFX_CSM
+	// CSM sub-options gate on CCSM::Enabled; SpotShadow sub-options
+	// gate on CSpotShadow::Enabled. Both run inside default_pp_PS so
+	// they ALSO implicitly need HDR/GBuf, but the immediate-parent gate
+	// is more useful UX-wise — flipping the parent off makes its own
+	// sub-options gray, which is what the user expects.
 	#define POSTFX_CSM_SELECTORS \
 		MENUACTION_CFO_SELECT, "FED_CSM", { new CCFOSelect((int8*)&CCSM::Enabled, "Graphics", "CSM", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_CSS", { new CCFOSlider(&CCSM::Strength, "Graphics", "CSMStrength", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SELECT, "FED_CMR", { new CCFOSelect(&CCSM::MapSizeIndex, "Graphics", "CSMMapSize", cascadeMapSizes, 3, false, CCSM::MapSizeAfterChange) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SELECT, "FED_CFM", { new CCFOSelect((int8*)&CCSM::SoftnessMode, "Graphics", "CSMSoft", csmSoftNames, 4, false) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_CFR", { new CCFOSlider(&CCSM::SoftnessRadius, "Graphics", "CSMSoftR", 1.0f, 4.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_CSS", { new CCFOSlider(&CCSM::Strength, "Graphics", "CSMStrength", 0.0f, 1.0f, nil, (int8*)&CCSM::Enabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_CMR", { new CCFOSelect(&CCSM::MapSizeIndex, "Graphics", "CSMMapSize", cascadeMapSizes, 3, false, CCSM::MapSizeAfterChange, false, (int8*)&CCSM::Enabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_CFM", { new CCFOSelect((int8*)&CCSM::SoftnessMode, "Graphics", "CSMSoft", csmSoftNames, 4, false, nil, false, (int8*)&CCSM::Enabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_CFR", { new CCFOSlider(&CCSM::SoftnessRadius, "Graphics", "CSMSoftR", 1.0f, 4.0f, nil, (int8*)&CCSM::Enabled) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_SPS", { new CCFOSelect((int8*)&CSpotShadow::Enabled, "Graphics", "SpotShadow", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SELECT, "FED_SSZ", { new CCFOSelect(&CSpotShadow::MapSizeIndex, "Graphics", "SpotShadowSize", spotShadowSizes, 4, false, CSpotShadow::MapSizeAfterChange) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_SST", { new CCFOSlider(&CSpotShadow::Strength, "Graphics", "SpotShadowStrength", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_SELECT, "FED_SSZ", { new CCFOSelect(&CSpotShadow::MapSizeIndex, "Graphics", "SpotShadowSize", spotShadowSizes, 4, false, CSpotShadow::MapSizeAfterChange, false, (int8*)&CSpotShadow::Enabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_SST", { new CCFOSlider(&CSpotShadow::Strength, "Graphics", "SpotShadowStrength", 0.0f, 1.0f, nil, (int8*)&CSpotShadow::Enabled) }, 0, 0, MENUALIGN_LEFT,
 #else
 	#define POSTFX_CSM_SELECTORS
 #endif

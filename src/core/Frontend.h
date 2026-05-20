@@ -443,9 +443,18 @@ struct CCFOSelect : CCFO
 	int8 lastSavedValue; // only if onlyApplyOnEnter enabled
 	ChangeFunc changeFunc;
 	bool disableIfGameLoaded;
+	// Optional dependency pointer — when non-null and *enableDep == 0,
+	// the menu renders this option grayed out (DARKMENUOPTION_COLOR)
+	// AND skips input handling (left/right arrows + enter become
+	// no-ops). Lets the user see that the option exists without it
+	// vanishing from the menu when a prerequisite toggle is off
+	// (e.g. SSAO sliders gray when SsaoEnable=false; DoF focus distance
+	// grays when DofEnable=false). int8 because both bool and the
+	// existing toggle fields use that storage class.
+	const int8 *enableDep;
 
 	CCFOSelect() {};
-	CCFOSelect(int8* value, const char* saveCat, const char* save, const char** rightTexts, int8 numRightTexts, bool onlyApplyOnEnter, ChangeFunc changeFunc = nil, bool disableIfGameLoaded = false){
+	CCFOSelect(int8* value, const char* saveCat, const char* save, const char** rightTexts, int8 numRightTexts, bool onlyApplyOnEnter, ChangeFunc changeFunc = nil, bool disableIfGameLoaded = false, const int8 *enableDep = nil){
 		this->value = value;
 		if (value)
 			this->lastSavedValue = this->displayedValue = *value;
@@ -457,6 +466,7 @@ struct CCFOSelect : CCFO
 		this->onlyApplyOnEnter = onlyApplyOnEnter;
 		this->changeFunc = changeFunc;
 		this->disableIfGameLoaded = disableIfGameLoaded;
+		this->enableDep = enableDep;
 	}
 };
 
@@ -466,15 +476,19 @@ struct CCFOSlider : CCFO
 	ChangeFuncFloat changeFunc;
 	float min;
 	float max;
+	// Same dependency hook as CCFOSelect — non-null + *enableDep == 0
+	// grays out the slider track AND ignores the left/right input.
+	const int8 *enableDep;
 
 	CCFOSlider() {};
-	CCFOSlider(float* value, const char* saveCat, const char* save, float min, float max, ChangeFuncFloat changeFunc = nil){
+	CCFOSlider(float* value, const char* saveCat, const char* save, float min, float max, ChangeFuncFloat changeFunc = nil, const int8 *enableDep = nil){
 		this->value = value;
 		this->saveCat = saveCat;
 		this->save = save;
 		this->changeFunc = changeFunc;
 		this->min = min;
 		this->max = max;
+		this->enableDep = enableDep;
 	}
 };
 
