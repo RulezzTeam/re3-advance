@@ -315,9 +315,18 @@ float4 ComputeShadedColor(VS_out input)
 	// Dynamic point lights — host-side selected top-N nearby CPointLights
 	// applied per-pixel. This is the path that lets car headlights / lamps
 	// / muzzle flashes / explosions illuminate buildings + props that the
-	// legacy CEntity::SetupLighting() path bypassed. Modulated by
-	// wetDiffuse so a wet road still darkens correctly under headlights.
-	lit += ApplyDynamicPointLights(input.WorldPos, N) * wetDiffuse;
+	// legacy CEntity::SetupLighting() path bypassed.
+	//
+	// NOT modulated by surfDiffuse/wetDiffuse — many world materials have
+	// surfaceProps.diffuse = 0 (the engine relies on baked vertex colours
+	// for the diffuse term on static geometry), which would zero out our
+	// contribution. The light still gets the material's albedo modulation
+	// later via `baseLight * matCol.rgb`, so dark paint still reflects
+	// less; this just guarantees the dynamic source actually reaches the
+	// pixel. A small (1 - 0.5*wetMask) factor keeps wet-asphalt darkening
+	// intact without killing the contribution on vertical surfaces.
+	float dynScale = 1.0 - 0.5 * wetMask;
+	lit += ApplyDynamicPointLights(input.WorldPos, N) * dynScale;
 
 	[branch]
 	if(surfSpecular > 0.001 || wetMask > 0.05){

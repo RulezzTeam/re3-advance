@@ -1110,6 +1110,23 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 			MakePedsJumpAtShot((CPhysical*)shooter, fireSource, &target);
 	}
 
+	// Universal muzzle-flash point light. Many weapons in the original
+	// re3 switch below already register a small (5m) orange light for
+	// the burst — but several don't (M4, M60, sniper, rifle, …). Plus
+	// the radius was tuned for the legacy per-vertex pipeline where
+	// only the road would catch the colour. With the new dynamic-point-
+	// light receiver in default_pp_PS / neoVehicle_PS, the radius can
+	// safely reach across an intersection and light up the front of
+	// every nearby building / ped / car for the single frame the
+	// muzzle flashes. 14m bright orange-yellow matches a real handgun's
+	// effective illumination range; lower-power gun-types add nothing
+	// extra so we don't double-stack lights on the same spot.
+	CPointLights::AddLight(CPointLights::LIGHT_POINT,
+	                       *fireSource, CVector(0.0f, 0.0f, 0.0f),
+	                       14.0f,
+	                       1.0f, 0.85f, 0.45f,
+	                       CPointLights::FOG_NONE, false);
+
 	switch ( m_eWeaponType )
 	{
 		case WEAPONTYPE_M4:
