@@ -10,6 +10,7 @@ sampler2D hdrTex  : register(s0);
 sampler2D ssaoTex : register(s1);	// R8 AO; 1.0 = fully lit
 sampler2D gbufTex : register(s2);	// RGB = world-normal*0.5+0.5, A = linearDepth (viewZ/farClip)
 sampler2D ssrTex  : register(s3);	// RGBA = reflection colour + confidence
+sampler2D ssgiTex : register(s4);	// RGBA16F bounce radiance (rgb = indirect light)
 
 // .x = exposure (linear multiplier, 1.0 = neutral)
 // .y = ACES toggle (0..1, lerps toward filmic curve)
@@ -79,6 +80,13 @@ float4 ssrIblGround  : register(c24);
 //             still show up at night when full-screen fog is off).
 float4 volSpotPos[8] : register(c25);
 float4 volSpotCol[8] : register(c33);
+
+// SSGI compose — .x = strength multiplier on the per-pixel bounce buffer
+// (0 = bypass via [branch]; the SSGI pass also clears to black so a stale
+// pSsgiA can't bleed in if the host forgets to disable). Lives at c42 to
+// stay outside the SSR/vol blocks; safe to extend with quality dials later
+// (e.g. .y = AO modulation, .z = sky-bounce gate) without touching binders.
+float4 ssgiCompose : register(c42);
 
 float3 ACES(float3 x)
 {
@@ -285,6 +293,27 @@ float4 main(in float2 uv : TEXCOORD0) : COLOR0
 		float3 reflectionCol = lerp(fallbackCol * ssrCompose.z, ssr.rgb, ssr.a);
 		float w = max(ssr.a, ssrCompose.z) * fresnel * ssrCompose.x;
 		col = lerp(col, reflectionCol, saturate(w));
+	}
+
+	// Screen-Space Global Illumination — additive bounce light from the
+	// half-res SSGI pass. The compose sits AFTER SSR (specular) and BEFORE
+	// exposure so it joins the same tonemap chain as direct light, which
+	// keeps the bounce energy roll-off looking natural (ACES + saturation
+	// applied uniformly). Modulated by the existing SSAO mask so corners
+	// that are heavily occluded don't double-up indirect contribution.
+	[branch]
+	if(ssgiCompose.x > 0.001){
+		float3 bounce = tex2D(ssgiTex, uv).rgb;
+		// Re-use the SSAO mask the user already paid for — the bounce
+		// gather doesn't account for short-range contact occlusion, and
+		// stacking AO × SSGI prevents bleed under cars, sofas, etc.
+		float aoMask = 1.0;
+		if(hdrSsao.x > 0.001){
+			float ao = tex2D(ssaoTex, uv).r;
+			ao = pow(saturate(ao), max(hdrSsao.y, 0.1));
+			aoMask = lerp(1.0, ao, hdrSsao.x);
+		}
+		col += max(bounce, 0.0) * ssgiCompose.x * aoMask;
 	}
 
 

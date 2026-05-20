@@ -217,6 +217,9 @@
 		MENUACTION_CFO_SLIDER, "FED_SST", { new CCFOSlider(&CPostFX::SsrThickness, "Graphics", "SsrThickness", 0.1f, 3.0f, nil, (int8*)&CPostFX::SsrEnable, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_SSF", { new CCFOSlider(&CPostFX::SsrFresnelBias, "Graphics", "SsrFresnel", 0.0f, 1.0f, nil, (int8*)&CPostFX::SsrEnable, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_SSK", { new CCFOSlider(&CPostFX::SsrSkyFallback, "Graphics", "SsrSkyFallback", 0.0f, 1.5f, nil, (int8*)&CPostFX::SsrEnable, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_SGI", { new CCFOSelect((int8*)&CPostFX::SsgiEnable, "Graphics", "SSGI", off_on, 2, false, nil, false, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_SGS", { new CCFOSlider(&CPostFX::SsgiStrength, "Graphics", "SsgiStrength", 0.0f, 2.0f, nil, (int8*)&CPostFX::SsgiEnable, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_SGD", { new CCFOSlider(&CPostFX::SsgiMaxDistance, "Graphics", "SsgiDistance", 4.0f, 60.0f, nil, (int8*)&CPostFX::SsgiEnable, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_WET", { new CCFOSelect((int8*)&CPostFX::WetSurfacesEnable, "Graphics", "WetSurfaces", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_WTI", { new CCFOSlider(&CPostFX::WetSurfacesIntensity, "Graphics", "WetIntensity", 0.0f, 2.0f, nil, (int8*)&CPostFX::WetSurfacesEnable) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_WTS", { new CCFOSlider(&CPostFX::WetSurfacesSpec, "Graphics", "WetSpec", 1.0f, 6.0f, nil, (int8*)&CPostFX::WetSurfacesEnable) }, 0, 0, MENUALIGN_LEFT, \
@@ -434,6 +437,14 @@ void RestoreDefGraphics(int8 action) {
 		CPostFX::SsrStrength = 0.6f;
 		CPostFX::SsrFresnelBias = 0.04f;
 		CPostFX::SsrSkyFallback = 0.6f;
+		// SSGI defaults — match the postfx.cpp initialisers. Off by
+		// default; recommended to pair with TAA when enabled (4-direction
+		// sparse sample budget produces visible per-pixel noise otherwise).
+		CPostFX::SsgiEnable = false;
+		CPostFX::SsgiStrength = 0.7f;
+		CPostFX::SsgiMaxDistance = 18.0f;
+		CPostFX::SsgiStepCount = 6;
+		CPostFX::SsgiNdotLGate = 0.05f;
 		CPostFX::WetSurfacesEnable = true;
 		CPostFX::WetSurfacesIntensity = 1.0f;
 		CPostFX::WetSurfacesDiffuse = 0.45f;

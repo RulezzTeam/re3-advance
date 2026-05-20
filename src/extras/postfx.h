@@ -125,6 +125,22 @@ public:
 	static float SsrSkyFallback;	// 0 = miss = black, 1 = miss = full IBL sky colour
 	static void RenderSSR(RwCamera *cam);
 
+	// Screen-Space Global Illumination — 1-bounce indirect light gathered
+	// per-pixel by tracing 4 hemispherical rays (biased by GTAO's bent
+	// normal in pSsaoA .gba) and re-sampling pHdrScene at the first hit.
+	// Output is a half-res bounce-light buffer that hdrResolve_PS adds
+	// additively to the scene before tonemap. The sample budget (4 dirs
+	// × ≤6 march steps) is intentionally sparse — TAA temporal averaging
+	// smooths the noise. Default OFF so existing saves aren't affected,
+	// recommended to pair with TAA when enabled.
+	static RwRaster *pSsgiA;	// half-res RGBA16F bounce-light RT
+	static bool SsgiEnable;
+	static float SsgiStrength;	// compose lerp on top of HDR scene (0..2)
+	static float SsgiMaxDistance;	// world-space ray max length, metres
+	static int SsgiStepCount;	// 3..8 march steps per direction
+	static float SsgiNdotLGate;	// receiver cosine cutoff (avoid grazing)
+	static void RenderSSGI(RwCamera *cam);
+
 	// Depth of Field — bokeh blur driven by gbuf depth + focal distance.
 	// Runs before ResolveHDR, blurs pHdrScene in-place via a scratch RT
 	// so the downstream tonemap sees the blurred image.

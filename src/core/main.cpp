@@ -1699,6 +1699,11 @@ Idle(void *arg)
 		// SSR also feeds the resolve. Ordered after SSAO so the half-res
 		// camera dispatch can reuse the SSAO vertex quad / bound state.
 		CPostFX::RenderSSR(Scene.camera);
+		// SSGI bounces indirect light per-pixel using the same half-res
+		// dispatch pattern. Reads pSsaoA's .gba (GTAO bent normal) for
+		// direction biasing, so it sits AFTER SSAO. Output lands in
+		// pSsgiA and is composed additively by ResolveHDR.
+		CPostFX::RenderSSGI(Scene.camera);
 		// Depth of field — bokeh blur on pHdrScene before the tonemap
 		// resolve. Off by default, opt-in via menu. Swaps pHdrScene
 		// for the blurred scratch raster so ResolveHDR reads the blur.

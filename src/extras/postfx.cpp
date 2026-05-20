@@ -141,6 +141,15 @@ float CPostFX::SsrFresnelBias = 0.04f;
 // Default to 0.6 so off-screen reflections still get a plausible sky
 // without overpowering proper hit colours.
 float CPostFX::SsrSkyFallback = 0.6f;
+// Screen-Space Global Illumination — off by default until the player opts
+// in. 4 directions × 6 steps = sparse but cheap; TAA averages out the
+// resulting per-pixel noise. Tuning targets ~1ms at 1080p with TAA on.
+RwRaster *CPostFX::pSsgiA;
+bool CPostFX::SsgiEnable = false;
+float CPostFX::SsgiStrength = 0.7f;
+float CPostFX::SsgiMaxDistance = 18.0f;	// metres — local bounce only
+int CPostFX::SsgiStepCount = 6;
+float CPostFX::SsgiNdotLGate = 0.05f;
 // Depth of field — off by default; defaults give a tasteful cinematic
 // near/far blur centred on ~15m (typical car interior distance).
 RwRaster *CPostFX::pDofScratch;
@@ -278,6 +287,8 @@ static rw::RawMatrix taaPrevViewProj = {
 };
 static void *ssr_PS;
 static rw::Camera *ssrCam;	// half-res RGBA8 SSR target
+static void *ssgi_PS;
+static rw::Camera *ssgiCam;	// half-res RGBA16F SSGI bounce-light target
 static void *dof_PS;
 static rw::Camera *dofCam;	// full-res RGBA16F bokeh scratch
 static void *motionBlur_PS;
@@ -479,6 +490,17 @@ CPostFX::Open(RwCamera *cam)
 	// raster.
 	pSsrA = RwRasterCreate(sw, sh, depth, rwRASTERTYPECAMERATEXTURE);
 	ssrCam = CreateBloomCam(pSsrA);
+
+	// SSGI bounce-light target. Half-res (same sw×sh) and RGBA16F so we
+	// can store linear HDR bounce radiance without clipping at 1.0 — sun-
+	// lit asphalt easily hits 2-3× the LDR ceiling, and we want that
+	// energy to drive the additive compose in hdrResolve_PS before the
+	// tonemap. Alpha channel left unused; the receiver reads .rgb.
+	{
+		int32 ssgiFmt = (int32)rw::Raster::CAMERATEXTURE | (int32)rw::Raster::F16_RGBA;
+		pSsgiA = RwRasterCreate(sw, sh, 0, ssgiFmt);
+		ssgiCam = CreateBloomCam(pSsgiA);
+	}
 
 	// DoF scratch — full-res RGBA16F so the bokeh blur preserves HDR
 	// brightness for the tonemap that follows. Same dimensions as
@@ -749,6 +771,10 @@ CPostFX::Open(RwCamera *cam)
 	ssr_PS = rw::d3d::createPixelShader(ssr_PS_cso);
 	}
 	{
+#include "shaders/obj/ssgi_PS.inc"
+	ssgi_PS = rw::d3d::createPixelShader(ssgi_PS_cso);
+	}
+	{
 #include "shaders/obj/dof_PS.inc"
 	dof_PS = rw::d3d::createPixelShader(dof_PS_cso);
 	}
@@ -826,6 +852,8 @@ CPostFX::Close(void)
 	if(pSsaoMixC){ RwRasterDestroy(pSsaoMixC); pSsaoMixC = nil; }
 	if(ssrCam){ DestroyBloomCam(ssrCam); ssrCam = nil; }
 	if(pSsrA){ RwRasterDestroy(pSsrA); pSsrA = nil; }
+	if(ssgiCam){ DestroyBloomCam(ssgiCam); ssgiCam = nil; }
+	if(pSsgiA){ RwRasterDestroy(pSsgiA); pSsgiA = nil; }
 	if(dofCam){ DestroyBloomCam(dofCam); dofCam = nil; }
 	if(pDofScratch){ RwRasterDestroy(pDofScratch); pDofScratch = nil; }
 	if(motionBlurCam){ DestroyBloomCam(motionBlurCam); motionBlurCam = nil; }
@@ -875,6 +903,7 @@ CPostFX::Close(void)
 	if(ssaoBlur_PS){ rw::d3d::destroyPixelShader(ssaoBlur_PS); ssaoBlur_PS = nil; }
 	if(taa_PS){ rw::d3d::destroyPixelShader(taa_PS); taa_PS = nil; }
 	if(ssr_PS){ rw::d3d::destroyPixelShader(ssr_PS); ssr_PS = nil; }
+	if(ssgi_PS){ rw::d3d::destroyPixelShader(ssgi_PS); ssgi_PS = nil; }
 	if(dof_PS){ rw::d3d::destroyPixelShader(dof_PS); dof_PS = nil; }
 	if(motionBlur_PS){ rw::d3d::destroyPixelShader(motionBlur_PS); motionBlur_PS = nil; }
 	if(gtao_PS){ rw::d3d::destroyPixelShader(gtao_PS); gtao_PS = nil; }
@@ -1464,6 +1493,101 @@ CPostFX::RenderSSR(RwCamera *cam)
 	POP_RENDERGROUP();
 }
 
+// Stage 33: Screen-Space Global Illumination. Half-res 1-bounce gathering
+// pass that piggybacks on the existing G-buffer (depth + world normal) +
+// pHdrScene (scene radiance) + pSsaoA (GTAO bent normal in .gba). For each
+// pixel: trace 4 hemispherical directions × ≤6 march steps; on hit, fetch
+// HDR radiance and accumulate weighted by NdotL and distance falloff.
+// Output lands in pSsgiA (RGBA16F linear) and is composed additively by
+// hdrResolve_PS. Sparse on purpose — TAA averages the per-pixel jitter.
+void
+CPostFX::RenderSSGI(RwCamera *cam)
+{
+	if(!CGBuffer::HdrEnabled || !CGBuffer::GbufEnabled || !SsgiEnable)
+		return;
+	if(CGBuffer::pGbufNormalDepth == nil || CGBuffer::pHdrScene == nil ||
+	   ssgi_PS == nil || pSsgiA == nil || ssgiCam == nil)
+		return;
+
+	PUSH_RENDERGROUP("CPostFX::RenderSSGI");
+
+	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEFOGENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDONE);
+	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDZERO);
+
+	RwCameraEndUpdate(cam);
+	RwCameraBeginUpdate((RwCamera*)ssgiCam);
+	// s0 = gbuf (normal+depth), s1 = HDR scene radiance, s2 = bent normal
+	// hint from GTAO (.gba) — SSAO/HBAO fall back to surface N so the
+	// shader's lerp toward "effectiveN" is a no-op when GTAO isn't active.
+	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, CGBuffer::pGbufNormalDepth);
+	BindRasterToSampler(1, CGBuffer::pHdrScene);
+	if(pSsaoA != nil)
+		BindRasterToSampler(2, pSsaoA);
+
+#ifdef RW_D3D9
+	{
+		rw::Camera *rwcam = (rw::Camera*)cam;
+		rw::V3d camPos = rwcam->getFrame()->getLTM()->pos;
+		float farClip = rwcam->farPlane;
+
+		// c10: params — strength is uploaded as the master gate so the
+		// shader's early-out (ssgiParams.x < 0.001) bypasses the whole
+		// 4-direction loop on disabled frames. step count clamped 3..8
+		// inside the shader as belt-and-braces.
+		float pp[4] = {
+			SsgiStrength,
+			SsgiMaxDistance,
+			(float)SsgiStepCount,
+			SsgiNdotLGate,
+		};
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(10, pp, 1);
+
+		// c11: camera + farClip (mirror of volCamera / ssrViewer pattern).
+		float cCam[4] = { camPos.x, camPos.y, camPos.z, farClip };
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(11, cCam, 1);
+
+		// c12..c15: frustum corner rays (TL, TR, BR, BL) — same layout
+		// as the volumetric fog / SSR shaders so the reconstruction of
+		// per-pixel world ray is identical.
+		const rw::V3d *fc = rwcam->frustumCorners;
+		float corners[4][4] = {
+			{ fc[0].x, fc[0].y, fc[0].z, 0 },
+			{ fc[1].x, fc[1].y, fc[1].z, 0 },
+			{ fc[2].x, fc[2].y, fc[2].z, 0 },
+			{ fc[3].x, fc[3].y, fc[3].z, 0 },
+		};
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(12, &corners[0][0], 4);
+
+		// c16..c19: world-to-clip matrix (view × proj, row-major) so the
+		// shader can project candidate hit points back to screen UV +
+		// clip-Z for the depth-march comparison.
+		rw::RawMatrix vp;
+		rw::RawMatrix::mult(&vp, &rwcam->devView, &rwcam->devProj);
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(16, (const float*)&vp, 4);
+
+		rw::d3d::im2dOverridePS = ssgi_PS;
+	}
+#endif
+
+	RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, SsaoVertex, 4, Index, 6);
+
+	RwCameraEndUpdate((RwCamera*)ssgiCam);
+	BindRasterToSampler(1, nil);
+	if(pSsaoA != nil)
+		BindRasterToSampler(2, nil);
+	RwCameraBeginUpdate(cam);
+
+#ifdef RW_D3D9
+	rw::d3d::im2dOverridePS = nil;
+#endif
+
+	POP_RENDERGROUP();
+}
+
 // Per-frame DoF focus distance animator. Exponential lerp toward the
 // menu / script target with a ~0.5 s time constant — long enough that
 // slider movements crossfade smoothly, short enough that a camera-mode
@@ -1673,6 +1797,7 @@ CPostFX::ResolveHDR(RwCamera *cam)
 	// shader treats them as "march to volParams.z". Also reused by the
 	// SSR compose for the per-pixel world normal.
 	bool ssrActive = SsrEnable && CGBuffer::GbufEnabled && pSsrA != nil;
+	bool ssgiActive = SsgiEnable && CGBuffer::GbufEnabled && pSsgiA != nil;
 	bool volFogActive = VolFogEnable && CGBuffer::GbufEnabled
 	                 && CGBuffer::pGbufNormalDepth != nil;
 	bool gbufNeeded = volFogActive || ssrActive;
@@ -1680,6 +1805,11 @@ CPostFX::ResolveHDR(RwCamera *cam)
 		BindRasterToSampler(2, CGBuffer::pGbufNormalDepth);
 	if(ssrActive)
 		BindRasterToSampler(3, pSsrA);
+	// SSGI compose — sampler s4 holds the half-res bounce-light buffer.
+	// Bilinear filtered; bilerp at full-res adds an implicit smooth blur
+	// that helps cover the sparse 4-direction sample noise.
+	if(ssgiActive)
+		BindRasterToSampler(4, pSsgiA);
 
 #ifdef RW_D3D9
 	// .x = exposure, .y = ACES toggle, .z = gamma toggle, .w = saturation
@@ -1917,6 +2047,16 @@ CPostFX::ResolveHDR(RwCamera *cam)
 			0.0f, 0.0f, 0.0f,
 		};
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(41, volQuality, 1);
+
+		// c42: SSGI compose — .x = strength gate (0 = bypass the whole
+		// additive block via [branch] in hdrResolve_PS). When SSGI is
+		// disabled this stays at 0 so the shader path is a single ALU
+		// comparison + skip; no sampler s4 fetch happens.
+		float ssgiCompose[4] = {
+			ssgiActive ? SsgiStrength : 0.0f,
+			0.0f, 0.0f, 0.0f,
+		};
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(42, ssgiCompose, 1);
 	}
 
 	rw::d3d::im2dOverridePS = hdrResolve_PS;
@@ -1935,6 +2075,8 @@ CPostFX::ResolveHDR(RwCamera *cam)
 		BindRasterToSampler(2, nil);
 	if(ssrActive)
 		BindRasterToSampler(3, nil);
+	if(ssgiActive)
+		BindRasterToSampler(4, nil);
 #endif
 	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
 	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
