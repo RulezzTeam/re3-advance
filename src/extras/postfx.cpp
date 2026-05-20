@@ -123,6 +123,10 @@ int CPostFX::SsrStepCount = 28;	// bumped from 18 — binary refinement makes th
 float CPostFX::SsrThickness = 0.5f;
 float CPostFX::SsrStrength = 0.6f;
 float CPostFX::SsrFresnelBias = 0.04f;
+// SSR miss fallback strength — 0 = black miss (legacy), 1 = full IBL sky.
+// Default to 0.6 so off-screen reflections still get a plausible sky
+// without overpowering proper hit colours.
+float CPostFX::SsrSkyFallback = 0.6f;
 // Depth of field — off by default; defaults give a tasteful cinematic
 // near/far blur centred on ~15m (typical car interior distance).
 RwRaster *CPostFX::pDofScratch;
@@ -1468,11 +1472,12 @@ CPostFX::ResolveHDR(RwCamera *cam)
 		};
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(19, volPar, 1);
 
-		// c20: SSR compose strength + Fresnel F0 bias.
+		// c20: SSR compose strength + Fresnel F0 bias + sky fallback.
 		float ssrPar[4] = {
 			ssrActive ? SsrStrength : 0.0f,
 			SsrFresnelBias,
-			0.0f, 0.0f,
+			SsrSkyFallback,
+			0.0f,
 		};
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(20, ssrPar, 1);
 
@@ -1481,6 +1486,29 @@ CPostFX::ResolveHDR(RwCamera *cam)
 		// independent so we can drop volumetric without breaking SSR).
 		float cView[4] = { camPos.x, camPos.y, camPos.z, 0.0f };
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(21, cView, 1);
+
+		// c22..c24: mirror of the IBL sky/horizon/ground colours we
+		// already uploaded to librw's c44..c46 for the receiver. The
+		// postfx PS lives in its own constant address space, so we have
+		// to push them again. Reuses CTimeCycle sky colours scaled by
+		// CPostFX::IblExposure so the SSR fallback colour matches the
+		// procedural ambient term used elsewhere in the frame.
+		float skyT[4] = {
+			(float)CTimeCycle::GetSkyTopRed()   * IblExposure,
+			(float)CTimeCycle::GetSkyTopGreen() * IblExposure,
+			(float)CTimeCycle::GetSkyTopBlue()  * IblExposure,
+			0.0f,
+		};
+		float skyH[4] = {
+			(float)CTimeCycle::GetSkyBottomRed()   * IblExposure,
+			(float)CTimeCycle::GetSkyBottomGreen() * IblExposure,
+			(float)CTimeCycle::GetSkyBottomBlue()  * IblExposure,
+			0.0f,
+		};
+		float skyG[4] = { 0.06f, 0.055f, 0.05f, 0.0f };
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(22, skyT, 1);
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(23, skyH, 1);
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(24, skyG, 1);
 	}
 
 	rw::d3d::im2dOverridePS = hdrResolve_PS;

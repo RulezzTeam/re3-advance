@@ -44,12 +44,21 @@ float4 volColor : register(c18);
 // .w = enable flag (0 = bypass, >0 = on; also controls overall strength lerp)
 float4 volParams : register(c19);
 
-// SSR compose. .x = strength (0 = off), .y = Schlick F0 bias, .z = reserved
+// SSR compose. .x = strength (0 = off), .y = Schlick F0 bias,
+// .z = sky-fallback strength (0 = none, 1 = full IBL sky as miss
+// fallback so reflections never go pitch-black)
+// .w = reserved
 float4 ssrCompose : register(c20);
 
 // Camera world position again (matches volCamera.xyz) — kept separate so
 // SSR-only frames don't depend on the volumetric block. .w = unused.
 float4 ssrViewer : register(c21);
+
+// IBL sky/horizon/ground colours (mirror of librw c44..c46) so SSR misses
+// can fall back to the procedural sky gradient instead of black.
+float4 ssrIblSky     : register(c22);
+float4 ssrIblHorizon : register(c23);
+float4 ssrIblGround  : register(c24);
 
 float3 ACES(float3 x)
 {
@@ -146,6 +155,8 @@ float4 main(in float2 uv : TEXCOORD0) : COLOR0
 	// Screen-Space Reflections — bilinearly up-sampled from the half-res
 	// SSR raster, weighted by a view-dependent Fresnel term so glancing
 	// angles get full reflection and head-on views fade to nothing.
+	// When the SSR ray escaped the screen (ssr.a ≈ 0), the IBL sky
+	// gradient is used as fallback so reflections never go pitch-black.
 	[branch]
 	if(ssrCompose.x > 0.001){
 		float4 ssr = tex2D(ssrTex, uv);
@@ -164,8 +175,21 @@ float4 main(in float2 uv : TEXCOORD0) : COLOR0
 		float f5 = oneMinus * oneMinus; f5 *= f5 * oneMinus;
 		float fresnel = F0 + (1.0 - F0) * f5;
 
-		float w = ssr.a * fresnel * ssrCompose.x;
-		col = lerp(col, ssr.rgb, saturate(w));
+		// SSR miss fallback — sample the IBL sky gradient along the
+		// reflected world-space direction. The reflection vector is
+		// (V mirrored across N); we pick the colour by the same up/
+		// horizon/down hemisphere split the IBL receiver uses.
+		float3 R = reflect(fwd, N);
+		float upW   = saturate( R.z);
+		float downW = saturate(-R.z);
+		float horW  = 1.0 - saturate(abs(R.z));
+		float3 fallbackCol = upW   * ssrIblSky.rgb
+		                   + downW * ssrIblGround.rgb
+		                   + horW  * ssrIblHorizon.rgb;
+
+		float3 reflectionCol = lerp(fallbackCol * ssrCompose.z, ssr.rgb, ssr.a);
+		float w = max(ssr.a, ssrCompose.z) * fresnel * ssrCompose.x;
+		col = lerp(col, reflectionCol, saturate(w));
 	}
 
 

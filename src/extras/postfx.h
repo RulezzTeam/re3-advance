@@ -122,6 +122,7 @@ public:
 	static float SsrThickness;	// depth-window for accepting hits
 	static float SsrStrength;	// compose lerp in hdrResolve_PS
 	static float SsrFresnelBias;	// Schlick F0 (0.04 = dielectric default)
+	static float SsrSkyFallback;	// 0 = miss = black, 1 = miss = full IBL sky colour
 	static void RenderSSR(RwCamera *cam);
 
 	// Depth of Field — bokeh blur driven by gbuf depth + focal distance.

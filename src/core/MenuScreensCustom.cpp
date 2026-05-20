@@ -186,6 +186,7 @@
 		MENUACTION_CFO_SLIDER, "FED_SSD", { new CCFOSlider(&CPostFX::SsrMaxDistance, "Graphics", "SsrDistance", 5.0f, 120.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_SST", { new CCFOSlider(&CPostFX::SsrThickness, "Graphics", "SsrThickness", 0.1f, 3.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_SSF", { new CCFOSlider(&CPostFX::SsrFresnelBias, "Graphics", "SsrFresnel", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_SSK", { new CCFOSlider(&CPostFX::SsrSkyFallback, "Graphics", "SsrSkyFallback", 0.0f, 1.5f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_WET", { new CCFOSelect((int8*)&CPostFX::WetSurfacesEnable, "Graphics", "WetSurfaces", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_WTI", { new CCFOSlider(&CPostFX::WetSurfacesIntensity, "Graphics", "WetIntensity", 0.0f, 2.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_WTS", { new CCFOSlider(&CPostFX::WetSurfacesSpec, "Graphics", "WetSpec", 1.0f, 6.0f) }, 0, 0, MENUALIGN_LEFT, \
@@ -334,6 +335,7 @@ void RestoreDefGraphics(int8 action) {
 		CPostFX::SsrThickness = 0.5f;
 		CPostFX::SsrStrength = 0.6f;
 		CPostFX::SsrFresnelBias = 0.04f;
+		CPostFX::SsrSkyFallback = 0.6f;
 		CPostFX::WetSurfacesEnable = true;
 		CPostFX::WetSurfacesIntensity = 1.0f;
 		CPostFX::WetSurfacesDiffuse = 0.45f;
