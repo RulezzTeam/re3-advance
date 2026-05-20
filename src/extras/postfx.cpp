@@ -67,12 +67,17 @@ float CPostFX::GodRaysWeight = 0.45f;
 // With the full HDR pipeline online we run ACES by default; it bakes a
 // sRGB-ish rolloff into the tonemap so the gamma toggle becomes redundant
 // (and double-encoding it crushes shadows: the "HDR but dark as night"
-// regression). Exposure 1.6 matches the typical TimeCycle scene mid grey;
-// the previous 1.0 default was the no-op linear pass-through that made
-// the HDR backbuffer look ~2 stops underexposed vs the LDR baseline.
+// regression).
+//
+// Exposure 1.2 (down from the initial 1.6 attempt) — a gentler bump from
+// the legacy 1.0 baseline. 1.6 + ACES + the new col*=exposure path (which
+// was previously missing) was over-amplifying any HDR-range particles or
+// alpha-accumulation residue in pHdrScene, producing the visible "HDR
+// noise" symptom on dense scenes. 1.2 keeps the brightness lift without
+// pushing the highlights deep into the ACES shoulder.
 bool CPostFX::TonemapACES = true;
 bool CPostFX::TonemapGamma = false;
-float CPostFX::Exposure = 1.6f;
+float CPostFX::Exposure = 1.2f;
 float CPostFX::Saturation = 1.05f;	// slight pop — picture had read flat at 1.0
 float CPostFX::VignetteIntensity = 0.0f;
 float CPostFX::VignetteSoftness = 0.45f;

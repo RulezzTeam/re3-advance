@@ -319,13 +319,14 @@ void RestoreDefGraphics(int8 action) {
 		CPostFX::BloomSaturation = 1.0f;
 	#endif
 	#ifdef POSTFX_TONEMAP
-		// Match the C++ side defaults exactly (postfx.cpp:65-72). ACES on,
-		// gamma off (the two are mutually-exclusive — ACES already does the
-		// sRGB rolloff); Exposure 1.6 to brighten the HDR midtones out of
-		// the underexposed range the old 1.0 default left them in.
+		// Match the C++ side defaults. ACES on, gamma off (mutually-
+		// exclusive — ACES already does the sRGB rolloff); Exposure 1.2
+		// to brighten the HDR midtones without over-amplifying particle
+		// residue (the 1.6 attempt from the initial Stage 1 push produced
+		// visible noise on dense scenes).
 		CPostFX::TonemapACES = true;
 		CPostFX::TonemapGamma = false;
-		CPostFX::Exposure = 1.6f;
+		CPostFX::Exposure = 1.2f;
 		CPostFX::Saturation = 1.05f;
 		CPostFX::VignetteIntensity = 0.0f;
 		CPostFX::VignetteSoftness = 0.45f;

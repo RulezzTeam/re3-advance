@@ -163,8 +163,16 @@ float4 main(in float2 uv : TEXCOORD0) : COLOR0
 		int STEPS = (int)clamp(volQuality.x, 4.0, 32.0);
 		float stepLen = maxD / (float)STEPS;
 
-		// Per-pixel jitter — kills banding from low step count.
-		float jitter = frac(sin(dot(uv * 4321.123, float2(12.9898, 78.233))) * 43758.5453);
+		// Per-pixel jitter — kills banding from low step count *when fog
+		// is active*. Without VolFog the raymarch only integrates spot
+		// cones, and the jitter pattern then shows through as a static
+		// speckle across the whole screen because there's no fog density
+		// to absorb it and TAA (which would smooth it) is off by default.
+		// Use a fixed half-step start when fog is off — slight per-pixel
+		// banding is invisible vs the static-noise alternative.
+		float jitter = (volParams.w > 0.001)
+		    ? frac(sin(dot(uv * 4321.123, float2(12.9898, 78.233))) * 43758.5453)
+		    : 0.5;
 
 		float3 scatter = float3(0, 0, 0);
 		float trans = 1.0;
@@ -225,8 +233,12 @@ float4 main(in float2 uv : TEXCOORD0) : COLOR0
 		// Combine — effect strength is max(fog strength, spot strength).
 		// With fog off (volParams.w=0) but spots on, trans≈1 so we get
 		// pure additive scatter; with fog on, full march behaviour as
-		// before. Cap spot strength so 8 enabled slots don't double-add.
-		float spotStrength = saturate(spotEnableSum * 0.4);
+		// before. Cap spot strength low (* 0.1) so 8 enabled slots don't
+		// add up to a full lerp at every pixel — the spot scatter is
+		// supposed to be a *subtle cone glow*, not a screen-wide tint,
+		// and the lower cap also keeps any residual jitter below the
+		// noise floor when TAA isn't there to smooth it.
+		float spotStrength = saturate(spotEnableSum * 0.1);
 		float effectStrength = saturate(max(volParams.w, spotStrength));
 		float3 fogged = col * trans + scatter;
 		col = lerp(col, fogged, effectStrength);
@@ -278,8 +290,16 @@ float4 main(in float2 uv : TEXCOORD0) : COLOR0
 
 	// Exposure — linear multiplier before tonemap. ACES expects scene
 	// linear values around [0..4] for the highlights to roll off correctly,
-	// so the host pushes ~1.6 as the default HDR scene midpoint.
+	// so the host pushes ~1.2 as the default HDR scene midpoint.
 	col *= hdrTonemap.x;
+
+	// Clamp HDR colour to non-negative before tonemap. pHdrScene is
+	// RGBA16F which legitimately holds negatives (alpha-blend accumulation
+	// can sign-flip a channel during overlap), and ACES amplifies the
+	// negative range into visible NaN-like sparkle when subsequent
+	// saturate() snaps them through zero. The clamp is one ALU op and
+	// kills the "HDR noise" symptom on scenes with heavy particle alpha.
+	col = max(col, 0.0);
 
 	// ACES filmic tonemap, blendable.
 	float3 aces = ACES(col);
