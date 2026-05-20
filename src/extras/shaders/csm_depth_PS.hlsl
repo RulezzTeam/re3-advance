@@ -1,8 +1,12 @@
 // Depth-only pixel shader for CSM cascade rendering.
 //
-// Outputs the linear ortho-space depth into R, which the receiver
-// (default_PS with SHADOWS_CSM enabled) will compare against the
-// receiver pixel's projected light-space z.
+// Outputs:
+//   .r = linear ortho-space depth (used by PCF receivers — Sharp/Soft/Ultra)
+//   .g = depth² (used by the VSM receiver — Chebyshev inequality)
+// The two channels coexist in the same F16_RGBA cascade RT; PCF readers
+// only sample .r and pay nothing extra for the .g write. One mul per
+// caster pixel is the entire VSM authoring cost — no extra RT, no
+// separate render pass.
 
 struct VS_out {
 	float4 Position  : POSITION;
@@ -11,5 +15,6 @@ struct VS_out {
 
 float4 main(VS_out input) : COLOR
 {
-	return float4(input.ViewDepth, 1.0, 1.0, 1.0);
+	float z = input.ViewDepth;
+	return float4(z, z*z, 1.0, 1.0);
 }

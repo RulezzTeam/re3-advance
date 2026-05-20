@@ -343,7 +343,11 @@ static const float2 csmPoisson32[32] = {
 };
 
 // Additional tuning slot (csmTuning is c61, this lives at c62).
-// .x = PCF mode (0 = Sharp 4-tap, 1 = Soft 16-tap, 2 = Ultra 32-tap)
+// .x = filter mode
+//      0 = Sharp (4-tap PCF)
+//      1 = Soft  (16-tap PCF)
+//      2 = Ultra (32-tap PCF)
+//      3 = VSM   (Variance Shadow Maps via Chebyshev — naturally smooth)
 // .y = PCF radius multiplier (1.0 = stock, 2..3 = even softer)
 // .z, .w = reserved
 float4 csmTuning2 : register(c62);
@@ -365,12 +369,34 @@ float CSMSampleCascade(int idx, float3 worldPos)
 
 	float vis = 0.0;
 	float2 texelStep = csmTuning.xy * max(csmTuning2.y, 1.0);
-	// Three-mode PCF kernel — Sharp / Soft / Ultra. Branches are uniform
-	// (csmTuning2.x is a static constant for the whole frame), so the
-	// compiler keeps only one branch alive per draw. 4× and 8× the
-	// texture reads come at progressively softer + cleaner shadow edges;
-	// Ultra is the recommended quality preset for 1080p+ on modern GPUs.
-	if(csmTuning2.x > 1.5){
+	// Four-mode shadow filter — Sharp / Soft / Ultra (PCF) + VSM. Branches
+	// are uniform (csmTuning2.x is a static constant for the whole frame),
+	// so the compiler keeps only one branch alive per draw. VSM trades the
+	// progressively-larger PCF sample count for one .rg fetch + a closed-
+	// form Chebyshev inequality — naturally smooth shadows that handle
+	// soft penumbras without the PCF banding, at the cost of "light bleed"
+	// on tightly nested occluders.
+	if(csmTuning2.x > 2.5){
+		// VSM — sample (depth, depth²) once per cascade. Chebyshev
+		// inequality: P(z > t) ≤ σ² / (σ² + (μ - t)²). Returns 1 when
+		// fully lit, <1 in penumbra, 0 in full shadow. Numerical guard
+		// keeps σ² ≥ 1e-5 so the divide is finite on flat occluders.
+		float2 m;
+		if(idx == 0)      m = tex2D(csmTex0, uv).rg;
+		else if(idx == 1) m = tex2D(csmTex1, uv).rg;
+		else              m = tex2D(csmTex2, uv).rg;
+		float mu = m.x;
+		float variance = max(m.y - mu * mu, 1e-5);
+		float d = refZ - mu;
+		// Lit: t below the mean → fully lit; otherwise probabilistic.
+		if(d <= 0.0)
+			return 1.0;
+		float pmax = variance / (variance + d * d);
+		// Light-bleeding-reduction — sharpen the falloff so partial-shadow
+		// pixels don't bleed light through thin occluders. Linear chop
+		// at 0.2 is a standard trick (Donnelly & Lauritzen 2006).
+		return saturate((pmax - 0.2) / 0.8);
+	}else if(csmTuning2.x > 1.5){
 		// Ultra — 32 taps. Halves visible PCF banding at the cost of 2×
 		// the work of Soft. Recommended at 1080p+ on modern GPUs.
 		[unroll]

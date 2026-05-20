@@ -222,6 +222,9 @@ uploadIBL(void)
 //   mode = 1 → Soft  (16-tap Poisson)
 //   mode = 2 → Ultra (32-tap Poisson) — best edge quality at ~2× the cost
 //             of Soft. Recommended on modern hardware @ 1080p+.
+//   mode = 3 → VSM   (Variance Shadow Maps via Chebyshev) — naturally
+//             smooth edges, one .rg fetch per pixel, no Poisson kernel.
+//             Trade-off: "light bleed" through thin/stacked occluders.
 static float csmTuning2[4] = { 0.0f, 1.0f, 0.0f, 0.0f };
 void
 setCsmSoftness(int mode, float radiusMul)

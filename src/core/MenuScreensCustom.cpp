@@ -232,7 +232,7 @@
 		MENUACTION_CFO_SELECT, "FED_CSM", { new CCFOSelect((int8*)&CCSM::Enabled, "Graphics", "CSM", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_CSS", { new CCFOSlider(&CCSM::Strength, "Graphics", "CSMStrength", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_CMR", { new CCFOSelect(&CCSM::MapSizeIndex, "Graphics", "CSMMapSize", cascadeMapSizes, 3, false, CCSM::MapSizeAfterChange) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SELECT, "FED_CFM", { new CCFOSelect((int8*)&CCSM::SoftnessMode, "Graphics", "CSMSoft", csmSoftNames, 3, false) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_CFM", { new CCFOSelect((int8*)&CCSM::SoftnessMode, "Graphics", "CSMSoft", csmSoftNames, 4, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_CFR", { new CCFOSlider(&CCSM::SoftnessRadius, "Graphics", "CSMSoftR", 1.0f, 4.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_SPS", { new CCFOSelect((int8*)&CSpotShadow::Enabled, "Graphics", "SpotShadow", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_SSZ", { new CCFOSelect(&CSpotShadow::MapSizeIndex, "Graphics", "SpotShadowSize", spotShadowSizes, 4, false, CSpotShadow::MapSizeAfterChange) }, 0, 0, MENUALIGN_LEFT, \
@@ -280,10 +280,13 @@ const char *volSpotMaxCounts[] = { "4 lights", "8 lights" };
 #endif
 #ifdef POSTFX_CSM
 // Renamed: "Hard (4-tap)" was confusing (sounds like difficulty), and the
-// option list now exposes the new 32-tap kernel from Stage 3.2. Use the
-// rendering term ("Sharp/Soft/Ultra") instead of a tap count alone so the
-// user sees a quality tier, not an implementation detail.
-const char *csmSoftNames[] = { "Sharp (4-tap)", "Soft (16-tap)", "Ultra (32-tap)" };
+// option list now exposes the new 32-tap kernel from Stage 3.2 plus the
+// VSM variant from Stage 18. Use the rendering term ("Sharp/Soft/Ultra/
+// VSM") instead of a tap count alone so the user sees a quality tier,
+// not an implementation detail. VSM = Variance Shadow Maps — naturally
+// smooth edges via Chebyshev inequality at the cost of "light bleed"
+// on thin occluders.
+const char *csmSoftNames[] = { "Sharp (4-tap)", "Soft (16-tap)", "Ultra (32-tap)", "VSM" };
 #endif
 
 void RestoreDefGraphics(int8 action) {
