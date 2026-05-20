@@ -326,6 +326,20 @@ void setVertexDeclaration(void *declaration);
 void setMRT(int n, Raster *ras);
 void clearMRT(void);
 
+// Register a raw IDirect3DCubeTexture9* slot for device-lost/reset
+// management. The handle is Release()d on lost + recreated on reset,
+// with the slot pointer updated in-place. The host (CIBL, future
+// reflection probes) keeps a `IDirect3DCubeTexture9 *foo;` member and
+// passes `&foo` to registerVidmemCube — librw writes back to *foo on
+// reset so the host always sees the current handle.
+//
+// Wrapped in _D3D9_H_ so non-d3d9 builds that include this header
+// (gl3, ps2, null) don't trip on the IDirect3DCubeTexture9 type.
+#ifdef _D3D9_H_
+void registerVidmemCube(IDirect3DCubeTexture9 **slot, int size, int format);
+void unregisterVidmemCube(IDirect3DCubeTexture9 **slot);
+#endif
+
 void *createVertexShader(void *csosrc);
 void *createPixelShader(void *csosrc);
 void destroyVertexShader(void *shader);

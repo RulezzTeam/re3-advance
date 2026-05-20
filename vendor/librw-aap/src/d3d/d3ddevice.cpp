@@ -7,6 +7,7 @@
 #include "../rwbase.h"
 #include "../rwplg.h"
 #include "../rwerror.h"
+#include "../rwlog.h"
 #include "../rwrender.h"
 #include "../rwengine.h"
 #include "../rwpipeline.h"
@@ -33,6 +34,21 @@ struct VidmemRaster
 static VidmemRaster *vidmemRasters;
 void addVidmemRaster(Raster *raster);
 void removeVidmemRaster(Raster *raster);
+
+// Parallel registry for raw IDirect3DCubeTexture9 handles that live
+// outside the Raster abstraction (CIBL captureCube / irradianceCube,
+// future reflection probes). On device lost we Release them and null
+// the host's storage slot; on reset we re-create with the same size
+// + format. Host registers a pointer-to-pointer so we can write the
+// new handle back into the same variable the host reads.
+struct VidmemCube
+{
+	IDirect3DCubeTexture9 **slot;
+	int size;
+	int format;	// 0 = RGBA8 default, Raster::F16_RGBA for HDR
+	VidmemCube *next;
+};
+static VidmemCube *vidmemCubes;
 
 // Same thing for dynamic vertex buffers
 struct DynamicVB
@@ -1127,9 +1143,47 @@ found:
 	rwFree(vmr);
 }
 
+void
+registerVidmemCube(IDirect3DCubeTexture9 **slot, int size, int format)
+{
+	if(slot == nullptr) return;
+	// Dedupe — if the same slot pointer is already registered, just
+	// update size/format instead of allocating a second entry.
+	for(VidmemCube *v = vidmemCubes; v; v = v->next){
+		if(v->slot == slot){
+			v->size = size;
+			v->format = format;
+			return;
+		}
+	}
+	VidmemCube *v = rwNewT(VidmemCube, 1, ID_DRIVER | MEMDUR_EVENT);
+	v->slot = slot;
+	v->size = size;
+	v->format = format;
+	v->next = vidmemCubes;
+	vidmemCubes = v;
+}
+
+void
+unregisterVidmemCube(IDirect3DCubeTexture9 **slot)
+{
+	if(slot == nullptr) return;
+	VidmemCube **p;
+	for(p = &vidmemCubes; *p; p = &(*p)->next){
+		if((*p)->slot == slot){
+			VidmemCube *v = *p;
+			*p = v->next;
+			rwFree(v);
+			return;
+		}
+	}
+}
+
 static void
 releaseVidmemRasters(void)
 {
+	int cameraTex = 0, zbufRel = 0, cubeRel = 0;
+
 	VidmemRaster *vmr;
 	Raster *raster;
 	D3dRaster *natras;
@@ -1138,24 +1192,47 @@ releaseVidmemRasters(void)
 		natras = GETD3DRASTEREXT(raster);
 		switch(raster->type){
 		case Raster::CAMERATEXTURE:
-			destroyTexture(natras->texture);
-			natras->texture = nil;
+			if(natras->texture){
+				destroyTexture(natras->texture);
+				natras->texture = nil;
+				cameraTex++;
+			}
 			break;
 
 		case Raster::ZBUFFER:
 			// we'll leave the default surface dangling so we can tell the difference
-			if(natras->texture != d3d9Globals.defaultDepthSurf){
+			if(natras->texture && natras->texture != d3d9Globals.defaultDepthSurf){
 				((IDirect3DSurface9*)natras->texture)->Release();
 				natras->texture = nil;
+				zbufRel++;
 			}
 			break;
 		}
 	}
+
+	// Cubes registered by CIBL / reflection probes etc. Same idea —
+	// Release the COM ref and null the host's slot so a stale pointer
+	// can't be sampled before recreateVidmemRasters fires.
+	for(VidmemCube *v = vidmemCubes; v; v = v->next){
+		if(v->slot && *v->slot){
+			(*v->slot)->Release();
+			*v->slot = nullptr;
+			cubeRel++;
+		}
+	}
+
+	rwLogf(RW_LOG_WARN,
+	    "Device lost — released %d CAMERATEXTURE + %d Z-buffer + %d cube resources",
+	    cameraTex, zbufRel, cubeRel);
 }
 
 static void
 recreateVidmemRasters(void)
 {
+	int cameraTex = 0, cameraTexFail = 0;
+	int zbufRecreated = 0, zbufFail = 0;
+	int cubeRecreated = 0, cubeFail = 0;
+
 	VidmemRaster *vmr;
 	Raster *raster;
 	D3dRaster *natras;
@@ -1165,36 +1242,80 @@ recreateVidmemRasters(void)
 		switch(raster->type){
 		case Raster::CAMERATEXTURE: {
 			int32 levels = Raster::calculateNumLevels(raster->width, raster->height);
-			IDirect3DTexture9 *tex = nil;
-			d3ddevice->CreateTexture(raster->width, raster->height,
+			IDirect3DTexture9 *tex = nullptr;
+			HRESULT hr = d3ddevice->CreateTexture(raster->width, raster->height,
 						raster->format & Raster::MIPMAP ? levels : 1,
 						D3DUSAGE_RENDERTARGET,
 						(D3DFORMAT)natras->format, D3DPOOL_DEFAULT, &tex, nil);
-			natras->texture = tex;
-			if(natras->texture)
+			if(FAILED(hr) || tex == nullptr){
+				natras->texture = nil;
+				cameraTexFail++;
+				rwLogf(RW_LOG_ERROR,
+				    "recreateVidmemRasters: CAMERATEXTURE recreate %dx%d fmt=%u hr=0x%08lX",
+				    raster->width, raster->height, natras->format, (unsigned long)hr);
+			}else{
+				natras->texture = tex;
 				d3d9Globals.numTextures++;
+				cameraTex++;
+			}
 			break;
 		}
 
 		case Raster::ZBUFFER:
 			if(natras->texture){
-				RECT rect;
+				RECT rect = {};
 				GetClientRect(d3d9Globals.window, &rect);
 				raster->width = rect.right;
 				raster->height = rect.bottom;
 				natras->texture = d3d9Globals.defaultDepthSurf;
 				natras->format = d3d9Globals.present.AutoDepthStencilFormat;
 				raster->depth = findFormatDepth(natras->format);
+				zbufRecreated++;
 			}else{
-				IDirect3DSurface9 *surf = nil;
-				d3ddevice->CreateDepthStencilSurface(raster->width, raster->height, (D3DFORMAT)natras->format,
+				IDirect3DSurface9 *surf = nullptr;
+				HRESULT hr = d3ddevice->CreateDepthStencilSurface(raster->width, raster->height, (D3DFORMAT)natras->format,
 					d3d9Globals.present.MultiSampleType, d3d9Globals.present.MultiSampleQuality,
 					FALSE, &surf, nil);
-				natras->texture = surf;
+				if(FAILED(hr) || surf == nullptr){
+					natras->texture = nil;
+					zbufFail++;
+					rwLogf(RW_LOG_ERROR,
+					    "recreateVidmemRasters: Z-buffer recreate %dx%d fmt=%u hr=0x%08lX",
+					    raster->width, raster->height, natras->format, (unsigned long)hr);
+				}else{
+					natras->texture = surf;
+					zbufRecreated++;
+				}
 			}
 			break;
 		}
 	}
+
+	// Recreate registered cubes — caller's slot pointer is written
+	// back with the new handle so the host's variable stays valid.
+	for(VidmemCube *v = vidmemCubes; v; v = v->next){
+		if(v->slot == nullptr) continue;
+		D3DFORMAT fmt = D3DFMT_A8R8G8B8;
+		if(v->format == (int)Raster::F16_RGBA)
+			fmt = D3DFMT_A16B16G16R16F;
+		IDirect3DCubeTexture9 *cube = nullptr;
+		HRESULT hr = d3ddevice->CreateCubeTexture((UINT)v->size, 1, D3DUSAGE_RENDERTARGET,
+		                                          fmt, D3DPOOL_DEFAULT, &cube, nil);
+		if(FAILED(hr) || cube == nullptr){
+			*v->slot = nullptr;
+			cubeFail++;
+			rwLogf(RW_LOG_ERROR,
+			    "recreateVidmemRasters: cube recreate size=%d fmt=%u hr=0x%08lX",
+			    v->size, fmt, (unsigned long)hr);
+		}else{
+			*v->slot = cube;
+			cubeRecreated++;
+		}
+	}
+
+	rwLogf(RW_LOG_INFO,
+	    "Device reset — recreated %d CAMERATEXTURE (%d failed) + %d Z-buffer (%d failed) + %d cube (%d failed)",
+	    cameraTex, cameraTexFail, zbufRecreated, zbufFail, cubeRecreated, cubeFail);
 }
 
 void

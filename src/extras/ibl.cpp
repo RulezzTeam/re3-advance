@@ -157,7 +157,15 @@ CIBL::Open(RwCamera *cam)
 	// not be wired up yet. Set FrameCounter so the first BeginScenePass
 	// triggers Update with a fully-initialised engine.
 	FrameCounter = REFRESH_PERIOD;
-	rwLogf(rw::RW_LOG_INFO, "CIBL::Open OK — captureCube=%d irradianceCube=%d (Update deferred to first frame)",
+
+	// Register the cubes with librw so they survive Alt-Tab device
+	// lost/reset. librw will Release them on lost + CreateCubeTexture
+	// them back on reset, writing the new handle into the same
+	// captureCube/irradianceCube storage we own.
+	rw::d3d::registerVidmemCube((IDirect3DCubeTexture9**)&captureCube, CAPTURE_SIZE, colorFmt);
+	rw::d3d::registerVidmemCube((IDirect3DCubeTexture9**)&irradianceCube, IRRADIANCE_SIZE, colorFmt);
+
+	rwLogf(rw::RW_LOG_INFO, "CIBL::Open OK — captureCube=%d irradianceCube=%d (Update deferred to first frame, registered with vidmemCubes)",
 	    CAPTURE_SIZE, IRRADIANCE_SIZE);
 #endif
 }
@@ -166,6 +174,10 @@ void
 CIBL::Close(void)
 {
 #ifdef RW_D3D9
+	// Unregister from vidmemCubes BEFORE destroying so the device-lost
+	// path doesn't try to recreate a cube we're about to delete.
+	rw::d3d::unregisterVidmemCube((IDirect3DCubeTexture9**)&captureCube);
+	rw::d3d::unregisterVidmemCube((IDirect3DCubeTexture9**)&irradianceCube);
 	if(captureCube){ rw::d3d::destroyCubeTexture(captureCube); captureCube = nil; }
 	if(irradianceCube){ rw::d3d::destroyCubeTexture(irradianceCube); irradianceCube = nil; }
 	// Shaders stay loaded — they have no per-scene state and re-loading
