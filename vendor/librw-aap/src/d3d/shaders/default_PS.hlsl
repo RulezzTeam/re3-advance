@@ -138,6 +138,20 @@ float SampleSpotShadow(float3 worldPos)
 	return vis * 0.25;
 }
 
+// Dynamic point light receiver — applies the host-uploaded N nearest
+// CPointLights to the per-pixel surface. Walks dynLightData[i*2 + 0/1]
+// (pos+radius, colour+intensity), masks by inverse-square × radius
+// cutoff × NdotL.
+//
+// IMPORTANT: this is the "with spot shadow" variant. The slot-0 light is
+// the same one CSpotShadow rendered its depth map for, so we sample that
+// depth map to suppress contribution in shadowed pixels. Slots 1..N-1
+// get full contribution since we have no per-light shadow maps.
+//
+// A SIMPLER COPY without the spot shadow lives in
+// `src/extras/shaders/neoVehicle_PS.hlsl` (vehicle bodies don't go
+// through this pp_PS path — they have their own pipeline). Keep the
+// two in sync for the inverse-square + radius-cutoff math.
 float3 ApplyDynamicPointLights(float3 worldPos, float3 N)
 {
 	float3 sum = float3(0, 0, 0);

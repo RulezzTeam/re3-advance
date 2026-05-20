@@ -53,6 +53,15 @@ float3 ReflectV(float3 V, float3 N)
 	return N * dot(V, N) * 2.0 - V;
 }
 
+// Dynamic point-light receiver for the vehicle pipe. Same inverse-square
+// + radius-cutoff × NdotL math as the pp_PS variant in
+// `vendor/librw-aap/src/d3d/shaders/default_PS.hlsl::ApplyDynamicPointLights`
+// but WITHOUT the slot-0 spot shadow integration — vehicle bodies don't
+// run through pp_PS (they have their own pipe) and the spot shadow map
+// is only authored for the static-world pass, so applying it here would
+// introduce a self-shadow seam between car and street lamp. Keep this
+// copy in sync with default_PS for the attenuation curve so cars and
+// the road they sit on get visually consistent illumination.
 float3 ApplyDynamicPointLights(float3 worldPos, float3 N)
 {
 	float3 sum = float3(0, 0, 0);
