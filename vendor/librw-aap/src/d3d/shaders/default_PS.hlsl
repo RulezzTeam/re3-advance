@@ -100,6 +100,34 @@ float4 rainRipplesParams : register(c65);
 //   .w = reserved
 float4 puddlesParams : register(c66);
 
+// Underwater caustics — projected light caustic pattern on submerged
+// world surfaces. Host uploads via setCaustics + uploadIBL.
+//   .x = accumulated time (seconds, drives animation phase)
+//   .y = strength (0 = bypass)
+//   .z = water level (world Z below which caustics apply)
+//   .w = reserved
+// Pattern is a cheap 2-octave product-of-sines that pinches into
+// bright spots after a pow() reshape — looks like sunlight focused by
+// water surface refraction.
+float4 causticsParams : register(c67);
+
+float3 ComputeCaustic(float2 worldXY, float time, float depth)
+{
+	// Two layers drifting in slightly different directions so the
+	// caustic spots animate without a visible "frame loop".
+	float2 p1 = worldXY * 0.4 + time * float2(0.30,  0.18);
+	float2 p2 = worldXY * 0.6 + time * float2(-0.22, 0.42);
+	float c1 = abs(sin(p1.x * 1.5) * sin(p1.y * 1.5));
+	float c2 = abs(sin(p2.x * 2.0) * sin(p2.y * 1.7));
+	// pow(.., 4) sharpens the product into the classic bright-cell
+	// pattern that's the visual signature of water-refracted sunlight.
+	float c = pow(c1 * c2, 4.0) * 2.0;
+	// Light absorption with depth — Beer-Lambert-ish blue-green tint
+	// that matches the underwater fog/scatter colour family.
+	float atten = exp(-depth * 0.05);
+	return float3(0.55, 0.78, 1.00) * c * atten;
+}
+
 // Cheap procedural puddle mask. 2 sin terms at different scales — not
 // "real" noise but the eye reads it as a natural splotchy pattern on
 // the ground. Returns 0..1 puddle factor (0 = dry patch, 1 = full
@@ -572,6 +600,26 @@ float4 ComputeShadedColor(VS_out input)
 	// intact without killing the contribution on vertical surfaces.
 	float dynScale = 1.0 - 0.5 * wetMask;
 	lit += ApplyDynamicPointLights(input.WorldPos, N) * dynScale;
+
+	// Underwater caustics — projected light cells on submerged world
+	// surfaces. Adds to `lit` so the receiver inherits the same csm /
+	// surfDiffuse modulation as the rest of the lighting. The depth
+	// check (waterLevel - worldZ > epsilon) gates the effect strictly
+	// to below-water pixels; above-water gets the [branch] skip cost
+	// only. Up-facing-bias matches how caustics in real water focus
+	// downward through the meniscus rather than projecting sideways.
+	[branch]
+	if(causticsParams.y > 0.01){
+		float depth = causticsParams.z - input.WorldPos.z;
+		if(depth > 0.05 && N.z > 0.3){
+			float3 caust = ComputeCaustic(input.WorldPos.xy,
+			                              causticsParams.x,
+			                              depth);
+			// Modulate by N.z so vertical walls catch less, level
+			// pool floors catch the full pattern.
+			lit += caust * causticsParams.y * saturate(N.z);
+		}
+	}
 
 	[branch]
 	if(surfSpecular > 0.001 || wetMask > 0.05){

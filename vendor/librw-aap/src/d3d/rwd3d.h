@@ -501,6 +501,12 @@ void setRainRipples(float time, float strength, float tileScale);
 // period. Uploaded to c66 inside uploadIBL.
 void setPuddles(float strength, float tileScale);
 
+// Underwater caustics — projected light cell pattern on submerged
+// world surfaces. `time` accumulates per-frame on the host. `strength`
+// gates the effect (0 = off). `waterLevelZ` is the world Z below which
+// caustics apply. Uploaded to c67 inside uploadIBL.
+void setCaustics(float time, float strength, float waterLevelZ);
+
 // Dynamic point lights — host picks top-N brightest CPointLights near
 // camera, calls setDynamicPointLights once per frame, then uploads. The
 // receiver in default_pp_PS applies them per-pixel with smooth window

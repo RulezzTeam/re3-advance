@@ -102,6 +102,23 @@ setPuddles(float strength, float tileScale)
 	puddlesParams[3] = 0.0f;
 }
 
+// Underwater caustics — projected light cell pattern on submerged
+// world surfaces. Reads in default_pp_PS at c67. Strength defaults to
+// off; menu toggle on the host controls whether the effect runs.
+//   .x = accumulated time (drives animation phase)
+//   .y = strength
+//   .z = water level (world Z below which caustics apply)
+//   .w = reserved
+static float causticsParams[4] = { 0.0f, 0.0f, 6.0f, 0.0f };
+void
+setCaustics(float time, float strength, float waterLevelZ)
+{
+	causticsParams[0] = time;
+	causticsParams[1] = strength;
+	causticsParams[2] = waterLevelZ;
+	causticsParams[3] = 0.0f;
+}
+
 // Dynamic point lights — host (CDynamicLights) picks the top-N brightest
 // CPointLights near the camera each frame and uploads them here. The
 // receiver in default_pp_PS samples this array at c100 (count) + c101..
@@ -207,6 +224,8 @@ uploadIBL(void)
 	d3ddevice->SetPixelShaderConstantF(65, rainRipplesParams, 1);
 	// Puddles — same cadence.
 	d3ddevice->SetPixelShaderConstantF(66, puddlesParams, 1);
+	// Caustics — same cadence.
+	d3ddevice->SetPixelShaderConstantF(67, causticsParams, 1);
 }
 
 // CSM receiver — uploads 3 cascade light-view-proj matrices + per-cascade

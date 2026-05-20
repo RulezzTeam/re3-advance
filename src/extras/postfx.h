@@ -192,6 +192,13 @@ public:
 	// toggle gates the *effect family* but the per-frame magnitude still
 	// follows the weather.
 	static bool PuddlesEnable;
+
+	// Underwater caustics — animated light cell pattern projected on
+	// submerged world surfaces. Default ON: cheap [branch] gate, only
+	// fires below the configured water Z. Plumbed through setCaustics
+	// + uploadIBL → c67 in default_PS.
+	static bool CausticsEnable;
+	static float CausticsStrength;	// 0..2; default 1.0 = subtle
 #endif
 
 	static void InitOnce(void);

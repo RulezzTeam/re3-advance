@@ -183,6 +183,11 @@ int8  CPostFX::VolFogStepsIndex = 2;	// 0..4 = 8/12/16/24/32 — default High (1
 // has negligible perf cost, and the visual upgrade during rain is
 // significant. Users can still toggle it off in menu.
 bool CPostFX::PuddlesEnable = true;
+// Underwater caustics — default ON. Cheap [branch] above water (skips the
+// whole block when worldZ > waterLevel), and the visible bonus when the
+// player goes diving / swims off a pier is significant.
+bool CPostFX::CausticsEnable = true;
+float CPostFX::CausticsStrength = 1.0f;
 
 void
 CPostFX::VolFogStepsAfterChange(int8 before, int8 after)
@@ -1132,6 +1137,21 @@ CPostFX::UpdateIBL(void)
 		puddleStrength = wet;
 	}
 	rw::d3d::setPuddles(puddleStrength, 0.08f);
+
+	// Caustics — runs every frame but the shader [branch] skips the
+	// block above-water. Time only accumulates while the effect is
+	// enabled so a long boot-up doesn't desync the animation. Water
+	// level is hardcoded to ~6 m (Vice City sea level) for now —
+	// future work could query CWaterLevel for per-region surfaces.
+	static float sCausticsTime = 0.0f;
+	float causticsStr = 0.0f;
+	if(CausticsEnable){
+		float dtSec = CTimer::GetTimeStepNonClipped() * (1.0f/50.0f);
+		if(dtSec > 0.2f) dtSec = 0.2f;
+		sCausticsTime += dtSec;
+		causticsStr = CausticsStrength;
+	}
+	rw::d3d::setCaustics(sCausticsTime, causticsStr, 6.0f);
 
 	rw::d3d::uploadIBL();
 #endif
