@@ -82,6 +82,9 @@ public:
 	static float SsaoIntensity;	// occlusion scale (~1..3)
 	static float SsaoStrength;	// final compose lerp (0 = off, 1 = full effect)
 	static float SsaoPower;		// AO curve power (>1 = darker, <1 = softer)
+	// Algorithm select: 0 = classic SSAO (Crytek hemisphere), 1 = GTAO
+	// (horizon-based, less noisy, slightly more expensive per tap).
+	static int SsaoAlgorithm;
 
 	// Contact AO — short cross-tap ray-march on top of the hemisphere
 	// kernel. Catches sub-pixel contacts the main kernel jumps over.
@@ -108,6 +111,16 @@ public:
 	static float SsrStrength;	// compose lerp in hdrResolve_PS
 	static float SsrFresnelBias;	// Schlick F0 (0.04 = dielectric default)
 	static void RenderSSR(RwCamera *cam);
+
+	// Depth of Field — bokeh blur driven by gbuf depth + focal distance.
+	// Runs before ResolveHDR, blurs pHdrScene in-place via a scratch RT
+	// so the downstream tonemap sees the blurred image.
+	static RwRaster *pDofScratch;	// same format/size as pHdrScene
+	static bool DofEnable;
+	static float DofFocusDistance;	// world metres
+	static float DofFocusRange;	// half-window of sharpness (m)
+	static float DofAperture;	// max blur radius (UV units, 0..0.04 typical)
+	static void RenderDoF(RwCamera *cam);
 
 	// Image-Based Lighting — procedural hemisphere gradient (sky + horizon
 	// + ground) sampled by world normal inside default_pp_PS as a soft

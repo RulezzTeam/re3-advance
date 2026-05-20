@@ -168,6 +168,7 @@
 		MENUACTION_CFO_SELECT, "FED_HDR", { new CCFOSelect((int8*)&CGBuffer::HdrEnabled, "Graphics", "HDR", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_GBF", { new CCFOSelect((int8*)&CGBuffer::GbufEnabled, "Graphics", "GBuffer", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_SAO", { new CCFOSelect((int8*)&CPostFX::SsaoEnable, "Graphics", "SSAO", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_SAA", { new CCFOSelect((int8*)&CPostFX::SsaoAlgorithm, "Graphics", "SsaoAlgo", ssaoAlgoNames, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_SAR", { new CCFOSlider(&CPostFX::SsaoRadius, "Graphics", "SsaoRadius", 0.2f, 3.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_SAI", { new CCFOSlider(&CPostFX::SsaoIntensity, "Graphics", "SsaoIntensity", 0.0f, 4.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_SAS", { new CCFOSlider(&CPostFX::SsaoStrength, "Graphics", "SsaoStrength", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
@@ -187,6 +188,10 @@
 		MENUACTION_CFO_SELECT, "FED_WET", { new CCFOSelect((int8*)&CPostFX::WetSurfacesEnable, "Graphics", "WetSurfaces", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_WTI", { new CCFOSlider(&CPostFX::WetSurfacesIntensity, "Graphics", "WetIntensity", 0.0f, 2.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_WTS", { new CCFOSlider(&CPostFX::WetSurfacesSpec, "Graphics", "WetSpec", 1.0f, 6.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_DOF", { new CCFOSelect((int8*)&CPostFX::DofEnable, "Graphics", "DoF", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_DFD", { new CCFOSlider(&CPostFX::DofFocusDistance, "Graphics", "DofFocus", 1.0f, 80.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_DFR", { new CCFOSlider(&CPostFX::DofFocusRange, "Graphics", "DofRange", 0.5f, 30.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_DFA", { new CCFOSlider(&CPostFX::DofAperture, "Graphics", "DofAperture", 0.0f, 0.04f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_VOL", { new CCFOSelect((int8*)&CPostFX::VolFogEnable, "Graphics", "VolFog", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_VFS", { new CCFOSlider(&CPostFX::VolFogStrength, "Graphics", "VolFogStrength", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_VFD", { new CCFOSlider(&CPostFX::VolFogDensity, "Graphics", "VolFogDensity", 0.0f, 0.08f) }, 0, 0, MENUALIGN_LEFT, \
@@ -228,6 +233,9 @@ const char *filterNames[] = { "FEM_NON", "FEM_SIM", "FEM_NRM", "FEM_MOB" };
 const char *off_on[] = { "FEM_OFF", "FEM_ON" };
 #ifdef MULTI_ENVMAP
 const char *envMapSizes[] = { "256", "512", "1024", "2048" };
+#endif
+#ifdef POSTFX_HDR
+const char *ssaoAlgoNames[] = { "SSAO", "GTAO" };
 #endif
 
 void RestoreDefGraphics(int8 action) {
@@ -299,6 +307,7 @@ void RestoreDefGraphics(int8 action) {
 		CPostFX::SsaoBias = 0.03f;
 		CPostFX::SsaoIntensity = 1.2f;
 		CPostFX::SsaoStrength = 0.6f;
+		CPostFX::SsaoAlgorithm = 0;
 		CPostFX::SsaoContactStrength = 0.35f;
 		CPostFX::SsaoContactRadius = 3.5f;
 		CPostFX::SsaoContactMaxDz = 0.6f;
@@ -321,6 +330,10 @@ void RestoreDefGraphics(int8 action) {
 		CPostFX::WetSurfacesDiffuse = 0.45f;
 		CPostFX::WetSurfacesSpec = 3.2f;
 		CPostFX::WetSurfacesPower = 2.5f;
+		CPostFX::DofEnable = false;
+		CPostFX::DofFocusDistance = 15.0f;
+		CPostFX::DofFocusRange = 6.0f;
+		CPostFX::DofAperture = 0.012f;
 		CPostFX::TaaEnable = false;
 		CPostFX::TaaBlend = 0.12f;
 		CPostFX::TaaClamp = 1.0f;

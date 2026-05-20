@@ -1671,6 +1671,10 @@ Idle(void *arg)
 		// SSR also feeds the resolve. Ordered after SSAO so the half-res
 		// camera dispatch can reuse the SSAO vertex quad / bound state.
 		CPostFX::RenderSSR(Scene.camera);
+		// Depth of field — bokeh blur on pHdrScene before the tonemap
+		// resolve. Off by default, opt-in via menu. Swaps pHdrScene
+		// for the blurred scratch raster so ResolveHDR reads the blur.
+		CPostFX::RenderDoF(Scene.camera);
 		CPostFX::ResolveHDR(Scene.camera);
 #endif
 

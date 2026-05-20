@@ -86,6 +86,7 @@ float CPostFX::SsaoBias = 0.03f;
 float CPostFX::SsaoIntensity = 1.2f;
 float CPostFX::SsaoStrength = 0.6f;
 float CPostFX::SsaoPower = 1.4f;
+int CPostFX::SsaoAlgorithm = 0;	// default to classic SSAO; GTAO is opt-in
 // Procedural IBL — defaults that feel like a "global gradient" ambient.
 // Off by default until the player opts in via the menu; settings.ini
 // remembers the choice.
@@ -121,6 +122,13 @@ int CPostFX::SsrStepCount = 18;
 float CPostFX::SsrThickness = 0.5f;
 float CPostFX::SsrStrength = 0.6f;
 float CPostFX::SsrFresnelBias = 0.04f;
+// Depth of field — off by default; defaults give a tasteful cinematic
+// near/far blur centred on ~15m (typical car interior distance).
+RwRaster *CPostFX::pDofScratch;
+bool CPostFX::DofEnable = false;
+float CPostFX::DofFocusDistance = 15.0f;
+float CPostFX::DofFocusRange = 6.0f;
+float CPostFX::DofAperture = 0.012f;
 // Volumetric fog — defaults tuned for Vice City's daytime haze look.
 // Density is modest so the scene doesn't read as foggy; the in-scatter is
 // what gives the warm "filled" feel toward the sun. Disabled by default
@@ -172,6 +180,7 @@ static void *godrays_PS;
 void *hdrResolve_PS;
 static void *ssao_PS;
 static void *ssaoBlur_PS;
+static void *gtao_PS;	// alternative AO algorithm (CPostFX::SsaoAlgorithm = 1)
 static rw::Camera *ssaoCamA;
 static rw::Camera *ssaoCamB;
 static RwIm2DVertex SsaoVertex[4];	// half-res quad sized to SSAO RT
@@ -181,6 +190,8 @@ static rw::Camera *taaCamA;
 static rw::Camera *taaCamB;
 static void *ssr_PS;
 static rw::Camera *ssrCam;	// half-res RGBA8 SSR target
+static void *dof_PS;
+static rw::Camera *dofCam;	// full-res RGBA16F bokeh scratch
 #endif
 #ifdef SOFT_SHADOWS
 void *shadowPCF_PS;
@@ -327,6 +338,16 @@ CPostFX::Open(RwCamera *cam)
 	// raster.
 	pSsrA = RwRasterCreate(sw, sh, depth, rwRASTERTYPECAMERATEXTURE);
 	ssrCam = CreateBloomCam(pSsrA);
+
+	// DoF scratch — full-res RGBA16F so the bokeh blur preserves HDR
+	// brightness for the tonemap that follows. Same dimensions as
+	// pHdrScene; we ping-pong (pHdrScene → pDofScratch → pHdrScene
+	// via copy or rebind) inside RenderDoF.
+	{
+		int32 colorFmt = (int32)rw::Raster::CAMERATEXTURE | (int32)rw::Raster::F16_RGBA;
+		pDofScratch = RwRasterCreate(cw, ch, 0, colorFmt);
+		dofCam = CreateBloomCam(pDofScratch);
+	}
 
 	// Half-res quad for SSAO passes. The destination RTs are exactly sw x sh
 	// (non-pow2), so UV=0..1 must map to (0, 0)..(sw, sh) screen coords.
@@ -580,6 +601,14 @@ CPostFX::Open(RwCamera *cam)
 #include "shaders/obj/ssr_PS.inc"
 	ssr_PS = rw::d3d::createPixelShader(ssr_PS_cso);
 	}
+	{
+#include "shaders/obj/dof_PS.inc"
+	dof_PS = rw::d3d::createPixelShader(dof_PS_cso);
+	}
+	{
+#include "shaders/obj/gtao_PS.inc"
+	gtao_PS = rw::d3d::createPixelShader(gtao_PS_cso);
+	}
 #endif
 #ifdef SOFT_SHADOWS
 	{
@@ -636,6 +665,8 @@ CPostFX::Close(void)
 	if(pSsaoB){ RwRasterDestroy(pSsaoB); pSsaoB = nil; }
 	if(ssrCam){ DestroyBloomCam(ssrCam); ssrCam = nil; }
 	if(pSsrA){ RwRasterDestroy(pSsrA); pSsrA = nil; }
+	if(dofCam){ DestroyBloomCam(dofCam); dofCam = nil; }
+	if(pDofScratch){ RwRasterDestroy(pDofScratch); pDofScratch = nil; }
 	if(taaCamA){ DestroyBloomCam(taaCamA); taaCamA = nil; }
 	if(taaCamB){ DestroyBloomCam(taaCamB); taaCamB = nil; }
 	if(pTaaHistA){ RwRasterDestroy(pTaaHistA); pTaaHistA = nil; }
@@ -674,6 +705,8 @@ CPostFX::Close(void)
 	if(ssaoBlur_PS){ rw::d3d::destroyPixelShader(ssaoBlur_PS); ssaoBlur_PS = nil; }
 	if(taa_PS){ rw::d3d::destroyPixelShader(taa_PS); taa_PS = nil; }
 	if(ssr_PS){ rw::d3d::destroyPixelShader(ssr_PS); ssr_PS = nil; }
+	if(dof_PS){ rw::d3d::destroyPixelShader(dof_PS); dof_PS = nil; }
+	if(gtao_PS){ rw::d3d::destroyPixelShader(gtao_PS); gtao_PS = nil; }
 #endif
 #ifdef SOFT_SHADOWS
 	if(shadowPCF_PS){ rw::d3d::destroyPixelShader(shadowPCF_PS); shadowPCF_PS = nil; }
@@ -1023,7 +1056,10 @@ CPostFX::RenderSSAO(RwCamera *cam)
 			};
 			rw::d3d::d3ddevice->SetPixelShaderConstantF(14, csTune, 1);
 		}
-		rw::d3d::im2dOverridePS = ssao_PS;
+		// Pick the AO algorithm. GTAO has a different sampling model
+		// (horizon angles vs hemisphere) but shares the same c10/c11
+		// constants for radius/bias/intensity/farClip + texel + noise.
+		rw::d3d::im2dOverridePS = (SsaoAlgorithm == 1 && gtao_PS) ? gtao_PS : ssao_PS;
 #endif
 		RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, SsaoVertex, 4, Index, 6);
 	}
@@ -1142,6 +1178,65 @@ CPostFX::RenderSSR(RwCamera *cam)
 #ifdef RW_D3D9
 	rw::d3d::im2dOverridePS = nil;
 #endif
+
+	POP_RENDERGROUP();
+}
+
+void
+CPostFX::RenderDoF(RwCamera *cam)
+{
+	if(!CGBuffer::HdrEnabled || !CGBuffer::GbufEnabled || !DofEnable)
+		return;
+	if(CGBuffer::pHdrScene == nil || CGBuffer::pGbufNormalDepth == nil ||
+	   dof_PS == nil || pDofScratch == nil || dofCam == nil)
+		return;
+
+	PUSH_RENDERGROUP("CPostFX::RenderDoF");
+
+	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEFOGENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDONE);
+	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDZERO);
+
+	// pHdrScene → pDofScratch (blurred), then copy back via raster blit.
+	float cw = (float)RwRasterGetWidth(RwCameraGetRaster(cam));
+	float ch = (float)RwRasterGetHeight(RwCameraGetRaster(cam));
+
+	RwCameraEndUpdate(cam);
+	RwCameraBeginUpdate((RwCamera*)dofCam);
+	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, CGBuffer::pHdrScene);
+	BindRasterToSampler(1, CGBuffer::pGbufNormalDepth);
+
+#ifdef RW_D3D9
+	{
+		float farClip = ((rw::Camera*)cam)->farPlane;
+		float pp[4] = { farClip, DofFocusDistance, DofFocusRange, DofAperture };
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(10, pp, 1);
+		float texel[4] = { 1.0f/cw, 1.0f/ch, 0.0f, 0.0f };
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(11, texel, 1);
+		rw::d3d::im2dOverridePS = dof_PS;
+	}
+#endif
+
+	// Use the camera-sized vertex quad (same one ResolveHDR uses).
+	RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, HdrResolveVertex, 4, Index, 6);
+
+	RwCameraEndUpdate((RwCamera*)dofCam);
+	BindRasterToSampler(1, nil);
+
+#ifdef RW_D3D9
+	rw::d3d::im2dOverridePS = nil;
+	// Swap pHdrScene and pDofScratch so the downstream ResolveHDR reads
+	// the blurred image. Cheap pointer swap, no extra copy needed since
+	// both rasters are the same format/size.
+	RwRaster *tmp = CGBuffer::pHdrScene;
+	CGBuffer::pHdrScene = pDofScratch;
+	pDofScratch = tmp;
+#endif
+
+	RwCameraBeginUpdate(cam);
 
 	POP_RENDERGROUP();
 }
