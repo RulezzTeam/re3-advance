@@ -85,6 +85,14 @@ vehicleRenderCB(rw::Atomic *atomic, rw::d3d9::InstanceDataHeader *header)
 	using namespace rw::d3d;
 	using namespace rw::d3d9;
 
+	// During CSM cascade rendering, skip vehicles entirely. They use a
+	// per-pixel neoVehicle shader that doesn't have a depth-only variant
+	// (yet), and the env-map binding it expects isn't set up under the
+	// light camera. v1 limitation — vehicle shadows will land once a
+	// shadow-pass variant is added here.
+	if(rw::d3d::shadowDepthOnly)
+		return;
+
 	// TODO: make this less of a kludge
 	if(VehiclePipeSwitch == VEHICLEPIPE_MATFX){
 		matFXGlobals.pipelines[rw::platform]->render(atomic);
@@ -210,7 +218,11 @@ worldRenderCB(rw::Atomic *atomic, rw::d3d9::InstanceDataHeader *header)
 	using namespace rw::d3d;
 	using namespace rw::d3d9;
 
-	if(!LightmapEnable){
+	// During CSM cascade rendering, route everything through the default
+	// pipeline — defaultRenderCB_Shader already has the shadow-depth
+	// fast-path, and lightmap UV2 streams are irrelevant to a depth-only
+	// pass.
+	if(rw::d3d::shadowDepthOnly || !LightmapEnable){
 		defaultRenderCB_Shader(atomic, header);
 		return;
 	}
@@ -323,7 +335,10 @@ glossRenderCB(rw::Atomic *atomic, rw::d3d9::InstanceDataHeader *header)
 	using namespace rw::d3d;
 	using namespace rw::d3d9;
 
-	if(!GlossEnable)
+	// No gloss overlay during the shadow depth pass — the base geometry
+	// already wrote its depth above, and the gloss specular highlight
+	// pass would just resample environment textures we haven't bound.
+	if(rw::d3d::shadowDepthOnly || !GlossEnable)
 		return;
 
 	setVertexShader(neoGloss_VS);
@@ -430,7 +445,9 @@ rimRenderCB(rw::Atomic *atomic, rw::d3d9::InstanceDataHeader *header)
 	using namespace rw::d3d;
 	using namespace rw::d3d9;
 
-	if(!RimlightEnable){
+	// Shadow pass: defer to the default pipe so we go through its depth
+	// fast path and avoid the rim-light cubemap binding.
+	if(rw::d3d::shadowDepthOnly || !RimlightEnable){
 		defaultRenderCB_Shader(atomic, header);
 		return;
 	}

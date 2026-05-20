@@ -150,6 +150,25 @@ defaultRenderCB_Shader(Atomic *atomic, InstanceDataHeader *header)
 	setIndices(header->indexBuffer);
 	setVertexDeclaration(header->vertexDeclaration);
 
+	// CSM depth-only fast path — bypass lighting/material/texture upload,
+	// just push the world matrix and the cascade's lightViewProj, then
+	// draw every mesh with the same minimal VS+PS. Caller (CCSM) is
+	// responsible for binding the cascade's RT before issuing the draws.
+	if(shadowDepthOnly && shadow_VS && shadow_PS){
+		RawMatrix world;
+		convMatrix(&world, atomic->getFrame()->getLTM());
+		d3ddevice->SetVertexShaderConstantF(4, (const float*)&world, 4);
+		d3ddevice->SetVertexShaderConstantF(0, shadowLightViewProj, 4);
+		setVertexShader(shadow_VS);
+		setPixelShader(shadow_PS);
+		InstanceData *inst = header->inst;
+		for(uint32 i = 0; i < header->numMeshes; i++){
+			drawInst(header, inst);
+			inst++;
+		}
+		return;
+	}
+
 	vsBits = lightingCB_Shader(atomic);
 	uploadMatrices(atomic->getFrame()->getLTM());
 

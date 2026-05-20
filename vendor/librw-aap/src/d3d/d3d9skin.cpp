@@ -305,6 +305,17 @@ skinRenderCB(Atomic *atomic, InstanceDataHeader *header)
 	setIndices((IDirect3DIndexBuffer9*)header->indexBuffer);
 	setVertexDeclaration((IDirect3DVertexDeclaration9*)header->vertexDeclaration);
 
+	// CSM depth-only fast path — currently a no-op for skinned meshes.
+	// shadow_skin_VS doesn't yet apply bone matrices, so rendering peds
+	// through the simple position-only VS would emit T-pose silhouettes,
+	// which is worse than no ped shadows at all. Phase 2 will add a
+	// proper skinned-depth VS that consumes the bone block. Until then,
+	// peds + cabin drivers don't cast CSM shadows.
+	if(shadowDepthOnly){
+		(void)header; (void)flags;
+		return;
+	}
+
 	vsBits = lightingCB_Shader(atomic);
 	uploadMatrices(atomic->getFrame()->getLTM());
 

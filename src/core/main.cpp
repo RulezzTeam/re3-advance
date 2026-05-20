@@ -75,6 +75,9 @@
 #include "custompipes.h"
 #ifdef POSTFX_HDR
 #include "gbuffer.h"
+#ifdef POSTFX_CSM
+#include "csm.h"
+#endif
 #endif
 #include "screendroplets.h"
 #include "VarConsole.h"
@@ -1628,6 +1631,18 @@ Idle(void *arg)
 		// CGBuffer::BeginScenePass already happened inside
 		// DoRWStuffStartOfFrame_Horizon so the sky gradient lands in HDR.
 
+#ifdef POSTFX_CSM
+		// Render the cascade shadow maps using the current visibility list.
+		// The depth pass re-runs RenderRoads + RenderEverythingBarRoads
+		// from each cascade's sun-aligned ortho camera; the modified
+		// pipeline callbacks swap to csm_depth shaders during the pass.
+		// After the maps are populated we bind them on samplers s4..s6
+		// so the receiver in default_pp_PS can sample them during the
+		// scene draw that follows.
+		CCSM::RenderShadowMaps(Scene.camera);
+		CCSM::BindReceiver();
+#endif
+
 		tbStartTimer(0, "RenderScene");
 		RenderScene();
 		tbEndTimer("RenderScene");
@@ -1644,6 +1659,12 @@ Idle(void *arg)
 		// droplets, 2D HUD, menus). Restore camera framebuffer to the
 		// original backbuffer first.
 		CGBuffer::EndScenePass(Scene.camera);
+#ifdef POSTFX_CSM
+		// Drop CSM bindings before postfx — those passes don't need the
+		// cascades and we don't want a stray texture binding to alias
+		// against the cascade map's R32F values.
+		CCSM::UnbindReceiver();
+#endif
 		// SSAO runs between the scene pass (which filled the G-buffer)
 		// and the tonemap-resolve (which composes AO into the output).
 		CPostFX::RenderSSAO(Scene.camera);

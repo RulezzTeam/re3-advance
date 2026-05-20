@@ -45,6 +45,16 @@ void *default_pp_gbuf_all_VS;
 void *default_pp_gbuf_PS;
 void *default_pp_gbuf_tex_PS;
 
+// CSM depth-only pass — host (CCSM) flips this on while rendering each
+// cascade's shadow map. defaultRenderCB_Shader and skinRenderCB use it to
+// switch to a slim VS/PS pair that emits only orthographic depth, and to
+// skip every material/texture upload that the colour passes do.
+bool shadowDepthOnly = false;
+void *shadow_VS;	// host-owned, set by CCSM::Open
+void *shadow_PS;
+void *shadow_skin_VS;	// optional — skinned-only fallback if non-null
+float shadowLightViewProj[16];	// uploaded to VS c0..c3 during the pass
+
 // IBL — the host (CGBuffer / CIBL) uploads four per-frame constants to
 // PS slots c44..c47 (sky / horizon / ground / params). When iblEnabled
 // is false uploadIBL() forces iblParams.x = 0 so the PS contribution
@@ -77,6 +87,25 @@ uploadIBL(void)
 	d3ddevice->SetPixelShaderConstantF(45, iblHorizonColor, 1);
 	d3ddevice->SetPixelShaderConstantF(46, iblGroundColor, 1);
 	d3ddevice->SetPixelShaderConstantF(47, live,           1);
+}
+
+// CSM receiver — uploads 3 cascade light-view-proj matrices + per-cascade
+// split distances and tuning. Cascades 1..3 are uploaded contiguously
+// (rather than 3 separate calls) for the matrix block. Strength gated to
+// 0 by the host when CSM is disabled, so the receiver `lerp(1.0, raw, w)`
+// short-circuits without any branch.
+void
+uploadCSM(const float matrices[48], const float splits[3], float strength,
+          float invSize, float depthBias, float blendMetres)
+{
+	if(!perPixelLightingEnabled)
+		return;
+	// matrices is 3 × 16 floats, contiguous. PS register space: c48..c59.
+	d3ddevice->SetPixelShaderConstantF(48, matrices,      12);
+	float params[4] = { splits[0], splits[1], splits[2], strength };
+	d3ddevice->SetPixelShaderConstantF(60, params, 1);
+	float tuning[4] = { invSize, invSize, depthBias, blendMetres };
+	d3ddevice->SetPixelShaderConstantF(61, tuning, 1);
 }
 
 

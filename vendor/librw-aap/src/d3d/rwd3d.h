@@ -441,6 +441,18 @@ extern void *default_pp_gbuf_all_VS;
 extern void *default_pp_gbuf_PS;
 extern void *default_pp_gbuf_tex_PS;
 
+// CSM depth-only override — when true, defaultRenderCB_Shader and
+// skinRenderCB skip the colour/material path and use `shadow_VS` /
+// `shadow_PS` (set by the host once at startup) to emit depth into the
+// bound RT. The host also uploads a single 4×4 light-view-proj matrix
+// into VS c0..c3 (shadowLightViewProj) before kicking the pass; the
+// per-atomic world matrix still goes through the usual VS c4..c7 slot.
+extern bool shadowDepthOnly;
+extern void *shadow_VS;
+extern void *shadow_PS;
+extern void *shadow_skin_VS;
+extern float shadowLightViewProj[16];
+
 // IBL — procedural sky/horizon/ground hemisphere gradient used as an
 // ambient-replacement term in the per-pixel lighting shader. Host fills
 // the four c44..c47 PS constants once per scene render.
@@ -453,6 +465,13 @@ extern void *default_pp_gbuf_tex_PS;
 extern bool iblEnabled;
 void setIblColors(const float sky[3], const float horizon[3], const float ground[3], float intensity, float horizonExp);
 void uploadIBL(void);
+
+// CSM receiver upload — matrices is 3 stacked 4×4s (row-major, 48 floats).
+// splits = 3 view-space split distances in metres. strength = 0 disables
+// the receiver path even if the maps are populated. The depth maps still
+// need to be bound on samplers s4..s6 by the host before the scene draws.
+void uploadCSM(const float matrices[48], const float splits[3], float strength,
+               float invSize, float depthBias, float blendMetres);
 
 void createDefaultShaders(void);
 void destroyDefaultShaders(void);

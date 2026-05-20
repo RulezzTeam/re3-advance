@@ -14,8 +14,9 @@
 #include "Renderer.h"
 #include "csm.h"
 
+
 CCSM::Cascade CCSM::Cascades[CSM_NUM_CASCADES];
-bool CCSM::Enabled = false;		// opt-in until receiver lands in default_pp_PS
+bool CCSM::Enabled = false;
 bool CCSM::bRendering = false;
 int32 CCSM::MapSize = CSM_DEFAULT_SIZE;
 float CCSM::Strength = 0.85f;
@@ -24,6 +25,29 @@ int32 CCSM::NumCascades = 3;
 
 void *csmDepthVS;
 void *csmDepthPS;
+
+// Helper to bind a CAMERATEXTURE raster on a sampler slot for the
+// receiver pass. Same pattern as postfx.cpp's BindRasterToSampler;
+// duplicated here to keep CCSM self-contained.
+static void
+BindCascadeSampler(int slot, RwRaster *raster)
+{
+#ifdef RW_D3D9
+	if(raster == nil){
+		rw::d3d::d3ddevice->SetTexture(slot, nil);
+		return;
+	}
+	if(((rw::Raster*)raster)->parent)
+		raster = (RwRaster*)((rw::Raster*)raster)->parent;
+	rw::d3d::D3dRaster *natras = GETD3DRASTEREXT((rw::Raster*)raster);
+	rw::d3d::d3ddevice->SetTexture(slot, (IDirect3DTexture9*)natras->texture);
+	rw::d3d::d3ddevice->SetSamplerState(slot, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
+	rw::d3d::d3ddevice->SetSamplerState(slot, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+	rw::d3d::d3ddevice->SetSamplerState(slot, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+	rw::d3d::d3ddevice->SetSamplerState(slot, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+	rw::d3d::d3ddevice->SetSamplerState(slot, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+#endif
+}
 
 // Practical Split Scheme split distances (mix uniform + log) for the view
 // frustum's z range. lambda = 0.5 favours mid-range detail.
@@ -58,6 +82,24 @@ CCSM::Open(RwCamera *cam)
 		Close();
 	if(!Enabled)
 		return;
+
+#ifdef RW_D3D9
+	// Lazy-load the depth shaders on first Open. Stay loaded across
+	// scene transitions — there's no per-scene state in them.
+	if(csmDepthVS == nullptr){
+		#include "shaders/obj/csm_depth_VS.inc"
+		csmDepthVS = rw::d3d::createVertexShader(csm_depth_VS_cso);
+	}
+	if(csmDepthPS == nullptr){
+		#include "shaders/obj/csm_depth_PS.inc"
+		csmDepthPS = rw::d3d::createPixelShader(csm_depth_PS_cso);
+	}
+	// Expose them to librw so the modified default + skin render
+	// callbacks can swap to depth-only emission during the cascade pass.
+	rw::d3d::shadow_VS = csmDepthVS;
+	rw::d3d::shadow_PS = csmDepthPS;
+	rw::d3d::shadow_skin_VS = csmDepthVS;	// VS file already handles position-only — works for skinned meshes too
+#endif
 
 	int32 size = MapSize;
 	if(size < 512) size = 512;
@@ -205,11 +247,26 @@ CCSM::ComputeCascades(RwCamera *cam)
 		lc->setViewWindow(&vw);
 
 		Cascades[i].splitDist = sFar;
-		// lightViewProj is computed lazily by rw::Camera::beginUpdate; we
-		// can read it from cam->devView * cam->devProj after that fires.
-		// Receiver-side upload happens once the SHADOWS_CSM PS variant is
-		// in place.
-		(void)Cascades[i].lightViewProj;
+	}
+}
+
+// Build the world-to-cascade-clip matrix for each cascade. Called right
+// after rw::Camera::beginUpdate fires on the light camera, since librw
+// fills devView (world→view) and devProj (view→clip) at that point. We
+// store the product row-major for the receiver-side shader (matches the
+// `mul(pos, mat)` HLSL convention used in default_PS.hlsl).
+static void
+CacheCascadeMatrices(void)
+{
+	for(int i = 0; i < CCSM::NumCascades; i++){
+		rw::Camera *lc = (rw::Camera*)CCSM::Cascades[i].lightCam;
+		if(lc == nullptr) continue;
+		rw::RawMatrix vp;
+		rw::RawMatrix::mult(&vp, &lc->devView, &lc->devProj);
+		// Store row-major; the receiver uses `mul(pos, mat)` so the
+		// translation must end up in the last row, which RawMatrix::mult
+		// already gives us.
+		memcpy(CCSM::Cascades[i].lightViewProj, &vp, sizeof(float) * 16);
 	}
 }
 
@@ -220,11 +277,18 @@ CCSM::RenderShadowMaps(RwCamera *cam)
 		return;
 	if(bRendering)
 		return;
+#ifdef RW_D3D9
+	if(csmDepthVS == nullptr || csmDepthPS == nullptr)
+		return;
+#endif
 
 	ComputeCascades(cam);
 
 	RwCameraEndUpdate(cam);
 	bRendering = true;
+#ifdef RW_D3D9
+	rw::d3d::shadowDepthOnly = true;
+#endif
 
 	rw::RGBA white;
 	white.red = 255; white.green = 255; white.blue = 255; white.alpha = 255;
@@ -233,16 +297,80 @@ CCSM::RenderShadowMaps(RwCamera *cam)
 		rw::Camera *lc = (rw::Camera*)Cascades[i].lightCam;
 		lc->clear(&white, rwCAMERACLEARIMAGE | rwCAMERACLEARZ);
 		RwCameraBeginUpdate(Cascades[i].lightCam);
-		// TODO: route opaque geometry through a depth-only pipeline that
-		// uses csmDepthVS/csmDepthPS. For now we exit before the render
-		// call so we can at least verify that the cascade cameras + RTs
-		// are constructed correctly. Full receiver + render integration
-		// is a follow-up commit.
+
+#ifdef RW_D3D9
+		// devView/devProj are valid only after beginUpdate. Cache the
+		// world→cascade-clip matrix here so the receiver gets the same
+		// transform we used to rasterise depths into the cascade RT.
+		{
+			rw::RawMatrix vp;
+			rw::RawMatrix::mult(&vp, &lc->devView, &lc->devProj);
+			memcpy(Cascades[i].lightViewProj, &vp, sizeof(float) * 16);
+			// Push to librw's shadow_VS lightViewProj slot so every
+			// atomic draw uses the right matrix.
+			memcpy(rw::d3d::shadowLightViewProj, &vp, sizeof(float) * 16);
+		}
+#endif
+
+		// Walk the visible scene and emit depths through the modified
+		// default + skin render callbacks. CRenderer keeps a list of
+		// atomics that passed the scene-camera visibility test; we
+		// reuse it under the light camera. Casters outside the scene
+		// frustum but inside the cascade ortho won't appear in their
+		// shadow — pancaking via the cascade's 250m back-extrusion in
+		// ComputeCascades partially compensates.
+		CRenderer::RenderRoads();
+		CRenderer::RenderEverythingBarRoads();
+
 		RwCameraEndUpdate(Cascades[i].lightCam);
 	}
 
+#ifdef RW_D3D9
+	rw::d3d::shadowDepthOnly = false;
+#endif
 	bRendering = false;
 	RwCameraBeginUpdate(cam);
+}
+
+void
+CCSM::BindReceiver(void)
+{
+	if(!Enabled || Cascades[0].depthRT == nil)
+		return;
+
+#ifdef RW_D3D9
+	// Bind the 3 cascade depth maps on samplers s4..s6 + upload matrices,
+	// split distances, and tuning to PS c48..c61.
+	BindCascadeSampler(4, Cascades[0].depthRT);
+	BindCascadeSampler(5, Cascades[1].depthRT);
+	BindCascadeSampler(6, Cascades[2].depthRT);
+
+	float matrices[48];
+	for(int i = 0; i < 3; i++){
+		memcpy(matrices + i * 16, Cascades[i].lightViewProj, sizeof(float) * 16);
+	}
+	float splits[3] = {
+		Cascades[0].splitDist,
+		Cascades[1].splitDist,
+		Cascades[2].splitDist,
+	};
+	rw::d3d::uploadCSM(matrices, splits, Strength, 1.0f / (float)MapSize, Bias, 4.0f /* blend metres */);
+#endif
+}
+
+void
+CCSM::UnbindReceiver(void)
+{
+#ifdef RW_D3D9
+	BindCascadeSampler(4, nil);
+	BindCascadeSampler(5, nil);
+	BindCascadeSampler(6, nil);
+	// Force receiver strength to 0 so the next scene render (without
+	// cascades) doesn't sample stale textures.
+	float matrices[48] = { 0 };
+	float splits[3] = { 0, 0, 0 };
+	rw::d3d::uploadCSM(matrices, splits, 0.0f, 1.0f / (float)MapSize, Bias, 0.0f);
+#endif
 }
 
 #endif

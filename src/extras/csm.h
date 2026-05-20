@@ -38,6 +38,13 @@ public:
 	static void Close(void);
 	static void ComputeCascades(RwCamera *cam);
 	static void RenderShadowMaps(RwCamera *cam);
+
+	// Bind the 3 cascade depth maps on samplers s4..s6 + upload the
+	// matrix block + tuning constants. Called by CGBuffer right after
+	// BeginScenePass so the receiver in default_pp_PS already sees the
+	// cascades during the opaque world pass.
+	static void BindReceiver(void);
+	static void UnbindReceiver(void);
 };
 
 extern void *csmDepthVS;
