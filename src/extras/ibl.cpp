@@ -15,6 +15,9 @@
 #include "Lights.h"
 #include "postfx.h"
 #include "ibl.h"
+// librw graphics log — vendor/librw-aap is on the include path via
+// premake5.lua's `includedirs { Librw }`.
+#include "src/rwlog.h"
 
 extern RwRGBAReal DirectionalLightColourForFrame;
 
@@ -26,57 +29,46 @@ int CIBL::FrameCounter = 0;
 #ifdef RW_D3D9
 static void *iblSkyToCube_PS;
 static void *iblConvolve_PS;
+static void *cubePass_VS;
+static IDirect3DVertexDeclaration9 *cubeQuadDecl;
 
-// 4-vertex fullscreen quad sized to the capture/irradiance cube faces.
-// We re-use the same vertex buffer for both sizes — UV is always 0..1,
-// the screen-space coords match the face dimensions in the d3d viewport
-// at draw time.
-static RwIm2DVertex CubeQuad[4];
-static RwImVertexIndex CubeIdx[6] = { 0, 1, 2, 0, 2, 3 };
+// NDC-space fullscreen quad — bypasses librw's im2d entirely. Direct
+// D3D9 vertex format paired with cubePass_VS, so the rasterizer sees a
+// quad that exactly covers the destination viewport (= cube face)
+// regardless of what scene camera (if any) the engine has set.
+//
+// Position is already in NDC (-1..1). UV (0..1) is interpolated to the
+// PS. Two triangles in counter-clockwise order so D3D9's default CCW
+// cull doesn't drop them.
+struct CubeQuadVert {
+	float x, y, z;
+	float u, v;
+};
 
-static void
-setupCubeQuad(float size)
+static const CubeQuadVert kCubeQuadVerts[4] = {
+	{ -1.0f, +1.0f, 0.0f,    0.0f, 0.0f },	// TL
+	{ +1.0f, +1.0f, 0.0f,    1.0f, 0.0f },	// TR
+	{ +1.0f, -1.0f, 0.0f,    1.0f, 1.0f },	// BR
+	{ -1.0f, -1.0f, 0.0f,    0.0f, 1.0f },	// BL
+};
+static const uint16 kCubeQuadIdx[6] = { 0, 1, 2, 0, 2, 3 };
+
+static bool
+ensureCubeQuadDecl(void)
 {
-	const float HALF = 0.5f;
-	float hz = -HALF;
-	float hxmax = size - HALF;
-	float hymax = size - HALF;
-
-	RwIm2DVertexSetScreenX(&CubeQuad[0], hz);
-	RwIm2DVertexSetScreenY(&CubeQuad[0], hz);
-	RwIm2DVertexSetScreenZ(&CubeQuad[0], RwIm2DGetNearScreenZ());
-	RwIm2DVertexSetCameraZ(&CubeQuad[0], 1.0f);
-	RwIm2DVertexSetRecipCameraZ(&CubeQuad[0], 1.0f);
-	RwIm2DVertexSetU(&CubeQuad[0], 0.0f, 1.0f);
-	RwIm2DVertexSetV(&CubeQuad[0], 0.0f, 1.0f);
-	RwIm2DVertexSetIntRGBA(&CubeQuad[0], 255, 255, 255, 255);
-
-	RwIm2DVertexSetScreenX(&CubeQuad[1], hz);
-	RwIm2DVertexSetScreenY(&CubeQuad[1], hymax);
-	RwIm2DVertexSetScreenZ(&CubeQuad[1], RwIm2DGetNearScreenZ());
-	RwIm2DVertexSetCameraZ(&CubeQuad[1], 1.0f);
-	RwIm2DVertexSetRecipCameraZ(&CubeQuad[1], 1.0f);
-	RwIm2DVertexSetU(&CubeQuad[1], 0.0f, 1.0f);
-	RwIm2DVertexSetV(&CubeQuad[1], 1.0f, 1.0f);
-	RwIm2DVertexSetIntRGBA(&CubeQuad[1], 255, 255, 255, 255);
-
-	RwIm2DVertexSetScreenX(&CubeQuad[2], hxmax);
-	RwIm2DVertexSetScreenY(&CubeQuad[2], hymax);
-	RwIm2DVertexSetScreenZ(&CubeQuad[2], RwIm2DGetNearScreenZ());
-	RwIm2DVertexSetCameraZ(&CubeQuad[2], 1.0f);
-	RwIm2DVertexSetRecipCameraZ(&CubeQuad[2], 1.0f);
-	RwIm2DVertexSetU(&CubeQuad[2], 1.0f, 1.0f);
-	RwIm2DVertexSetV(&CubeQuad[2], 1.0f, 1.0f);
-	RwIm2DVertexSetIntRGBA(&CubeQuad[2], 255, 255, 255, 255);
-
-	RwIm2DVertexSetScreenX(&CubeQuad[3], hxmax);
-	RwIm2DVertexSetScreenY(&CubeQuad[3], hz);
-	RwIm2DVertexSetScreenZ(&CubeQuad[3], RwIm2DGetNearScreenZ());
-	RwIm2DVertexSetCameraZ(&CubeQuad[3], 1.0f);
-	RwIm2DVertexSetRecipCameraZ(&CubeQuad[3], 1.0f);
-	RwIm2DVertexSetU(&CubeQuad[3], 1.0f, 1.0f);
-	RwIm2DVertexSetV(&CubeQuad[3], 0.0f, 1.0f);
-	RwIm2DVertexSetIntRGBA(&CubeQuad[3], 255, 255, 255, 255);
+	if(cubeQuadDecl) return true;
+	if(rw::d3d::d3ddevice == nullptr) return false;
+	D3DVERTEXELEMENT9 elements[] = {
+		{ 0,  0, D3DDECLTYPE_FLOAT3, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_POSITION, 0 },
+		{ 0, 12, D3DDECLTYPE_FLOAT2, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_TEXCOORD, 0 },
+		D3DDECL_END()
+	};
+	HRESULT hr = rw::d3d::d3ddevice->CreateVertexDeclaration(elements, &cubeQuadDecl);
+	if(FAILED(hr) || cubeQuadDecl == nullptr){
+		cubeQuadDecl = nullptr;
+		return false;
+	}
+	return true;
 }
 
 // D3DCUBEMAP_FACES — order: +X, -X, +Y, -Y, +Z, -Z.
@@ -113,12 +105,24 @@ CIBL::Open(RwCamera *cam)
 #ifdef RW_D3D9
 	if(captureCube != nil)
 		Close();
-	if(!Enabled)
+	if(!Enabled){
+		rwLogf(rw::RW_LOG_INFO, "CIBL::Open — disabled, skipping cube allocation");
 		return;
+	}
 
+	// Allocate the source + irradiance cubes. createCubeTexture returns
+	// nullptr cleanly on caps/format reject so we don't need to manage
+	// fallback here — just check + log + disable.
 	int colorFmt = (int)rw::Raster::F16_RGBA;
 	captureCube    = rw::d3d::createCubeTexture(CAPTURE_SIZE, colorFmt);
 	irradianceCube = rw::d3d::createCubeTexture(IRRADIANCE_SIZE, colorFmt);
+	if(captureCube == nullptr || irradianceCube == nullptr){
+		if(captureCube){ rw::d3d::destroyCubeTexture(captureCube); captureCube = nil; }
+		if(irradianceCube){ rw::d3d::destroyCubeTexture(irradianceCube); irradianceCube = nil; }
+		Enabled = false;
+		rwLogf(rw::RW_LOG_WARN, "CIBL::Open — cube creation failed, disabling (gradient IBL still works)");
+		return;
+	}
 
 	// Lazy-load shaders the first time we open. Stay loaded across
 	// game-state transitions.
@@ -130,11 +134,31 @@ CIBL::Open(RwCamera *cam)
 		#include "shaders/obj/iblConvolve_PS.inc"
 		iblConvolve_PS = rw::d3d::createPixelShader(iblConvolve_PS_cso);
 	}
+	if(cubePass_VS == nullptr){
+		#include "shaders/obj/cubePass_VS.inc"
+		cubePass_VS = rw::d3d::createVertexShader(cubePass_VS_cso);
+	}
+	if(iblSkyToCube_PS == nullptr || iblConvolve_PS == nullptr || cubePass_VS == nullptr){
+		rwLogf(rw::RW_LOG_ERROR, "CIBL::Open — shader creation failed, disabling");
+		Close();
+		Enabled = false;
+		return;
+	}
 
-	// First-frame populate so the cube has content before the first
-	// scene draw reads it.
-	FrameCounter = REFRESH_PERIOD - 1;
-	Update(cam);
+	// Build the vertex declaration up front so the first Update doesn't
+	// have to. Failure here is non-fatal — renderCubeFace also retries.
+	if(!ensureCubeQuadDecl())
+		rwLogf(rw::RW_LOG_WARN, "CIBL::Open — cubeQuadDecl creation deferred to first Update");
+
+	// First-frame populate is DEFERRED. Open runs from MotionBlurOpen
+	// before engine->currentCamera or any RwCameraBeginUpdate has fired
+	// — renderCubeFace works directly with d3ddevice and survives that,
+	// but other engine state (lights, time-cycle, sun direction) may
+	// not be wired up yet. Set FrameCounter so the first BeginScenePass
+	// triggers Update with a fully-initialised engine.
+	FrameCounter = REFRESH_PERIOD;
+	rwLogf(rw::RW_LOG_INFO, "CIBL::Open OK — captureCube=%d irradianceCube=%d (Update deferred to first frame)",
+	    CAPTURE_SIZE, IRRADIANCE_SIZE);
 #endif
 }
 
@@ -146,56 +170,168 @@ CIBL::Close(void)
 	if(irradianceCube){ rw::d3d::destroyCubeTexture(irradianceCube); irradianceCube = nil; }
 	// Shaders stay loaded — they have no per-scene state and re-loading
 	// them on every game-state transition would just churn.
+	// cubeQuadDecl stays alive too; D3D9 vertex declarations are tiny
+	// and survive device resets unchanged.
+	rwLogf(rw::RW_LOG_INFO, "CIBL::Close");
 #endif
 }
 
 #ifdef RW_D3D9
+// Direct D3D9 cube-face dispatch.
+//
+// CRITICAL: do NOT go through librw's RwIm2DRenderIndexedPrimitive here.
+// Two reasons:
+//   1. im2DSetXform reads engine->currentCamera->frameBuffer->width to
+//      build the screen→NDC transform. Open-time runs from MotionBlurOpen
+//      ← CameraSize ← AppEventHandler — currentCamera is nullptr there,
+//      so the deref crashes.
+//   2. Even if currentCamera were valid, that transform scales the quad
+//      by the scene framebuffer (1920×1080 typical) — but we're drawing
+//      into a 64×64 cube face, so the rasterizer would see a 3%-of-face
+//      micro-quad and the rest stays unwritten.
+//
+// Direct path: GetRenderTarget+SetRenderTarget to swap RT slot 0 to the
+// face surface, set viewport to face size, push our own minimal
+// passthrough VS + the caller's PS, draw 2 triangles in NDC space via
+// DrawIndexedPrimitiveUP. Every D3D9 call is HRESULT-checked; any
+// failure leaves the device state restored before returning.
+//
+// Save/restore: RT slot 0, depth-stencil surface, viewport, vertex
+// shader, pixel shader, vertex declaration. Each Get* returns an
+// AddRef'd handle that we Release after the corresponding Set*-back.
 static void
 renderCubeFace(void *dstCube, int face, float size, void *ps,
                const float *constsC10, int constCount)
 {
-	IDirect3DSurface9 *dstSurf = nil;
-	((IDirect3DCubeTexture9*)dstCube)->GetCubeMapSurface((D3DCUBEMAP_FACES)face, 0, &dstSurf);
-	if(dstSurf == nil) return;
+	if(dstCube == nullptr || ps == nullptr || size <= 0.0f)
+		return;
+	if(cubePass_VS == nullptr){
+		rwLogf(rw::RW_LOG_ERROR, "renderCubeFace: cubePass_VS not loaded");
+		return;
+	}
+	if(!ensureCubeQuadDecl()){
+		rwLogf(rw::RW_LOG_ERROR, "renderCubeFace: ensureCubeQuadDecl failed");
+		return;
+	}
 
-	// Stash + swap RT slot 0. Skip MRT slots — those are gbuffer-only
-	// and the cube render doesn't write to them.
-	IDirect3DSurface9 *savedRT = nil;
-	rw::d3d::d3ddevice->GetRenderTarget(0, &savedRT);
-	rw::d3d::d3ddevice->SetRenderTarget(0, dstSurf);
+	IDirect3DDevice9 *dev = rw::d3d::d3ddevice;
+	if(dev == nullptr){
+		rwLogf(rw::RW_LOG_ERROR, "renderCubeFace: d3ddevice null");
+		return;
+	}
 
-	// Match the viewport to the face size.
-	D3DVIEWPORT9 vp;
-	vp.X = 0;
-	vp.Y = 0;
-	vp.Width  = (DWORD)size;
-	vp.Height = (DWORD)size;
-	vp.MinZ = 0.0f;
-	vp.MaxZ = 1.0f;
-	D3DVIEWPORT9 savedVp;
-	rw::d3d::d3ddevice->GetViewport(&savedVp);
-	rw::d3d::d3ddevice->SetViewport(&vp);
+	// Acquire destination face surface (AddRef'd).
+	IDirect3DSurface9 *dstSurf = nullptr;
+	HRESULT hr = ((IDirect3DCubeTexture9*)dstCube)->GetCubeMapSurface((D3DCUBEMAP_FACES)face, 0, &dstSurf);
+	if(FAILED(hr) || dstSurf == nullptr){
+		rwLogf(rw::RW_LOG_ERROR, "renderCubeFace: GetCubeMapSurface face=%d hr=0x%08lX",
+		    face, (unsigned long)hr);
+		return;
+	}
 
-	// No depth / no blend.
-	rw::d3d::d3ddevice->SetRenderState(D3DRS_ZENABLE, FALSE);
-	rw::d3d::d3ddevice->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
-	rw::d3d::d3ddevice->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+	// Save EVERY piece of device state we touch (all Get* are AddRef'd).
+	IDirect3DSurface9           *savedRT   = nullptr;
+	IDirect3DSurface9           *savedDS   = nullptr;
+	IDirect3DVertexShader9      *savedVS   = nullptr;
+	IDirect3DPixelShader9       *savedPS   = nullptr;
+	IDirect3DVertexDeclaration9 *savedDecl = nullptr;
+	D3DVIEWPORT9                 savedVp   = {};
+	DWORD savedZEnable      = 0;
+	DWORD savedZWriteEnable = 0;
+	DWORD savedAlphaBlend   = 0;
+	DWORD savedCullMode     = D3DCULL_CCW;
+	DWORD savedColorWrite   = 0x0F;
 
-	// Upload constants starting at c10.
-	if(constsC10 && constCount > 0)
-		rw::d3d::d3ddevice->SetPixelShaderConstantF(10, constsC10, constCount);
+	dev->GetRenderTarget(0, &savedRT);
+	dev->GetDepthStencilSurface(&savedDS);
+	dev->GetVertexShader(&savedVS);
+	dev->GetPixelShader(&savedPS);
+	dev->GetVertexDeclaration(&savedDecl);
+	dev->GetViewport(&savedVp);
+	dev->GetRenderState(D3DRS_ZENABLE,          &savedZEnable);
+	dev->GetRenderState(D3DRS_ZWRITEENABLE,     &savedZWriteEnable);
+	dev->GetRenderState(D3DRS_ALPHABLENDENABLE, &savedAlphaBlend);
+	dev->GetRenderState(D3DRS_CULLMODE,         &savedCullMode);
+	dev->GetRenderState(D3DRS_COLORWRITEENABLE, &savedColorWrite);
 
-	setupCubeQuad(size);
-	rw::d3d::im2dOverridePS = ps;
-	RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, CubeQuad, 4, CubeIdx, 6);
-	rw::d3d::im2dOverridePS = nil;
+	// Bind new RT + viewport.
+	bool ok = true;
+	if(FAILED(dev->SetRenderTarget(0, dstSurf))){
+		rwLogf(rw::RW_LOG_ERROR, "renderCubeFace: SetRenderTarget failed face=%d", face);
+		ok = false;
+	}
+	if(ok && FAILED(dev->SetDepthStencilSurface(nullptr))){
+		// Not fatal — we just leave the old DS bound. Cube render
+		// doesn't write depth so it's harmless either way.
+		rwLogf(rw::RW_LOG_WARN, "renderCubeFace: SetDepthStencilSurface(nullptr) failed");
+	}
+	if(ok){
+		D3DVIEWPORT9 vp = {};
+		vp.X      = 0;
+		vp.Y      = 0;
+		vp.Width  = (DWORD)size;
+		vp.Height = (DWORD)size;
+		vp.MinZ   = 0.0f;
+		vp.MaxZ   = 1.0f;
+		if(FAILED(dev->SetViewport(&vp))){
+			rwLogf(rw::RW_LOG_ERROR, "renderCubeFace: SetViewport failed face=%d", face);
+			ok = false;
+		}
+	}
 
-	// Restore RT + viewport.
-	rw::d3d::d3ddevice->SetRenderTarget(0, savedRT);
-	rw::d3d::d3ddevice->SetViewport(&savedVp);
-	if(savedRT) savedRT->Release();
+	if(ok){
+		// No depth, no blend, no cull, full-channel colour write.
+		dev->SetRenderState(D3DRS_ZENABLE,          FALSE);
+		dev->SetRenderState(D3DRS_ZWRITEENABLE,     FALSE);
+		dev->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+		dev->SetRenderState(D3DRS_CULLMODE,         D3DCULL_NONE);
+		dev->SetRenderState(D3DRS_COLORWRITEENABLE, 0x0F);
+
+		// Upload caller's PS constants starting at c10.
+		if(constsC10 && constCount > 0){
+			HRESULT hcr = dev->SetPixelShaderConstantF(10, constsC10, constCount);
+			if(FAILED(hcr))
+				rwLogf(rw::RW_LOG_WARN, "renderCubeFace: SetPSConst slot=10 count=%d hr=0x%08lX",
+				    constCount, (unsigned long)hcr);
+		}
+
+		// Bind our minimal VS + caller's PS + matching decl.
+		dev->SetVertexShader((IDirect3DVertexShader9*)cubePass_VS);
+		dev->SetPixelShader((IDirect3DPixelShader9*)ps);
+		dev->SetVertexDeclaration(cubeQuadDecl);
+
+		HRESULT dhr = dev->DrawIndexedPrimitiveUP(D3DPT_TRIANGLELIST,
+		    0, 4, 2,
+		    kCubeQuadIdx, D3DFMT_INDEX16,
+		    kCubeQuadVerts, sizeof(CubeQuadVert));
+		if(FAILED(dhr))
+			rwLogf(rw::RW_LOG_ERROR, "renderCubeFace: DrawIndexedPrimitiveUP face=%d hr=0x%08lX",
+			    face, (unsigned long)dhr);
+	}
+
+	// Restore EVERY piece of state we touched. Order doesn't matter
+	// strictly, but we restore the heaviest binding (RT) last so any
+	// intermediate Set* failures don't leak the wrong RT into the
+	// next pass.
+	dev->SetVertexShader(savedVS);
+	dev->SetPixelShader(savedPS);
+	dev->SetVertexDeclaration(savedDecl);
+	dev->SetViewport(&savedVp);
+	dev->SetDepthStencilSurface(savedDS);
+	dev->SetRenderTarget(0, savedRT);
+	dev->SetRenderState(D3DRS_ZENABLE,          savedZEnable);
+	dev->SetRenderState(D3DRS_ZWRITEENABLE,     savedZWriteEnable);
+	dev->SetRenderState(D3DRS_ALPHABLENDENABLE, savedAlphaBlend);
+	dev->SetRenderState(D3DRS_CULLMODE,         savedCullMode);
+	dev->SetRenderState(D3DRS_COLORWRITEENABLE, savedColorWrite);
+
+	// Release every AddRef'd handle we acquired.
+	if(savedVS)   savedVS->Release();
+	if(savedPS)   savedPS->Release();
+	if(savedDecl) savedDecl->Release();
+	if(savedRT)   savedRT->Release();
+	if(savedDS)   savedDS->Release();
 	dstSurf->Release();
-	rw::d3d::d3ddevice->SetRenderState(D3DRS_ZENABLE, TRUE);
 }
 #endif
 
@@ -206,7 +342,14 @@ CIBL::Update(RwCamera *cam)
 #ifdef RW_D3D9
 	if(!Enabled || captureCube == nil || irradianceCube == nil)
 		return;
-	if(iblSkyToCube_PS == nil || iblConvolve_PS == nil)
+	if(iblSkyToCube_PS == nil || iblConvolve_PS == nil || cubePass_VS == nil)
+		return;
+	// Defensive: even though renderCubeFace works without the engine's
+	// active camera, the surrounding code (sun direction from pDirect,
+	// CTimeCycle colours) requires engine state. If we're called before
+	// the first RwCameraBeginUpdate fully wires the engine, defer one
+	// more frame.
+	if(rw::engine == nullptr || rw::d3d::d3ddevice == nullptr)
 		return;
 
 	FrameCounter++;
