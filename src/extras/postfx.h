@@ -89,6 +89,15 @@ public:
 	static float SsaoContactRadius;	// screen-space pixels (2..6 typical)
 	static float SsaoContactMaxDz;	// metres — discard farther occluders
 
+	// Contact Shadows — longer screen-space march biased toward the sun
+	// direction. Catches micro-occlusion the 4-tap CSM PCF misses (door
+	// frames, ridges on terrain, clothing folds). Multiplied into the
+	// SSAO compose so it shares the bilateral blur + tonemap path.
+	static float ContactShadowStrength;	// 0 = off
+	static int ContactShadowSteps;		// 4..16
+	static float ContactShadowThickness;	// metres
+	static float ContactShadowBias;		// metres
+
 	// Screen-Space Reflections — half-res world-space march that samples
 	// pHdrScene on hit. Composed into hdrResolve_PS via Fresnel weight.
 	static RwRaster *pSsrA;		// half-res RGBA8 reflection RT
@@ -111,6 +120,14 @@ public:
 	static float IblExposure;	// CTimeCycle → linear scale before upload
 	static float IblGroundTint;	// 0 = neutral grey, 1 = warm earthy ground
 	static void UpdateIBL(void);	// host-side: pulls colours, uploads to librw
+
+	// Wet-surface modulation, driven by CWeather::WetRoads. UpdateIBL
+	// pushes both — they share the per-frame upload cadence.
+	static bool WetSurfacesEnable;
+	static float WetSurfacesIntensity;	// multiplier on the weather signal (0..2)
+	static float WetSurfacesDiffuse;	// dry → wet diffuse darkening (0..1)
+	static float WetSurfacesSpec;		// wet specular boost (1..5)
+	static float WetSurfacesPower;		// wet specular power multiplier (1..4)
 
 	// Volumetric fog — single-scattering height fog with Henyey-Greenstein
 	// directional in-scatter from the sun. Composed inside hdrResolve_PS

@@ -55,6 +55,18 @@ void *shadow_PS;
 void *shadow_skin_VS;	// optional — skinned-only fallback if non-null
 float shadowLightViewProj[16];	// uploaded to VS c0..c3 during the pass
 
+// Wet-surface modulation — host uploads CWeather::WetRoads-driven
+// values once per scene. Reads in default_pp_PS at c63.
+static float wetnessParams[4] = { 0.0f, 0.5f, 3.0f, 2.0f };
+void
+setWetness(float wetness, float diffuseDarken, float specBoost, float powerMul)
+{
+	wetnessParams[0] = wetness;
+	wetnessParams[1] = diffuseDarken;
+	wetnessParams[2] = specBoost;
+	wetnessParams[3] = powerMul;
+}
+
 // IBL — the host (CGBuffer / CIBL) uploads four per-frame constants to
 // PS slots c44..c47 (sky / horizon / ground / params). When iblEnabled
 // is false uploadIBL() forces iblParams.x = 0 so the PS contribution
@@ -87,6 +99,9 @@ uploadIBL(void)
 	d3ddevice->SetPixelShaderConstantF(45, iblHorizonColor, 1);
 	d3ddevice->SetPixelShaderConstantF(46, iblGroundColor, 1);
 	d3ddevice->SetPixelShaderConstantF(47, live,           1);
+	// Wet-surface params ride along with IBL — same per-frame cadence,
+	// no separate dispatch needed.
+	d3ddevice->SetPixelShaderConstantF(63, wetnessParams, 1);
 }
 
 // CSM receiver — uploads 3 cascade light-view-proj matrices + per-cascade

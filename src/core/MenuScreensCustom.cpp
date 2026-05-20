@@ -173,6 +173,8 @@
 		MENUACTION_CFO_SLIDER, "FED_SAS", { new CCFOSlider(&CPostFX::SsaoStrength, "Graphics", "SsaoStrength", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_CAO", { new CCFOSlider(&CPostFX::SsaoContactStrength, "Graphics", "SsaoContact", 0.0f, 1.5f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_CAR", { new CCFOSlider(&CPostFX::SsaoContactRadius, "Graphics", "SsaoContactRadius", 1.0f, 8.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_CSS", { new CCFOSlider(&CPostFX::ContactShadowStrength, "Graphics", "ContactShadow", 0.0f, 1.5f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_CST", { new CCFOSlider(&CPostFX::ContactShadowThickness, "Graphics", "ContactShadowThick", 0.3f, 4.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_IBL", { new CCFOSelect((int8*)&CPostFX::IblEnabled, "Graphics", "IBL", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_IBI", { new CCFOSlider(&CPostFX::IblIntensity, "Graphics", "IblIntensity", 0.0f, 2.5f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_IBH", { new CCFOSlider(&CPostFX::IblHorizonExp, "Graphics", "IblHorizonExp", 0.5f, 6.0f) }, 0, 0, MENUALIGN_LEFT, \
@@ -182,6 +184,9 @@
 		MENUACTION_CFO_SLIDER, "FED_SSD", { new CCFOSlider(&CPostFX::SsrMaxDistance, "Graphics", "SsrDistance", 5.0f, 120.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_SST", { new CCFOSlider(&CPostFX::SsrThickness, "Graphics", "SsrThickness", 0.1f, 3.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_SSF", { new CCFOSlider(&CPostFX::SsrFresnelBias, "Graphics", "SsrFresnel", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_WET", { new CCFOSelect((int8*)&CPostFX::WetSurfacesEnable, "Graphics", "WetSurfaces", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_WTI", { new CCFOSlider(&CPostFX::WetSurfacesIntensity, "Graphics", "WetIntensity", 0.0f, 2.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_WTS", { new CCFOSlider(&CPostFX::WetSurfacesSpec, "Graphics", "WetSpec", 1.0f, 6.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_VOL", { new CCFOSelect((int8*)&CPostFX::VolFogEnable, "Graphics", "VolFog", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_VFS", { new CCFOSlider(&CPostFX::VolFogStrength, "Graphics", "VolFogStrength", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_VFD", { new CCFOSlider(&CPostFX::VolFogDensity, "Graphics", "VolFogDensity", 0.0f, 0.08f) }, 0, 0, MENUALIGN_LEFT, \
@@ -297,6 +302,10 @@ void RestoreDefGraphics(int8 action) {
 		CPostFX::SsaoContactStrength = 0.35f;
 		CPostFX::SsaoContactRadius = 3.5f;
 		CPostFX::SsaoContactMaxDz = 0.6f;
+		CPostFX::ContactShadowStrength = 0.5f;
+		CPostFX::ContactShadowSteps = 10;
+		CPostFX::ContactShadowThickness = 1.2f;
+		CPostFX::ContactShadowBias = 0.05f;
 		CPostFX::IblEnabled = false;
 		CPostFX::IblIntensity = 0.55f;
 		CPostFX::IblHorizonExp = 2.2f;
@@ -307,6 +316,11 @@ void RestoreDefGraphics(int8 action) {
 		CPostFX::SsrThickness = 0.5f;
 		CPostFX::SsrStrength = 0.6f;
 		CPostFX::SsrFresnelBias = 0.04f;
+		CPostFX::WetSurfacesEnable = true;
+		CPostFX::WetSurfacesIntensity = 1.0f;
+		CPostFX::WetSurfacesDiffuse = 0.45f;
+		CPostFX::WetSurfacesSpec = 3.2f;
+		CPostFX::WetSurfacesPower = 2.5f;
 		CPostFX::TaaEnable = false;
 		CPostFX::TaaBlend = 0.12f;
 		CPostFX::TaaClamp = 1.0f;

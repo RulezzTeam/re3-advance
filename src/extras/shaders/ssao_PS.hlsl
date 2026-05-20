@@ -34,6 +34,17 @@ float4 ssaoTexel : register(c11);
 // .w = bias multiplier on the inner Z reject
 float4 ssaoContact : register(c12);
 
+// Contact Shadows — a separate, longer screen-space ray-march biased
+// toward the sun direction. Captures fine micro-occlusion that the
+// 4-tap CSM PCF doesn't resolve (door-frames, wrinkles in clothes,
+// crevices on terrain). Output is multiplied into the AO term so it
+// inherits the SSAO compose path in hdrResolve_PS.
+// .xyz = sun direction projected into screen space (uv-delta per step)
+// .w   = strength (0 = off)
+float4 ssaoContactShadow : register(c13);
+// .x = step count (4..16), .y = thickness in metres, .z = bias, .w = unused
+float4 ssaoContactShadowTuning : register(c14);
+
 // 16 sample directions on a unit hemisphere (z >= 0), pre-scattered with
 // a quadratic falloff so most samples hug the origin and a few reach the
 // outer ring. Uploaded once at init.
@@ -133,6 +144,35 @@ float4 main(VS_out input) : COLOR
 			contact += ok * (1.0 - saturate(dz / maxDz));
 		}
 		ao -= ssaoContact.x * (contact * 0.25);
+	}
+
+	// Contact shadows — march toward the projected sun direction in
+	// screen space. At each step, if the depth there is *closer* than
+	// our expected ray depth, we have an occluder between us and the
+	// sun. Strength multiplies the result; ssaoContactShadow.xyz is the
+	// per-step UV+Z increment (sun-aligned in screen space).
+	{
+		const int   csSteps   = (int)max(ssaoContactShadowTuning.x, 1.0);
+		const float csThick   = ssaoContactShadowTuning.y;
+		const float csBias    = ssaoContactShadowTuning.z;
+		float occShadow = 0.0;
+		float alive = 1.0;
+		[unroll(16)]
+		for(int i = 0; i < 16; i++){
+			float doStep = step(float(i), float(csSteps - 1)) * alive;
+			float t = float(i + 1);
+			float2 sUv  = uv + ssaoContactShadow.xy * t;
+			float  sZ   = centreZ + ssaoContactShadow.z * t * csThick;
+			float  hitZ = tex2D(gbufTex, sUv).a * farClip;
+			float  dz   = sZ - hitZ;
+			// Inside the window: occluder found. dz > 0 means we passed
+			// behind something closer to the camera.
+			float thisHit = step(csBias, dz) * step(dz, csThick) * doStep;
+			occShadow = max(occShadow, thisHit);
+			// Stop marching once we've hit (mute further iterations).
+			alive *= 1.0 - thisHit;
+		}
+		ao -= ssaoContactShadow.w * occShadow;
 	}
 
 	return float4(saturate(ao), 1.0, 1.0, 1.0);

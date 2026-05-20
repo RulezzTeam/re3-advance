@@ -12,6 +12,8 @@
 #include "Camera.h"
 #include "MBlur.h"
 #include "Timecycle.h"
+#include "Weather.h"	// CWeather::LightningFlash, Rain, WetRoads
+#include "WaterLevel.h"	// CWaterLevel::GetWaterLevelNoWaves (underwater fog detection)
 #include "Lights.h"	// pDirect (sun light) + DirectionalLightColourForFrame
 #include "postfx.h"
 #ifdef POSTFX_HDR
@@ -92,11 +94,24 @@ float CPostFX::IblIntensity = 0.55f;
 float CPostFX::IblHorizonExp = 2.2f;
 float CPostFX::IblExposure = 1.0f / 255.0f;	// CTimeCycle gives 0..255 bytes
 float CPostFX::IblGroundTint = 0.6f;
+// Wet surfaces — drives the rain-soaked look. Defaults map the engine's
+// 0..1 WetRoads signal directly to the shader.
+bool CPostFX::WetSurfacesEnable = true;
+float CPostFX::WetSurfacesIntensity = 1.0f;
+float CPostFX::WetSurfacesDiffuse = 0.45f;	// wet asphalt ~half as bright
+float CPostFX::WetSurfacesSpec = 3.2f;	// strong sheen
+float CPostFX::WetSurfacesPower = 2.5f;	// tighter highlight when wet
 // Contact AO defaults — subtle by default; the player can crank it via
 // the menu if they want sharper foot/tyre/door contacts.
 float CPostFX::SsaoContactStrength = 0.35f;
 float CPostFX::SsaoContactRadius = 3.5f;	// ~3-4 pixels at 1080p
 float CPostFX::SsaoContactMaxDz = 0.6f;	// 60 cm window — bigger gaps are not contact
+// Contact shadows — moderate by default; visible improvement around
+// foliage, doorframes, building corners against the sun.
+float CPostFX::ContactShadowStrength = 0.5f;
+int CPostFX::ContactShadowSteps = 10;
+float CPostFX::ContactShadowThickness = 1.2f;
+float CPostFX::ContactShadowBias = 0.05f;
 
 // Screen-Space Reflections — off by default until the player opts in.
 RwRaster *CPostFX::pSsrA;
@@ -837,6 +852,8 @@ BindRasterToSampler(int slot, RwRaster *raster)
 #endif
 }
 
+static inline float lerp_f(float a, float b, float t){ return a + (b - a) * t; }
+
 void
 CPostFX::UpdateIBL(void)
 {
@@ -865,9 +882,59 @@ CPostFX::UpdateIBL(void)
 		grey[2] + (bot[2] * 0.25f - grey[2]) * IblGroundTint,
 	};
 
+	// Lightning illumination — when CWeather::LightningFlash is on, blast
+	// the IBL toward bright cool-white so the whole world briefly lights
+	// up. We keep the original gradient direction so shadows still read
+	// correctly; only the magnitude is boosted. Visible even with IBL
+	// otherwise disabled because we force-enable it for the flash.
+	float lightningBoost = 0.0f;
+	bool lightningOverride = false;
+	if(CWeather::LightningFlash){
+		lightningBoost = 1.0f;
+		lightningOverride = true;
+	}
+	if(lightningOverride){
+		// Cool blue-white at ~4× normal sky-top brightness, applied
+		// uniformly across the gradient so every face of the geometry
+		// catches it (lightning lights everything, not just up-facing).
+		const float flashCol = 1.6f;
+		float flashRGB[3] = { flashCol * 0.95f, flashCol, flashCol * 1.1f };
+		top[0]    = lerp_f(top[0],    flashRGB[0], lightningBoost);
+		top[1]    = lerp_f(top[1],    flashRGB[1], lightningBoost);
+		top[2]    = lerp_f(top[2],    flashRGB[2], lightningBoost);
+		bot[0]    = lerp_f(bot[0],    flashRGB[0] * 0.8f, lightningBoost);
+		bot[1]    = lerp_f(bot[1],    flashRGB[1] * 0.8f, lightningBoost);
+		bot[2]    = lerp_f(bot[2],    flashRGB[2] * 0.8f, lightningBoost);
+		ground[0] = lerp_f(ground[0], flashRGB[0] * 0.4f, lightningBoost);
+		ground[1] = lerp_f(ground[1], flashRGB[1] * 0.4f, lightningBoost);
+		ground[2] = lerp_f(ground[2], flashRGB[2] * 0.4f, lightningBoost);
+	}
+	float liveIntensity = IblIntensity;
+	bool liveEnabled = IblEnabled;
+	if(lightningOverride){
+		// Crank the intensity so the flash punches through any tonemap.
+		liveIntensity = lerp_f(IblIntensity, 2.5f, lightningBoost);
+		liveEnabled = true;
+	}
+
+	// Wet-surface signal — pulls from CWeather::WetRoads (which itself
+	// blends WetRoads target during rain → dries on time-cycle). Clamp
+	// the engine's signal × user intensity multiplier so a dry day with
+	// the user's slider at max doesn't still look soaked.
+	float wetness = 0.0f;
+	if(WetSurfacesEnable){
+		// CWeather::WetRoads ∈ [0,1]; CWeather::Rain ∈ [0,1].
+		// Use the larger so heavy rain instantly puddles even before
+		// WetRoads catches up.
+		wetness = (CWeather::WetRoads > CWeather::Rain ? CWeather::WetRoads : CWeather::Rain);
+		wetness = wetness * WetSurfacesIntensity;
+		if(wetness > 1.0f) wetness = 1.0f;
+	}
+
 #ifdef RW_D3D9
-	rw::d3d::iblEnabled = IblEnabled;
-	rw::d3d::setIblColors(top, bot, ground, IblIntensity, IblHorizonExp);
+	rw::d3d::iblEnabled = liveEnabled;
+	rw::d3d::setIblColors(top, bot, ground, liveIntensity, IblHorizonExp);
+	rw::d3d::setWetness(wetness, WetSurfacesDiffuse, WetSurfacesSpec, WetSurfacesPower);
 	rw::d3d::uploadIBL();
 #endif
 }
@@ -914,6 +981,48 @@ CPostFX::RenderSSAO(RwCamera *cam)
 			1.0f,	// inner bias multiplier; 1.0 reuses SsaoBias directly
 		};
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(12, cAO, 1);
+
+		// Contact shadows — project the sun direction into view+screen
+		// space so the shader knows which way to march. We can take the
+		// view-space sun direction (transform world dir by view matrix's
+		// rotation), then build a per-step UV delta proportional to the
+		// X/Y screen components.
+		{
+			rw::Camera *rwcam = (rw::Camera*)cam;
+			rw::V3d sunW = { 0, 0, 1 };
+			if(pDirect){
+				rw::V3d a = pDirect->getFrame()->getLTM()->at;
+				// pDirect points away from the sun — flip
+				sunW.x = -a.x; sunW.y = -a.y; sunW.z = -a.z;
+			}
+			// Transform to view space using the view matrix's rotation
+			// (translation doesn't affect a direction vector).
+			rw::RawMatrix *vm = &rwcam->devView;
+			float sx = sunW.x * vm->right.x + sunW.y * vm->up.x + sunW.z * vm->at.x;
+			float sy = sunW.x * vm->right.y + sunW.y * vm->up.y + sunW.z * vm->at.y;
+			float sz = sunW.x * vm->right.z + sunW.y * vm->up.z + sunW.z * vm->at.z;
+			float slen = sqrtf(sx*sx + sy*sy + sz*sz);
+			if(slen > 1e-5f){ sx/=slen; sy/=slen; sz/=slen; }
+			// Per-step UV delta — roughly (pixels-per-step / resolution)
+			// scaled by the view-space X/Y components.
+			const float stepLenPx = 3.5f;	// ~3-4 texels per step
+			float uvDx =  sx * stepLenPx * (1.0f/cw);
+			float uvDy = -sy * stepLenPx * (1.0f/ch);	// D3D9 Y-flip
+			// World-space Z delta per step is roughly stepLenPx * pixelSizeAtFarClip * sunZ.
+			// Simpler: depth delta along the view ray ≈ sz * stepLenPx * (avgViewZ / cw).
+			// We pass a unit "delta per step" multiplier; the shader scales
+			// it by ssaoContactShadowTuning.y (thickness in metres).
+			float depthDelta = -sz;	// negative sz = sun is behind camera; flip sign
+			float csDir[4] = { uvDx, uvDy, depthDelta, ContactShadowStrength };
+			rw::d3d::d3ddevice->SetPixelShaderConstantF(13, csDir, 1);
+			float csTune[4] = {
+				(float)ContactShadowSteps,
+				ContactShadowThickness,
+				ContactShadowBias,
+				0.0f,
+			};
+			rw::d3d::d3ddevice->SetPixelShaderConstantF(14, csTune, 1);
+		}
 		rw::d3d::im2dOverridePS = ssao_PS;
 #endif
 		RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, SsaoVertex, 4, Index, 6);
@@ -1134,18 +1243,51 @@ CPostFX::ResolveHDR(RwCamera *cam)
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(17, sunDir, 1);
 
 		// c18: scattering colour (sun×boost, HDR-aware) + base density.
+		// Lightning replaces the warm sun colour with a cool bright flash
+		// so the fog itself glows during the strike — adds a huge sense
+		// of atmosphere to night storms. Underwater swaps to a tinted
+		// blue-green absorption + much higher density so visibility
+		// drops quickly with distance, matching how light dies in water.
 		float r = DirectionalLightColourForFrame.red   * VolFogSunBoost;
 		float g = DirectionalLightColourForFrame.green * VolFogSunBoost;
 		float b = DirectionalLightColourForFrame.blue  * VolFogSunBoost;
-		float volCol[4] = { r, g, b, VolFogDensity };
+		float densityNow = VolFogDensity;
+		float groundZNow = VolFogGroundZ;
+		float maxDistNow = VolFogMaxDist;
+		bool underwater = false;
+		{
+			rw::V3d cp = camPos;
+			float waterY = -10000.0f;
+			if(CWaterLevel::GetWaterLevelNoWaves(cp.x, cp.y, cp.z, &waterY)){
+				underwater = (cp.z < waterY);
+			}
+		}
+		if(underwater){
+			// Greenish-blue absorption tint with no sun in-scatter (the
+			// sun is filtered out by the water column). Density is high
+			// so distant objects vanish quickly. groundZ is moved well
+			// above the camera so the height falloff stops thinning
+			// fog with depth.
+			r = 0.08f; g = 0.18f; b = 0.28f;
+			densityNow = 0.12f;
+			groundZNow = camPos.z + 200.0f;
+			maxDistNow = 60.0f;
+		}else if(CWeather::LightningFlash){
+			r = 2.0f; g = 2.1f; b = 2.4f;	// cool-white, HDR
+			densityNow = VolFogDensity * 1.8f;	// thicker fog so the flash carries
+		}
+		float volCol[4] = { r, g, b, densityNow };
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(18, volCol, 1);
 
 		// c19: height falloff / ground / max-march / strength-lerp gate.
+		// Underwater forces strength to 1.0 so the swap is visible even
+		// when the player has volumetric fog disabled in the menu — the
+		// alternative is wrong-looking clear underwater visibility.
 		float volPar[4] = {
-			VolFogHeightFalloff,
-			VolFogGroundZ,
-			VolFogMaxDist,
-			volFogActive ? VolFogStrength : 0.0f,
+			underwater ? 0.005f : VolFogHeightFalloff,
+			groundZNow,
+			maxDistNow,
+			underwater ? 1.0f : (volFogActive ? VolFogStrength : 0.0f),
 		};
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(19, volPar, 1);
 

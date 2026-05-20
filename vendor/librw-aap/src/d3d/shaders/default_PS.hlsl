@@ -49,6 +49,16 @@ float4 iblGround   : register(c46);	// hemisphere nadir (N.z = -1, muted)
 // .w = unused
 float4 iblParams   : register(c47);
 
+// Wet-surface modulation. Driven by CWeather::WetRoads + Rain. Up-facing
+// surfaces (puddles, car roofs, road tops) get the heaviest hit:
+//   - diffuse darkens (wet asphalt absorbs more light)
+//   - specular intensifies and tightens (water sheen)
+// .x = wetness (0 = dry, 1 = soaked)
+// .y = diffuse darkening factor (typical 0.5 → wet surface ½ as bright diffuse)
+// .z = specular boost (typical 2.0..4.0)
+// .w = specular power multiplier (typical 2.0 → tighter highlight)
+float4 wetnessParams : register(c63);
+
 // CSM receiver — 3 cascades worth of light-view-proj matrices + split
 // distances, plus a per-cascade depth sampler. Disabled when csmParams.w
 // (overall strength) is 0; uploadCSM() forces it there when the host
@@ -169,30 +179,38 @@ float4 ComputeShadedColor(VS_out input)
 	float viewDist = distance(input.WorldPos, eyePosPS.xyz);
 	float csmRaw   = CSMShadowFactor(input.WorldPos, viewDist);
 	float csmShadow = lerp(1.0, csmRaw, saturate(csmParams.w));
+
+	// Wet-surface modulation. Only the up-facing component of the normal
+	// gets wet (water pools where gravity points it). Linearly mixes the
+	// dry surfDiffuse/surfSpecular with the wet values.
+	float wetMask = saturate(N.z) * saturate(wetnessParams.x);
+	float wetDiffuse = lerp(surfDiffuse, surfDiffuse * wetnessParams.y, wetMask);
+	float wetSpec    = lerp(surfSpecular, surfSpecular * wetnessParams.z, wetMask);
+	float wetPower   = lerp(1.0, max(wetnessParams.w, 1.0), wetMask);
 #ifdef DIRECTIONALS
 	[loop]
 	for(i = 0; i < numDirLights; i++)
-		lit += DoDirLight(lights[i+firstDirLight], N) * surfDiffuse * csmShadow;
+		lit += DoDirLight(lights[i+firstDirLight], N) * wetDiffuse * csmShadow;
 #endif
 #ifdef POINTLIGHTS
 	[loop]
 	for(i = 0; i < numPointLights; i++)
-		lit += DoPointLight(lights[i+firstPointLight], input.WorldPos, N) * surfDiffuse;
+		lit += DoPointLight(lights[i+firstPointLight], input.WorldPos, N) * wetDiffuse;
 #endif
 #ifdef SPOTLIGHTS
 	[loop]
 	for(i = 0; i < numSpotLights; i++)
-		lit += DoSpotLight(lights[i+firstSpotLight], input.WorldPos, N) * surfDiffuse;
+		lit += DoSpotLight(lights[i+firstSpotLight], input.WorldPos, N) * wetDiffuse;
 #endif
 
 	[branch]
-	if(surfSpecular > 0.001){
+	if(surfSpecular > 0.001 || wetMask > 0.05){
 		float3 V = normalize(eyePosPS.xyz - input.WorldPos);
-		float power = max(eyePosPS.w, 8.0);
+		float power = max(eyePosPS.w, 8.0) * wetPower;
 #ifdef DIRECTIONALS
 		[loop]
 		for(i = 0; i < numDirLights; i++)
-			spec += DoDirLightSpec(lights[i+firstDirLight], N, V, power) * surfSpecular;
+			spec += DoDirLightSpec(lights[i+firstDirLight], N, V, power) * wetSpec;
 #endif
 		// Specular respects the same CSM occluder as diffuse — a shadowed
 		// surface shouldn't sparkle in the sun.

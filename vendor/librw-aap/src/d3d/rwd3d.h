@@ -466,6 +466,11 @@ extern bool iblEnabled;
 void setIblColors(const float sky[3], const float horizon[3], const float ground[3], float intensity, float horizonExp);
 void uploadIBL(void);
 
+// Wet-surface modulation — host pushes a per-scene wetness scalar driven
+// by CWeather::WetRoads. uploadIBL also pushes wetness so the receiver
+// gets a consistent snapshot.
+void setWetness(float wetness, float diffuseDarken, float specBoost, float powerMul);
+
 // CSM receiver upload — matrices is 3 stacked 4×4s (row-major, 48 floats).
 // splits = 3 view-space split distances in metres. strength = 0 disables
 // the receiver path even if the maps are populated. The depth maps still
