@@ -54,5 +54,12 @@ float4 main(VS_out input) : COLOR
 		r = pow(r, 0.7);
 	}
 
-	return float4(saturate(r), 1.0, 1.0, 1.0);
+	// .gba — bent normal pass-through. Stage 31 packed a bent normal
+	// into the .gba channels of the GTAO output (gtaoTex on s1). SSAO
+	// and HBAO write a fallback N-encoded value; GTAO writes the
+	// proper accumulated bent normal. Prefer GTAO's value when it's
+	// running (i.e. always pick s1.gba) so the receiver gets the
+	// best-quality direction signal regardless of mix-mode weighting.
+	float3 bent = tex2D(gtaoTex, uv).gba;
+	return float4(saturate(r), bent);
 }

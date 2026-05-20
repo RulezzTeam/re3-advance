@@ -1,4 +1,4 @@
-// Ground-Truth Ambient Occlusion (GTAO).
+// Ground-Truth Ambient Occlusion (GTAO) + Bent Normal extension.
 //
 // Compared with the classic Crytek hemisphere sampler in ssao_PS, GTAO
 // computes occlusion from horizon angles rather than samples around a
@@ -13,9 +13,20 @@
 //      At each step, find the max angle that the local horizon makes
 //      with the view ray.
 //   4. Integrate cos(alpha) between the two horizon angles → occlusion.
+//   5. (NEW Stage 31) Bent normal: bias the surface normal toward the
+//      more-open horizon direction. The bias magnitude scales with how
+//      asymmetric the two horizons are — when both are equally
+//      occluded, bent N == N (no bias); when one side is much more
+//      open, N tilts toward that side.
 //
-// Output: AO in R, 1.0 = lit, 0.0 = occluded. Same format as ssao_PS so
-// the bilateral blur pass can be reused.
+// Output:
+//   .r   = AO factor (1.0 lit, 0.0 occluded)  — unchanged from before
+//   .gba = bent normal × 0.5 + 0.5  (NEW)     — receiver decodes back
+//
+// pSsaoA is RGBA8 so the .gba channels were unused before this stage;
+// no allocation change. 8-bit per component on a normal is ~0.4% loss,
+// plenty for diffuse-IBL biasing (the receiver only uses bent N to
+// lerp the sky-sample direction; small precision loss invisible).
 
 sampler2D gbufTex  : register(s0);
 sampler2D noiseTex : register(s1);
@@ -118,5 +129,26 @@ float4 main(VS_out input) : COLOR
 	float h1 = fastAcos(cosH1);
 	float visibility = (sin(h0) * sin(h0) + sin(h1) * sin(h1)) * 0.5;
 	float ao = 1.0 - saturate(1.0 - visibility) * intensity;
-	return float4(saturate(ao), 1.0, 1.0, 1.0);
+
+	// Bent normal (Stage 31). cosH0 = horizon along +dir, cosH1 = along
+	// -dir. When cosH0 < cosH1 the +dir side is MORE OPEN (horizon
+	// further from zenith ⇒ smaller cos ⇒ wider visible cone), so we
+	// bend N toward +dir. The magnitude scales with the asymmetry. When
+	// both horizons match (symmetric occlusion), bend = 0 and bentN = N.
+	//
+	// 0.5 multiplier keeps the bias subtle — receiver does the final
+	// blend toward the bent direction at its own strength. The vertical
+	// bend uses (1 - min(h0, h1)) so very-open scenes (low horizons)
+	// keep bentN close to the original N; deep occlusion lets the bend
+	// pull harder.
+	float openDelta = cosH1 - cosH0;	// > 0 → +dir more open
+	float openZ     = 1.0 - 0.5 * (cosH0 + cosH1);	// 0..1 verticality bias
+	float3 bentN    = N + float3(dir * openDelta * 0.5, 0.0)
+	                + float3(0.0, 0.0, openZ * 0.25);
+	bentN           = SafeNormalize(bentN);
+
+	// Pack bent normal × 0.5 + 0.5 into .gba so the receiver gets a
+	// signed normal back via .gba * 2 - 1.
+	float3 bentEnc  = bentN * 0.5 + 0.5;
+	return float4(saturate(ao), bentEnc.x, bentEnc.y, bentEnc.z);
 }

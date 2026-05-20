@@ -187,5 +187,13 @@ float4 main(VS_out input) : COLOR
 		ao -= ssaoContactShadow.w * occShadow;
 	}
 
-	return float4(saturate(ao), 1.0, 1.0, 1.0);
+	// .gba carries a packed bent normal in Stage 31+. SSAO doesn't
+	// compute one (the hemisphere kernel doesn't naturally yield an
+	// average unoccluded direction); fall back to the surface normal N
+	// re-encoded into 0..1 range so the receiver gets a valid unit
+	// vector. In Mixed AO mode (Algorithm = "Mixed"), aoMix_PS overrides
+	// .gba with the GTAO-computed bent normal — this fallback only
+	// matters when SSAO is the sole AO source.
+	float3 bentEnc = N * 0.5 + 0.5;
+	return float4(saturate(ao), bentEnc);
 }

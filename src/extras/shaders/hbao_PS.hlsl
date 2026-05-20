@@ -95,5 +95,9 @@ float4 main(VS_out input) : COLOR
 	}
 	occ /= 4.0;
 	float ao = 1.0 - saturate(occ) * intensity;
-	return float4(saturate(ao), 1.0, 1.0, 1.0);
+	// .gba carries a packed bent normal in Stage 31+. HBAO doesn't
+	// compute one explicitly; fall back to surface N encoded into
+	// 0..1. See ssao_PS.hlsl for the same fallback rationale.
+	float3 bentEnc = N * 0.5 + 0.5;
+	return float4(saturate(ao), bentEnc);
 }
