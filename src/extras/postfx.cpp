@@ -16,6 +16,7 @@
 #include "WaterLevel.h"	// CWaterLevel::GetWaterLevelNoWaves (underwater fog detection)
 #include "Lights.h"	// pDirect (sun light) + DirectionalLightColourForFrame
 #include "postfx.h"
+#include "ibl.h"	// CIBL::Enabled / irradianceCube for the Phase 2 receiver
 #ifdef POSTFX_HDR
 #include "gbuffer.h"
 extern RwRGBAReal DirectionalLightColourForFrame;
@@ -328,6 +329,10 @@ CPostFX::Open(RwCamera *cam)
 #ifdef POSTFX_CSM
 	CCSM::Open(cam);
 #endif
+	// Phase 2 IBL cubes — opens both source and irradiance cubes, runs
+	// the first capture+convolve so the cube has content before the
+	// first scene draw reads it.
+	CIBL::Open(cam);
 
 	// TAA history buffers — full pow2 size (same as pBackBuffer) so we can
 	// reuse the existing Vertex[] quad for the blend pass.
@@ -714,6 +719,7 @@ CPostFX::Close(void)
 #ifdef POSTFX_CSM
 	CCSM::Close();
 #endif
+	CIBL::Close();
 	CGBuffer::Close();
 #endif
 #ifdef RW_D3D9
@@ -1006,6 +1012,10 @@ CPostFX::UpdateIBL(void)
 #ifdef RW_D3D9
 	rw::d3d::iblEnabled = liveEnabled;
 	rw::d3d::setIblColors(top, bot, ground, liveIntensity, IblHorizonExp);
+	// Phase 2 cube switch — when CIBL is enabled and its irradiance cube
+	// is populated, the receiver shader samples that instead of the
+	// hemisphere gradient. iblParams.z carries the flag.
+	rw::d3d::setIblUseCube(CIBL::Enabled && CIBL::irradianceCube != nil);
 	rw::d3d::setWetness(wetness, WetSurfacesDiffuse, WetSurfacesSpec, WetSurfacesPower);
 	rw::d3d::uploadIBL();
 #endif
@@ -1473,10 +1483,18 @@ CPostFX::ResolveHDR(RwCamera *cam)
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(19, volPar, 1);
 
 		// c20: SSR compose strength + Fresnel F0 bias + sky fallback.
+		// Wet weather scales the effective reflection strength linearly
+		// with CWeather::WetRoads — wet asphalt becomes much more
+		// mirror-like, dry asphalt keeps the user's normal SSR level.
+		float wetBoost = 1.0f + 1.5f * (CWeather::WetRoads > CWeather::Rain
+		                                  ? CWeather::WetRoads
+		                                  : CWeather::Rain);
+		float ssrStrengthLive = SsrStrength * wetBoost;
+		if(ssrStrengthLive > 1.5f) ssrStrengthLive = 1.5f;	// clamp
 		float ssrPar[4] = {
-			ssrActive ? SsrStrength : 0.0f,
+			ssrActive ? ssrStrengthLive : 0.0f,
 			SsrFresnelBias,
-			SsrSkyFallback,
+			SsrSkyFallback * wetBoost,	// stronger sky bleed in rain too
 			0.0f,
 		};
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(20, ssrPar, 1);

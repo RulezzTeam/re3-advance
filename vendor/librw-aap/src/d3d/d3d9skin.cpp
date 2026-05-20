@@ -305,14 +305,24 @@ skinRenderCB(Atomic *atomic, InstanceDataHeader *header)
 	setIndices((IDirect3DIndexBuffer9*)header->indexBuffer);
 	setVertexDeclaration((IDirect3DVertexDeclaration9*)header->vertexDeclaration);
 
-	// CSM depth-only fast path — currently a no-op for skinned meshes.
-	// shadow_skin_VS doesn't yet apply bone matrices, so rendering peds
-	// through the simple position-only VS would emit T-pose silhouettes,
-	// which is worse than no ped shadows at all. Phase 2 will add a
-	// proper skinned-depth VS that consumes the bone block. Until then,
-	// peds + cabin drivers don't cast CSM shadows.
-	if(shadowDepthOnly){
-		(void)header; (void)flags;
+	// CSM depth-only fast path for skinned meshes — peds + drivers cast
+	// correctly-deformed shadows by going through the bone-aware
+	// csm_skin_depth_VS (set by CCSM::Open as rw::d3d::shadow_skin_VS).
+	// World matrix + light VP follow the same c0/c4 slots as the static
+	// shadow path; the skinning matrices go to c41 via uploadSkinMatrices.
+	if(shadowDepthOnly && shadow_skin_VS && shadow_PS){
+		RawMatrix world;
+		convMatrix(&world, atomic->getFrame()->getLTM());
+		d3ddevice->SetVertexShaderConstantF(4, (const float*)&world, 4);
+		d3ddevice->SetVertexShaderConstantF(0, shadowLightViewProj, 4);
+		uploadSkinMatrices(atomic);
+		setVertexShader(shadow_skin_VS);
+		setPixelShader(shadow_PS);
+		InstanceData *inst = header->inst;
+		for(uint32 i = 0; i < header->numMeshes; i++){
+			drawInst(header, inst);
+			inst++;
+		}
 		return;
 	}
 

@@ -290,6 +290,73 @@ clearMRT(void)
 		setRenderTarget(i, nil);
 }
 
+// --- D3D9 cubemap helpers --------------------------------------------------
+//
+// librw doesn't natively model cube textures as Rasters — they're created
+// here as raw IDirect3DCubeTexture9 objects and passed around as void*.
+// The host (CIBL / CReflectionCapture / etc.) owns the lifetime and tears
+// the cube down via destroyCubeTexture.
+//
+// Format codes map onto our existing librw enum:
+//   F16_RGBA = D3DFMT_A16B16G16R16F — for HDR irradiance / prefilter
+//   anything else falls back to D3DFMT_A8R8G8B8.
+
+void*
+createCubeTexture(int size, int format)
+{
+	D3DFORMAT fmt = D3DFMT_A8R8G8B8;
+	if(format == (int)Raster::F16_RGBA)
+		fmt = D3DFMT_A16B16G16R16F;
+	IDirect3DCubeTexture9 *cube = nil;
+	HRESULT hr = d3ddevice->CreateCubeTexture((UINT)size, 1, D3DUSAGE_RENDERTARGET,
+	                                          fmt, D3DPOOL_DEFAULT, &cube, nil);
+	if(FAILED(hr)) return nil;
+	return cube;
+}
+
+void
+destroyCubeTexture(void *cubeTex)
+{
+	if(cubeTex == nil) return;
+	((IDirect3DCubeTexture9*)cubeTex)->Release();
+}
+
+// Bind one face of a cubemap as render target slot 0. `face` is
+// D3DCUBEMAP_FACE_POSITIVE_X .. NEGATIVE_Z (0..5). The host is responsible
+// for matching the camera view matrix to the face direction before
+// drawing.
+void
+setCubeFaceRenderTarget(void *cubeTex, int face)
+{
+	if(cubeTex == nil){
+		setRenderTarget(0, nil);
+		return;
+	}
+	IDirect3DSurface9 *surf = nil;
+	((IDirect3DCubeTexture9*)cubeTex)->GetCubeMapSurface((D3DCUBEMAP_FACES)face, 0, &surf);
+	setRenderTarget(0, surf);
+	if(surf) surf->Release();
+}
+
+// Bind a cubemap on a PS samplerCUBE slot. SetSamplerState defaults are
+// LINEAR/LINEAR + CLAMP-on-all-axes which matches what the receiver
+// shaders want.
+void
+bindCubeToSampler(int slot, void *cubeTex)
+{
+	if(cubeTex == nil){
+		d3ddevice->SetTexture(slot, nil);
+		return;
+	}
+	d3ddevice->SetTexture(slot, (IDirect3DCubeTexture9*)cubeTex);
+	d3ddevice->SetSamplerState(slot, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
+	d3ddevice->SetSamplerState(slot, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+	d3ddevice->SetSamplerState(slot, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+	d3ddevice->SetSamplerState(slot, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+	d3ddevice->SetSamplerState(slot, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+	d3ddevice->SetSamplerState(slot, D3DSAMP_ADDRESSW, D3DTADDRESS_CLAMP);
+}
+
 void
 setDepthSurface(void *surf)
 {

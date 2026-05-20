@@ -464,6 +464,9 @@ extern float shadowLightViewProj[16];
 //   horizonExp  — falloff exponent (1 = soft band, 4 = sharp)
 extern bool iblEnabled;
 void setIblColors(const float sky[3], const float horizon[3], const float ground[3], float intensity, float horizonExp);
+// Phase 2 — when on, the PS samples the irradiance cubemap on s7 instead
+// of the procedural gradient. Host (CIBL) handles the cube binding.
+void setIblUseCube(bool useCube);
 void uploadIBL(void);
 
 // Wet-surface modulation — host pushes a per-scene wetness scalar driven
@@ -479,6 +482,16 @@ void uploadCSM(const float matrices[48], const float splits[3], float strength,
                float invSize, float depthBias, float blendMetres);
 // PCF softness tuning — mode 0 = 4-tap, mode 1 = 16-tap soft.
 void setCsmSoftness(int mode, float radiusMul);
+
+// D3D9 cubemap helpers — librw doesn't model cubes as Rasters; the host
+// owns the IDirect3DCubeTexture9 lifetime via these void* handles.
+// `format` accepts the same enum the Raster path uses (0 = RGBA8 default,
+// Raster::F16_RGBA for HDR cubes).
+void* createCubeTexture(int size, int format);
+void  destroyCubeTexture(void *cubeTex);
+// Face indices: 0=+X, 1=-X, 2=+Y, 3=-Y, 4=+Z, 5=-Z (D3DCUBEMAP_FACES).
+void  setCubeFaceRenderTarget(void *cubeTex, int face);
+void  bindCubeToSampler(int slot, void *cubeTex);
 
 void createDefaultShaders(void);
 void destroyDefaultShaders(void);

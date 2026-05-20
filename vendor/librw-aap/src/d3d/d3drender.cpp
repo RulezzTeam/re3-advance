@@ -88,6 +88,15 @@ setIblColors(const float sky[3], const float horizon[3], const float ground[3], 
 	iblParams[1] = horizonExp;
 }
 
+// Phase 2 switch — when true, the PS samples the cube on s7 instead of
+// the analytic gradient. Host (CIBL) is responsible for actually binding
+// the cubemap to s7 before any pp draw fires.
+void
+setIblUseCube(bool useCube)
+{
+	iblParams[2] = useCube ? 1.0f : 0.0f;
+}
+
 void
 uploadIBL(void)
 {

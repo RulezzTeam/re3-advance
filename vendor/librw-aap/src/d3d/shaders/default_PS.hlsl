@@ -45,9 +45,14 @@ float4 iblHorizon  : register(c45);	// hemisphere ring (|N.z| ≈ 0)
 float4 iblGround   : register(c46);	// hemisphere nadir (N.z = -1, muted)
 // .x = intensity multiplier (0 = off)
 // .y = horizon falloff exponent (1.0 = linear, larger = sharper horizon band)
-// .z = directional-light tinting (0..1 — lerps lit toward iblSky on shadowed faces)
+// .z = use-cube switch (1.0 = sample irradianceCube on s7 instead of the gradient)
 // .w = unused
 float4 iblParams   : register(c47);
+
+// Phase 2 irradiance cubemap (bound by CIBL::BindReceiver on s7). When
+// iblParams.z > 0.5 we sample this instead of the gradient: a single
+// texCUBE replaces the 3-term hemisphere split.
+samplerCUBE iblIrradianceCube : register(s7);
 
 // Wet-surface modulation. Driven by CWeather::WetRoads + Rain. Up-facing
 // surfaces (puddles, car roofs, road tops) get the heaviest hit:
@@ -266,13 +271,19 @@ float4 ComputeShadedColor(VS_out input)
 	// gates the whole contribution; when the host sets it to 0 we trade three
 	// mul-adds for nothing. The horizon weight uses 1 - |N.z|^p so a larger
 	// exponent gives a sharper sky/horizon transition (good for daytime).
+	// Phase 2: when iblParams.z > 0.5 we sample the real irradiance cube
+	// instead (one texCUBE) — captures sun bleed + directional sky pattern
+	// the analytic gradient can't represent.
 	{
 		float up   = saturate( N.z);
 		float down = saturate(-N.z);
 		float hor  = 1.0 - saturate(pow(abs(N.z), max(iblParams.y, 0.5)));
-		float3 iblCol = up   * iblSky.rgb
-		              + down * iblGround.rgb
-		              + hor  * iblHorizon.rgb;
+		float3 gradientCol = up   * iblSky.rgb
+		                   + down * iblGround.rgb
+		                   + hor  * iblHorizon.rgb;
+		float3 cubeCol = texCUBE(iblIrradianceCube, N).rgb;
+		float useCube = step(0.5, iblParams.z);
+		float3 iblCol = lerp(gradientCol, cubeCol, useCube);
 		// Treat IBL as a soft diffuse — modulate by the material diffuse
 		// coefficient so unlit materials (like UI quads, particles) don't
 		// pick up sky bleed when this branch is somehow hit.

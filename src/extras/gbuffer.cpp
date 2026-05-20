@@ -12,6 +12,7 @@
 #include "Camera.h"
 #include "gbuffer.h"
 #include "postfx.h"
+#include "ibl.h"
 
 extern RwRGBA gColourTop;
 
@@ -98,6 +99,12 @@ CGBuffer::BeginScenePass(RwCamera *cam)
 	// is forced to zero inside librw — the shader contribution cancels.
 	CPostFX::UpdateIBL();
 
+	// Phase 2 IBL — update the cube on its refresh schedule and bind the
+	// irradiance cube on PS sampler s7 so default_pp_PS picks it up
+	// instead of the gradient when iblParams.z is set.
+	CIBL::Update(cam);
+	CIBL::BindReceiver();
+
 	// Bind the G-buffer MRT slot BEFORE clearing so the clear hits both
 	// targets atomically. If we bind after the clear, slot 1 keeps the
 	// previous frame's normal/depth — sky/water pixels (which never write
@@ -163,6 +170,11 @@ CGBuffer::EndScenePass(RwCamera *cam)
 {
 	if(!bSceneInHDR)
 		return;
+
+	// Drop the IBL cube binding so postfx PS slots see a clean s7. The
+	// shader stops sampling it because iblParams.z stays at 1 only
+	// during the scene draws — gbuf clear happens before the next pass.
+	CIBL::UnbindReceiver();
 
 	DropMRT();
 

@@ -27,6 +27,7 @@ float CCSM::SoftnessRadius = 1.5f;	// slight softening by default
 
 void *csmDepthVS;
 void *csmDepthPS;
+void *csmSkinDepthVS;	// bone-aware variant for peds + drivers
 
 // Helper to bind a CAMERATEXTURE raster on a sampler slot for the
 // receiver pass. Same pattern as postfx.cpp's BindRasterToSampler;
@@ -96,11 +97,17 @@ CCSM::Open(RwCamera *cam)
 		#include "shaders/obj/csm_depth_PS.inc"
 		csmDepthPS = rw::d3d::createPixelShader(csm_depth_PS_cso);
 	}
+	if(csmSkinDepthVS == nullptr){
+		#include "shaders/obj/csm_skin_depth_VS.inc"
+		csmSkinDepthVS = rw::d3d::createVertexShader(csm_skin_depth_VS_cso);
+	}
 	// Expose them to librw so the modified default + skin render
 	// callbacks can swap to depth-only emission during the cascade pass.
+	// csm_skin_depth_VS applies bone matrices to Position so peds /
+	// drivers cast correctly-deformed shadows instead of T-poses.
 	rw::d3d::shadow_VS = csmDepthVS;
 	rw::d3d::shadow_PS = csmDepthPS;
-	rw::d3d::shadow_skin_VS = csmDepthVS;	// VS file already handles position-only — works for skinned meshes too
+	rw::d3d::shadow_skin_VS = csmSkinDepthVS;
 #endif
 
 	int32 size = MapSize;
