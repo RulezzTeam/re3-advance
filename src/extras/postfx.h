@@ -129,6 +129,22 @@ public:
 	// Runs before ResolveHDR, blurs pHdrScene in-place via a scratch RT
 	// so the downstream tonemap sees the blurred image.
 	static RwRaster *pDofScratch;	// same format/size as pHdrScene
+
+	// Motion-vector-driven motion blur — replaces the legacy frame-buffer
+	// alpha overlay (CMBlur::OverlayRender on pFrontBuffer) with a
+	// per-pixel motion vector reconstructed from gbuf depth + the
+	// previous-frame view-proj matrix. Result: motion blur that follows
+	// scene + camera motion correctly and doesn't ghost on camera cuts.
+	// Default off so existing saves keep current behaviour; user opts in
+	// via menu. The legacy alpha overlay still runs for the security-
+	// cam / drunk / intro special effects (those use the same code path
+	// but a different blur source).
+	static RwRaster *pMotionBlurScratch;
+	static bool MotionVecBlurEnable;
+	static float MotionVecBlurStrength;	// 0..1; default 0.5 = subtle
+	static float MotionVecBlurMaxRadius;	// max blur in UV units; default 0.05
+	static void RenderMotionVecBlur(RwCamera *cam);
+
 	static bool DofEnable;
 	static float DofFocusDistance;	// world metres — menu / scripted target
 	static float DofFocusDistanceSmoothed;	// per-frame lerped value the shader actually uses

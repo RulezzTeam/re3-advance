@@ -140,7 +140,9 @@
 #ifdef POSTFX_HDR
 	#define POSTFX_TAA_SELECTORS \
 		MENUACTION_CFO_SELECT, "FED_AAM", { new CCFOSelect((int8*)&CPostFX::AaMode, "Graphics", "AaMode", aaModeNames, 4, false) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_TAB", { new CCFOSlider(&CPostFX::TaaBlend, "Graphics", "TaaBlend", 0.02f, 0.5f) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_SLIDER, "FED_TAB", { new CCFOSlider(&CPostFX::TaaBlend, "Graphics", "TaaBlend", 0.02f, 0.5f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_MVB", { new CCFOSelect((int8*)&CPostFX::MotionVecBlurEnable, "Graphics", "MotionVecBlur", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_MBS", { new CCFOSlider(&CPostFX::MotionVecBlurStrength, "Graphics", "MotionVecBlurStrength", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT,
 #else
 	#define POSTFX_TAA_SELECTORS
 #endif
@@ -421,6 +423,10 @@ void RestoreDefGraphics(int8 action) {
 		CPostFX::TaaEnable = false;
 		CPostFX::TaaBlend = 0.12f;
 		CPostFX::TaaClamp = 1.0f;
+		// Motion-vector blur default OFF — opt-in via menu.
+		CPostFX::MotionVecBlurEnable = false;
+		CPostFX::MotionVecBlurStrength = 0.5f;
+		CPostFX::MotionVecBlurMaxRadius = 0.05f;
 		CPostFX::AaMode = 1;
 		CPostFX::VolFogEnable = false;
 		CPostFX::VolFogStrength = 0.8f;

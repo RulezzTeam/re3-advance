@@ -144,6 +144,13 @@ float CPostFX::SsrSkyFallback = 0.6f;
 // Depth of field — off by default; defaults give a tasteful cinematic
 // near/far blur centred on ~15m (typical car interior distance).
 RwRaster *CPostFX::pDofScratch;
+RwRaster *CPostFX::pMotionBlurScratch;
+// Default OFF — the legacy frame-buffer blur stays default behaviour
+// for compatibility. Enabling the MV blur replaces it cleanly via
+// the menu toggle.
+bool CPostFX::MotionVecBlurEnable = false;
+float CPostFX::MotionVecBlurStrength = 0.5f;
+float CPostFX::MotionVecBlurMaxRadius = 0.05f;
 bool CPostFX::DofEnable = false;
 // FocusDistance is the user-settable *target* the menu slider writes to.
 // FocusDistanceSmoothed is what the shader actually reads — a per-frame
@@ -273,6 +280,18 @@ static void *ssr_PS;
 static rw::Camera *ssrCam;	// half-res RGBA8 SSR target
 static void *dof_PS;
 static rw::Camera *dofCam;	// full-res RGBA16F bokeh scratch
+static void *motionBlur_PS;
+static rw::Camera *motionBlurCam;
+// Prev-frame view-proj cached at the END of RenderMotionVecBlur.
+// Independent of TAA's cache so motion blur works standalone with TAA
+// off. First-frame default = identity → MV = 0 → no blur, same look
+// as previous frame which is exactly what we want.
+static rw::RawMatrix sMbPrevViewProj = {
+	{ 1, 0, 0 }, 0,
+	{ 0, 1, 0 }, 0,
+	{ 0, 0, 1 }, 0,
+	{ 0, 0, 0 }, 1,
+};
 #endif
 #ifdef SOFT_SHADOWS
 void *shadowPCF_PS;
@@ -470,6 +489,12 @@ CPostFX::Open(RwCamera *cam)
 		pDofScratch = RwRasterCreate(cw, ch, 0, colorFmt);
 		dofCam = CreateBloomCam(pDofScratch);
 	}
+
+	// Motion-vector blur scratch — pow2-sized (same as pBackBuffer) so
+	// the existing Vertex[] full-screen quad maps 1:1 to it. RGBA8 is
+	// enough since this pass runs post-tonemap on the LDR backbuffer.
+	pMotionBlurScratch = RwRasterCreate(width, height, depth, rwRASTERTYPECAMERATEXTURE);
+	motionBlurCam = CreateBloomCam(pMotionBlurScratch);
 
 	// Half-res quad for SSAO passes. The destination RTs are exactly sw x sh
 	// (non-pow2), so UV=0..1 must map to (0, 0)..(sw, sh) screen coords.
@@ -728,6 +753,10 @@ CPostFX::Open(RwCamera *cam)
 	dof_PS = rw::d3d::createPixelShader(dof_PS_cso);
 	}
 	{
+#include "shaders/obj/motionBlur_PS.inc"
+	motionBlur_PS = rw::d3d::createPixelShader(motionBlur_PS_cso);
+	}
+	{
 #include "shaders/obj/gtao_PS.inc"
 	gtao_PS = rw::d3d::createPixelShader(gtao_PS_cso);
 	}
@@ -799,6 +828,8 @@ CPostFX::Close(void)
 	if(pSsrA){ RwRasterDestroy(pSsrA); pSsrA = nil; }
 	if(dofCam){ DestroyBloomCam(dofCam); dofCam = nil; }
 	if(pDofScratch){ RwRasterDestroy(pDofScratch); pDofScratch = nil; }
+	if(motionBlurCam){ DestroyBloomCam(motionBlurCam); motionBlurCam = nil; }
+	if(pMotionBlurScratch){ RwRasterDestroy(pMotionBlurScratch); pMotionBlurScratch = nil; }
 	if(taaCamA){ DestroyBloomCam(taaCamA); taaCamA = nil; }
 	if(taaCamB){ DestroyBloomCam(taaCamB); taaCamB = nil; }
 	if(pTaaHistA){ RwRasterDestroy(pTaaHistA); pTaaHistA = nil; }
@@ -845,6 +876,7 @@ CPostFX::Close(void)
 	if(taa_PS){ rw::d3d::destroyPixelShader(taa_PS); taa_PS = nil; }
 	if(ssr_PS){ rw::d3d::destroyPixelShader(ssr_PS); ssr_PS = nil; }
 	if(dof_PS){ rw::d3d::destroyPixelShader(dof_PS); dof_PS = nil; }
+	if(motionBlur_PS){ rw::d3d::destroyPixelShader(motionBlur_PS); motionBlur_PS = nil; }
 	if(gtao_PS){ rw::d3d::destroyPixelShader(gtao_PS); gtao_PS = nil; }
 	if(hbao_PS){ rw::d3d::destroyPixelShader(hbao_PS); hbao_PS = nil; }
 	if(aoMix_PS){ rw::d3d::destroyPixelShader(aoMix_PS); aoMix_PS = nil; }
@@ -1515,6 +1547,99 @@ CPostFX::RenderDoF(RwCamera *cam)
 #endif
 
 	RwCameraBeginUpdate(cam);
+
+	POP_RENDERGROUP();
+}
+
+void
+CPostFX::RenderMotionVecBlur(RwCamera *cam)
+{
+	// Always update the prev-frame cache, even when the toggle is off,
+	// so the first frame after toggling MotionVecBlurEnable on doesn't
+	// see a stale (or identity) prev matrix that would smear half the
+	// screen. Doing the update at the START of the function reads the
+	// current frame's matrix as "prev for next frame" — same pattern
+	// as TAA, just done unconditionally.
+	rw::RawMatrix curViewProj;
+	{
+		rw::Camera *rwcam = (rw::Camera*)cam;
+		rw::RawMatrix::mult(&curViewProj, &rwcam->devView, &rwcam->devProj);
+	}
+
+	if(!MotionVecBlurEnable || !CGBuffer::HdrEnabled || !CGBuffer::GbufEnabled){
+		// Bookkeep the prev matrix anyway so the next frame's pass — if
+		// the user just toggled enable — has a valid prev-VP to reproject.
+		sMbPrevViewProj = curViewProj;
+		return;
+	}
+	if(motionBlur_PS == nil || pMotionBlurScratch == nil || motionBlurCam == nil ||
+	   CGBuffer::pGbufNormalDepth == nil){
+		sMbPrevViewProj = curViewProj;
+		return;
+	}
+
+	PUSH_RENDERGROUP("CPostFX::RenderMotionVecBlur");
+
+	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEFOGENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDONE);
+	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDZERO);
+
+	// Source: the current LDR backbuffer (post all other postfx).
+	// Destination: pMotionBlurScratch.
+	RwCameraEndUpdate(cam);
+	RwCameraBeginUpdate((RwCamera*)motionBlurCam);
+	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, pBackBuffer);
+	BindRasterToSampler(1, CGBuffer::pGbufNormalDepth);
+
+#ifdef RW_D3D9
+	{
+		rw::Camera *rwcam = (rw::Camera*)cam;
+		rw::V3d camPos = rwcam->getFrame()->getLTM()->pos;
+		float farClip = rwcam->farPlane;
+
+		// c10: blur params (.x = intensity, .y = max UV radius)
+		float pp[4] = { MotionVecBlurStrength, MotionVecBlurMaxRadius, 8.0f, 0.0f };
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(10, pp, 1);
+
+		// c11: camera + farClip
+		float cCam[4] = { camPos.x, camPos.y, camPos.z, farClip };
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(11, cCam, 1);
+
+		// c12..c15: frustum corner rays
+		const rw::V3d *fc = rwcam->frustumCorners;
+		float corners[4][4] = {
+			{ fc[0].x, fc[0].y, fc[0].z, 0 },
+			{ fc[1].x, fc[1].y, fc[1].z, 0 },
+			{ fc[2].x, fc[2].y, fc[2].z, 0 },
+			{ fc[3].x, fc[3].y, fc[3].z, 0 },
+		};
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(12, &corners[0][0], 4);
+
+		// c16..c19: previous-frame view-proj matrix (where each world
+		// point landed on screen one frame ago).
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(16, (const float*)&sMbPrevViewProj, 4);
+
+		rw::d3d::im2dOverridePS = motionBlur_PS;
+		RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, Vertex, 4, Index, 6);
+		rw::d3d::im2dOverridePS = nil;
+	}
+#endif
+
+	BindRasterToSampler(1, nil);
+	RwCameraEndUpdate((RwCamera*)motionBlurCam);
+
+	// Copy pMotionBlurScratch back into pBackBuffer so subsequent passes
+	// (legacy alpha overlay, frontbuffer capture) see the blurred image.
+	RwCameraBeginUpdate(cam);
+	RwRasterPushContext(pBackBuffer);
+	RwRasterRenderFast(pMotionBlurScratch, 0, 0);
+	RwRasterPopContext();
+
+	// Bookkeep — next frame's reproject uses what was "current" this frame.
+	sMbPrevViewProj = curViewProj;
 
 	POP_RENDERGROUP();
 }
@@ -2276,6 +2401,15 @@ CPostFX::Render(RwCamera *cam, uint32 red, uint32 green, uint32 blue, uint32 blu
 	   EffectSwitch != POSTFX_OFF)
 		RenderFXAA(cam);
 #endif
+
+	// Motion-vector blur — runs BEFORE the legacy alpha-overlay so the
+	// blurred image is what gets sampled into the frontbuffer for the
+	// next-frame feedback path. Self-gates on MotionVecBlurEnable; safe
+	// no-op when disabled (still updates the prev-VP cache so toggling
+	// on mid-game doesn't smear).
+	if(!bJustInitialised && type != MOTION_BLUR_SNIPER &&
+	   EffectSwitch != POSTFX_OFF)
+		RenderMotionVecBlur(cam);
 
 	if(!bJustInitialised)
 		RenderMotionBlur(cam, 175.0f * CMBlur::Drunkness);
