@@ -67,6 +67,24 @@ setWetness(float wetness, float diffuseDarken, float specBoost, float powerMul)
 	wetnessParams[3] = powerMul;
 }
 
+// Rain ripples — animated normal perturbation on wet up-facing
+// surfaces. Host accumulates time only while raining + scales strength
+// by CWeather::Rain. Reads in default_pp_PS at c65 (c64 is iblReflParams,
+// c66+ stays free for future per-frame uniforms).
+//   .x = accumulated rain time (seconds; drives animation phase)
+//   .y = strength (0 = off, 1 = full)
+//   .z = tile scale (world XY × this = ripple UV)
+//   .w = reserved
+static float rainRipplesParams[4] = { 0.0f, 0.0f, 0.5f, 0.0f };
+void
+setRainRipples(float time, float strength, float tileScale)
+{
+	rainRipplesParams[0] = time;
+	rainRipplesParams[1] = strength;
+	rainRipplesParams[2] = tileScale;
+	rainRipplesParams[3] = 0.0f;
+}
+
 // Dynamic point lights — host (CDynamicLights) picks the top-N brightest
 // CPointLights near the camera each frame and uploads them here. The
 // receiver in default_pp_PS samples this array at c100 (count) + c101..
@@ -167,6 +185,9 @@ uploadIBL(void)
 	// Wet-surface params ride along with IBL — same per-frame cadence,
 	// no separate dispatch needed.
 	d3ddevice->SetPixelShaderConstantF(63, wetnessParams, 1);
+	// Rain ripples — same cadence. Cheap one-vec4 upload; the shader
+	// [branch]es on strength so dry scenes pay essentially nothing.
+	d3ddevice->SetPixelShaderConstantF(65, rainRipplesParams, 1);
 }
 
 // CSM receiver — uploads 3 cascade light-view-proj matrices + per-cascade

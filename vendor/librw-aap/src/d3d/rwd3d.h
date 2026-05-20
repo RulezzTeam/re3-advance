@@ -488,6 +488,13 @@ void uploadIBL(void);
 // gets a consistent snapshot.
 void setWetness(float wetness, float diffuseDarken, float specBoost, float powerMul);
 
+// Rain ripples — animated normal perturbation on wet up-facing surfaces.
+// `time` accumulates per-frame on the host only while raining. `strength`
+// fades smoothly with CWeather::Rain (0 = no ripples, 1 = full). The
+// shader [branch]es on strength so dry scenes pay essentially nothing.
+// Uploaded to c65 inside uploadIBL alongside the wetness params.
+void setRainRipples(float time, float strength, float tileScale);
+
 // Dynamic point lights — host picks top-N brightest CPointLights near
 // camera, calls setDynamicPointLights once per frame, then uploads. The
 // receiver in default_pp_PS applies them per-pixel with smooth window

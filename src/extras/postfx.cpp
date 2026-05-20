@@ -11,6 +11,7 @@
 #include "RwHelper.h"
 #include "Camera.h"
 #include "MBlur.h"
+#include "Timer.h"	// CTimer::GetTimeStepNonClipped — DoF focus crossfade animator
 #include "Timecycle.h"
 #include "Weather.h"	// CWeather::LightningFlash, Rain, WetRoads
 #include "WaterLevel.h"	// CWaterLevel::GetWaterLevelNoWaves (underwater fog detection)
@@ -144,7 +145,14 @@ float CPostFX::SsrSkyFallback = 0.6f;
 // near/far blur centred on ~15m (typical car interior distance).
 RwRaster *CPostFX::pDofScratch;
 bool CPostFX::DofEnable = false;
+// FocusDistance is the user-settable *target* the menu slider writes to.
+// FocusDistanceSmoothed is what the shader actually reads — a per-frame
+// lerp toward the target, so slider movements and camera-mode-driven
+// retargets (when DofAutoFocus lands) crossfade smoothly instead of
+// hard-snapping. Time constant ~0.5 s: visually instant but kills the
+// abrupt blur pulse you'd otherwise get every menu tick.
 float CPostFX::DofFocusDistance = 15.0f;
+float CPostFX::DofFocusDistanceSmoothed = 15.0f;
 float CPostFX::DofFocusRange = 6.0f;
 float CPostFX::DofAperture = 0.012f;
 // Volumetric fog — defaults tuned for Vice City's daytime haze look.
@@ -1090,6 +1098,22 @@ CPostFX::UpdateIBL(void)
 	// hemisphere gradient. iblParams.z carries the flag.
 	rw::d3d::setIblUseCube(CIBL::Enabled && CIBL::irradianceCube != nil);
 	rw::d3d::setWetness(wetness, WetSurfacesDiffuse, WetSurfacesSpec, WetSurfacesPower);
+
+	// Rain ripples — animated normal perturbation on wet up-facing
+	// surfaces. Strength fades with CWeather::Rain so the shimmer kicks
+	// in during active rain and fades out as the weather clears. Time
+	// only accumulates while raining; otherwise the wave phase freezes
+	// (no ripples on dried-out wet roads). Tile scale 0.5 = ~2m wave
+	// period — looks plausible for a falling-rain disturbance pattern.
+	static float sRainRippleTime = 0.0f;
+	float rainNow = CWeather::Rain;
+	if(rainNow > 0.01f){
+		float dtSec = CTimer::GetTimeStepNonClipped() * (1.0f/50.0f);
+		if(dtSec > 0.2f) dtSec = 0.2f;	// pause / hitch guard
+		sRainRippleTime += dtSec * rainNow;
+	}
+	rw::d3d::setRainRipples(sRainRippleTime, rainNow, 0.5f);
+
 	rw::d3d::uploadIBL();
 #endif
 }
@@ -1351,9 +1375,33 @@ CPostFX::RenderSSR(RwCamera *cam)
 	POP_RENDERGROUP();
 }
 
+// Per-frame DoF focus distance animator. Exponential lerp toward the
+// menu / script target with a ~0.5 s time constant — long enough that
+// slider movements crossfade smoothly, short enough that a camera-mode
+// retarget (third-person → bumper) reaches the new focus before the
+// next pedestrian interaction. CTimer::ms_fTimeStep is in 50-Hz units
+// (50 = 1 second) so the per-step factor falls out as ~0.04 per step;
+// we cap min/max to keep the lerp stable when the game pauses or hitches.
+static void
+StepDofFocusAnimator(void)
+{
+	float dt = CTimer::GetTimeStepNonClipped() * (1.0f/50.0f);	// seconds
+	if(dt < 0.001f) dt = 0.001f;
+	if(dt > 0.2f)   dt = 0.2f;
+	const float kTimeConstSec = 0.5f;
+	float a = 1.0f - expf(-dt / kTimeConstSec);
+	CPostFX::DofFocusDistanceSmoothed +=
+		(CPostFX::DofFocusDistance - CPostFX::DofFocusDistanceSmoothed) * a;
+}
+
 void
 CPostFX::RenderDoF(RwCamera *cam)
 {
+	// Step the focus animator each frame regardless of DofEnable so the
+	// smoothed value tracks the target even while DoF is toggled off —
+	// switching DoF on then back doesn't snap focus to a stale position.
+	StepDofFocusAnimator();
+
 	if(!CGBuffer::HdrEnabled || !CGBuffer::GbufEnabled || !DofEnable)
 		return;
 	if(CGBuffer::pHdrScene == nil || CGBuffer::pGbufNormalDepth == nil ||
@@ -1381,7 +1429,11 @@ CPostFX::RenderDoF(RwCamera *cam)
 #ifdef RW_D3D9
 	{
 		float farClip = ((rw::Camera*)cam)->farPlane;
-		float pp[4] = { farClip, DofFocusDistance, DofFocusRange, DofAperture };
+		// Use the smoothed focus distance instead of the raw slider so
+		// slider tweaks crossfade over ~0.5 s. The non-smoothed range
+		// + aperture stay direct — those are quality knobs, not focus
+		// targets, and shouldn't crossfade.
+		float pp[4] = { farClip, DofFocusDistanceSmoothed, DofFocusRange, DofAperture };
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(10, pp, 1);
 		float texel[4] = { 1.0f/cw, 1.0f/ch, 0.0f, 0.0f };
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(11, texel, 1);

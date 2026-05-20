@@ -79,6 +79,33 @@ float4 iblReflParams : register(c64);
 // .w = specular power multiplier (typical 2.0 → tighter highlight)
 float4 wetnessParams : register(c63);
 
+// Rain ripples — procedural noise-based normal perturbation on wet
+// up-facing surfaces. Host uploads via setRainRipples + uploadIBL.
+//   .x = accumulated rain time (seconds, drives sin phase)
+//   .y = strength (0 = bypass, 1 = full); host fades with CWeather::Rain
+//   .z = world-XY tile scale (smaller → larger pattern; ~0.5 typical)
+//   .w = reserved
+float4 rainRipplesParams : register(c65);
+
+// Procedural rain ripple normal perturbation. Two-octave sin pattern on
+// world XY, animated by time. Cheap (~8 ALU + 4 sin) vs sampling a
+// tiled normal-map texture; no extra TXD asset required. Returns the
+// tangent-space xy perturbation; the caller adds it to N.xy and renorms.
+float2 ComputeRainRippleN(float2 worldXY, float time, float strength, float tileScale)
+{
+	if(strength < 0.01)
+		return float2(0, 0);
+	float2 p = worldXY * tileScale;
+	float t = time * 2.5;
+	// Two octaves at different angles + speeds so the pattern doesn't
+	// look like a grid. Amplitude small (0.04) — we want a *subtle*
+	// shimmer, not a wave pool. Strength dial scales linearly on top.
+	float2 n;
+	n.x = sin(p.x * 1.0 + t)          + sin(p.y * 1.3 + t * 1.1) * 0.6;
+	n.y = cos(p.x * 1.1 + t * 0.9)    + cos(p.y * 0.9 + t * 1.0) * 0.7;
+	return n * strength * 0.04;
+}
+
 // Dynamic point lights — independent of librw's per-atomic lights[]
 // array. Host (CDynamicLights) picks the top-N brightest CPointLights
 // near the camera each frame and uploads them here once per scene.
@@ -422,6 +449,27 @@ float4 ComputeShadedColor(VS_out input)
 	float wetDiffuse = lerp(surfDiffuse, surfDiffuse * wetnessParams.y, wetMask);
 	float wetSpec    = lerp(surfSpecular, surfSpecular * wetnessParams.z, wetMask);
 	float wetPower   = lerp(1.0, max(wetnessParams.w, 1.0), wetMask);
+
+	// Rain ripples — animated normal perturbation. Only fires on flat-ish
+	// up-facing wet surfaces (N.z > 0.85), so vehicle bodies / vertical
+	// walls don't get a fake wave shimmer. The mask smoothly fades 0.85
+	// → 1.0 so the boundary isn't visible. Strength is gated by the
+	// per-pixel wetness AND the global rain strength, so dry weather
+	// pays the [branch] cost only and nothing more.
+	[branch]
+	if(rainRipplesParams.y > 0.01){
+		float flatMask = saturate((N.z - 0.85) * 6.66);	// 0..1 across z=0.85..1.0
+		float ripMask = wetMask * flatMask;
+		if(ripMask > 0.01){
+			float2 ripN = ComputeRainRippleN(input.WorldPos.xy,
+			                                  rainRipplesParams.x,
+			                                  rainRipplesParams.y * ripMask,
+			                                  rainRipplesParams.z);
+			// Up-facing surface: world XY perturbation maps directly to
+			// the N.xy. Renormalise so |N| = 1 for the dot products below.
+			N = normalize(float3(N.x + ripN.x, N.y + ripN.y, N.z));
+		}
+	}
 #ifdef DIRECTIONALS
 	[loop]
 	for(i = 0; i < numDirLights; i++)

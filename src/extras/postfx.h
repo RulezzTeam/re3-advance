@@ -130,7 +130,8 @@ public:
 	// so the downstream tonemap sees the blurred image.
 	static RwRaster *pDofScratch;	// same format/size as pHdrScene
 	static bool DofEnable;
-	static float DofFocusDistance;	// world metres
+	static float DofFocusDistance;	// world metres — menu / scripted target
+	static float DofFocusDistanceSmoothed;	// per-frame lerped value the shader actually uses
 	static float DofFocusRange;	// half-window of sharpness (m)
 	static float DofAperture;	// max blur radius (UV units, 0..0.04 typical)
 	static void RenderDoF(RwCamera *cam);
