@@ -40,6 +40,16 @@ struct VS_out {
 	float4 Color		: COLOR0;
 };
 
+// NaN-safe normalize — see hdrResolve_PS.hlsl for the rationale. The SSR
+// march multiplies the reflected vector by world-distance scalars; a single
+// NaN turns the whole pixel into garbage colour for the rest of the frame,
+// and TAA accumulation then spreads it across multiple pixels next frame.
+float3 SafeNormalize(float3 v)
+{
+	float l2 = dot(v, v);
+	return v * rsqrt(max(l2, 1e-8));
+}
+
 // Project a world-space point to NDC, then to UV [0,1] for tex2D.
 float3 WorldToUVDepth(float3 wp)
 {
@@ -62,21 +72,25 @@ float4 main(VS_out input) : COLOR
 	if(ssrParams.w < 0.001)
 		return float4(0, 0, 0, 0);
 
-	float3 N = normalize(gbuf.rgb * 2.0 - 1.0);
+	float3 N = SafeNormalize(gbuf.rgb * 2.0 - 1.0);
 
 	// Bilerp the world-space view ray (uv=0,0=TL).
 	float3 ray = lerp(lerp(ssrRayTL.xyz, ssrRayTR.xyz, uv.x),
 	                  lerp(ssrRayBL.xyz, ssrRayBR.xyz, uv.x),
 	                  uv.y);
-	float3 V = normalize(ray);
+	float3 V = SafeNormalize(ray);
 
 	// Reconstruct hit (current pixel) world position from gbuf.a × farClip.
 	float viewZ = gbuf.a * ssrCamera.w;
 	float3 wp = ssrCamera.xyz + ray * viewZ;
 
 	// Reflected world-space ray (V points from camera to fragment, so
-	// reflect across N).
+	// reflect across N). Guard against NaN/Inf propagation in case the
+	// gbuf normal was uninitialised; without this, a single garbage
+	// pixel turns into a whole-frame artifact via TAA accumulation.
 	float3 R = reflect(V, N);
+	if(any(isnan(R)) || any(isinf(R)))
+		return float4(0, 0, 0, 0);
 
 	// Skip rays pointing backward into the camera — common on grazing
 	// silhouettes; they always escape the screen anyway.

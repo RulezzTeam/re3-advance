@@ -166,6 +166,14 @@ public:
 	static float VolFogMaxDist;	// march distance for sky pixels (metres)
 	static float VolFogHG;		// Henyey-Greenstein g (0=iso, 0.7=sun halo)
 	static float VolFogSunBoost;	// multiplier on sun colour (HDR-aware)
+
+	// Volumetric spotlights — independent of VolFogEnable so players can
+	// see point-light cones (headlights, lamps, muzzle flashes) without
+	// the global fog enabled. Each spot is also gated by its own radius
+	// at upload time so empty/expired slots don't contribute even when
+	// the toggle is on. Default ON: cones are what makes the new dynamic
+	// point-light pipeline read in-scene at night.
+	static bool VolSpotEnable;
 #endif
 
 	static void InitOnce(void);

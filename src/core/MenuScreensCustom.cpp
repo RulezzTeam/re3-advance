@@ -206,7 +206,8 @@
 		MENUACTION_CFO_SLIDER, "FED_VFD", { new CCFOSlider(&CPostFX::VolFogDensity, "Graphics", "VolFogDensity", 0.0f, 0.08f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_VFH", { new CCFOSlider(&CPostFX::VolFogHeightFalloff, "Graphics", "VolFogHeight", 0.0f, 0.1f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_VFG", { new CCFOSlider(&CPostFX::VolFogHG, "Graphics", "VolFogHG", 0.0f, 0.95f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_VFB", { new CCFOSlider(&CPostFX::VolFogSunBoost, "Graphics", "VolFogSunBoost", 0.0f, 4.0f) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_SLIDER, "FED_VFB", { new CCFOSlider(&CPostFX::VolFogSunBoost, "Graphics", "VolFogSunBoost", 0.0f, 4.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_VSP", { new CCFOSelect((int8*)&CPostFX::VolSpotEnable, "Graphics", "VolSpot", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
 #else
 	#define POSTFX_HDR_SELECTORS
 #endif
@@ -222,7 +223,7 @@
 	#define POSTFX_CSM_SELECTORS \
 		MENUACTION_CFO_SELECT, "FED_CSM", { new CCFOSelect((int8*)&CCSM::Enabled, "Graphics", "CSM", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_CSS", { new CCFOSlider(&CCSM::Strength, "Graphics", "CSMStrength", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SELECT, "FED_CFM", { new CCFOSelect((int8*)&CCSM::SoftnessMode, "Graphics", "CSMSoft", csmSoftNames, 2, false) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_CFM", { new CCFOSelect((int8*)&CCSM::SoftnessMode, "Graphics", "CSMSoft", csmSoftNames, 3, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_CFR", { new CCFOSlider(&CCSM::SoftnessRadius, "Graphics", "CSMSoftR", 1.0f, 4.0f) }, 0, 0, MENUALIGN_LEFT,
 #else
 	#define POSTFX_CSM_SELECTORS
@@ -243,15 +244,34 @@
 const char *filterNames[] = { "FEM_NON", "FEM_SIM", "FEM_NRM", "FEM_MOB" };
 const char *off_on[] = { "FEM_OFF", "FEM_ON" };
 #ifdef MULTI_ENVMAP
-const char *envMapSizes[] = { "256", "512", "1024", "2048" };
+// Self-describing labels — the raw "256" alone made it unclear what the
+// number measured (pixel size vs mip count vs ID); the tier prefix makes
+// scanning easier and lines up with the rest of the menu's quality dial.
+const char *envMapSizes[] = { "Low (256)", "Medium (512)", "High (1024)", "Ultra (2048)" };
 #endif
 #ifdef POSTFX_HDR
 const char *ssaoAlgoNames[] = { "SSAO", "GTAO", "HBAO", "Mixed" };
 const char *ssaoMixNames[] = { "Min", "Average", "Multiply" };
 const char *aaModeNames[] = { "Off", "FXAA", "TAA", "TAA+FXAA" };
+// Quality-tier resolution selectors used in Stage 4 (resolution scalability)
+// for CSM map size, spot shadow map size, IBL cube sizes, water reflection
+// size, and the postfx half/quarter resolution group. Each entry stays
+// readable on its own so the column header doesn't need to repeat units.
+const char *cascadeMapSizes[] = { "Medium (1024)", "High (2048)", "Ultra (4096)" };
+const char *spotShadowSizes[] = { "Low (256)", "Medium (512)", "High (1024)", "Ultra (2048)" };
+const char *bufferResolutions[] = { "Quarter", "Half", "Full" };
+const char *iblCubeCaptureSizes[] = { "Small (64)", "Standard (128)", "Large (256)", "Huge (512)" };
+const char *iblIrradianceSizes[] = { "Small (16)", "Standard (32)", "Large (64)", "Huge (128)" };
+const char *waterReflectionSizes[] = { "Low (256)", "Medium (512)", "High (1024)", "Ultra (2048)" };
+const char *volFogStepCounts[] = { "Low (8)", "Medium (12)", "High (16)", "Very High (24)", "Ultra (32)" };
+const char *volSpotMaxCounts[] = { "4 lights", "8 lights" };
 #endif
 #ifdef POSTFX_CSM
-const char *csmSoftNames[] = { "Hard (4-tap)", "Soft (16-tap)" };
+// Renamed: "Hard (4-tap)" was confusing (sounds like difficulty), and the
+// option list now exposes the new 32-tap kernel from Stage 3.2. Use the
+// rendering term ("Sharp/Soft/Ultra") instead of a tap count alone so the
+// user sees a quality tier, not an implementation detail.
+const char *csmSoftNames[] = { "Sharp (4-tap)", "Soft (16-tap)", "Ultra (32-tap)" };
 #endif
 
 void RestoreDefGraphics(int8 action) {
@@ -288,10 +308,14 @@ void RestoreDefGraphics(int8 action) {
 		CPostFX::BloomSaturation = 1.0f;
 	#endif
 	#ifdef POSTFX_TONEMAP
-		CPostFX::TonemapACES = false;
+		// Match the C++ side defaults exactly (postfx.cpp:65-72). ACES on,
+		// gamma off (the two are mutually-exclusive — ACES already does the
+		// sRGB rolloff); Exposure 1.6 to brighten the HDR midtones out of
+		// the underexposed range the old 1.0 default left them in.
+		CPostFX::TonemapACES = true;
 		CPostFX::TonemapGamma = false;
-		CPostFX::Exposure = 1.0f;
-		CPostFX::Saturation = 1.0f;
+		CPostFX::Exposure = 1.6f;
+		CPostFX::Saturation = 1.05f;
 		CPostFX::VignetteIntensity = 0.0f;
 		CPostFX::VignetteSoftness = 0.45f;
 		CPostFX::VignetteRoundness = 1.0f;
@@ -370,6 +394,10 @@ void RestoreDefGraphics(int8 action) {
 		CPostFX::VolFogMaxDist = 350.0f;
 		CPostFX::VolFogHG = 0.55f;
 		CPostFX::VolFogSunBoost = 1.0f;
+		// Decoupled from VolFog so the cones default to on without
+		// forcing full-screen height fog. Matches the C++ initialiser
+		// in postfx.cpp.
+		CPostFX::VolSpotEnable = true;
 	#endif
 	#ifdef POSTFX_WATER_REFLECTION
 		CWaterReflection::Enabled = false;	// off until water shader hooks land

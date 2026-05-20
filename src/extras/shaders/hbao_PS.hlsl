@@ -22,6 +22,15 @@ struct VS_out {
 	float4 Color		: COLOR0;
 };
 
+// NaN-safe normalize — see hdrResolve_PS.hlsl. HBAO uses N to compute the
+// tangent reference; without the guard, a NaN tangent makes the whole
+// horizon integration NaN and AO turns black instead of white.
+float3 SafeNormalize(float3 v)
+{
+	float l2 = dot(v, v);
+	return v * rsqrt(max(l2, 1e-8));
+}
+
 float ComputeAOSlice(float2 uv, float2 dir, float3 N, float centreZ, float farClip, float radius, float bias)
 {
 	// March 6 steps along `dir`, tracking the maximum horizon angle.
@@ -63,7 +72,7 @@ float4 main(VS_out input) : COLOR
 	if(depth < 0.0001 || dot(N, N) < 0.01)
 		return float4(1.0, 1.0, 1.0, 1.0);
 
-	N = normalize(N);
+	N = SafeNormalize(N);
 	float farClip = hbaoParams.w;
 	float centreZ = depth * farClip;
 

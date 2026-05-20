@@ -209,8 +209,8 @@ static const float2 csmPoisson4[4] = {
 };
 
 // 16-tap Poisson disc (Mitchell-style distribution) — much softer + less
-// banding at the cost of 4× the texture reads. Used when csmTuning2.x = 1
-// (high-quality soft shadows).
+// banding at the cost of 4× the texture reads. Used when csmTuning2.x ∈ (0.5,1.5)
+// (Soft mode).
 static const float2 csmPoisson16[16] = {
 	float2( 0.94558,  0.76995),
 	float2(-0.81544,  0.18687),
@@ -230,8 +230,49 @@ static const float2 csmPoisson16[16] = {
 	float2( 0.45123,  0.05731),
 };
 
+// 32-tap Poisson disc — used when csmTuning2.x > 1.5 (Ultra mode).
+// Doubles sample count over Soft, halving visible PCF banding at the cost
+// of 2× the texture reads. The extra 16 points are interleaved (golden-
+// angle spiral seeded off the first 16) so the kernel stays well-stratified
+// at the larger radii used for very soft shadows.
+static const float2 csmPoisson32[32] = {
+	float2( 0.94558,  0.76995),
+	float2(-0.81544,  0.18687),
+	float2(-0.20254, -0.86342),
+	float2( 0.51842, -0.40664),
+	float2( 0.31334,  0.92577),
+	float2(-0.55781,  0.65728),
+	float2(-0.92345, -0.32018),
+	float2(-0.42124, -0.10918),
+	float2( 0.04123, -0.51284),
+	float2( 0.79827,  0.10342),
+	float2(-0.13567,  0.34128),
+	float2( 0.61283,  0.43712),
+	float2(-0.30852, -0.59123),
+	float2(-0.71042,  0.36018),
+	float2( 0.18267, -0.18412),
+	float2( 0.45123,  0.05731),
+	// Interleaved fill-ins.
+	float2( 0.13427,  0.62874),
+	float2(-0.39871,  0.83142),
+	float2(-0.10248,  0.05317),
+	float2( 0.27843, -0.74521),
+	float2(-0.62318, -0.51743),
+	float2( 0.83291, -0.28415),
+	float2( 0.69853, -0.61247),
+	float2(-0.06281, -0.27154),
+	float2(-0.50912,  0.21478),
+	float2( 0.37418,  0.55731),
+	float2(-0.84613,  0.55817),
+	float2( 0.61374,  0.81824),
+	float2(-0.27184, -0.41218),
+	float2( 0.05721,  0.81234),
+	float2(-0.62418, -0.18421),
+	float2( 0.21487, -0.21587),
+};
+
 // Additional tuning slot (csmTuning is c61, this lives at c62).
-// .x = PCF mode (0 = 4-tap, 1 = 16-tap soft)
+// .x = PCF mode (0 = Sharp 4-tap, 1 = Soft 16-tap, 2 = Ultra 32-tap)
 // .y = PCF radius multiplier (1.0 = stock, 2..3 = even softer)
 // .z, .w = reserved
 float4 csmTuning2 : register(c62);
@@ -253,11 +294,28 @@ float CSMSampleCascade(int idx, float3 worldPos)
 
 	float vis = 0.0;
 	float2 texelStep = csmTuning.xy * max(csmTuning2.y, 1.0);
-	// 16-tap soft path — picks up 4× the samples for visibly less
-	// banding. Worth it on the player's car interior + close foliage
-	// where shadow edges are visible. The 4-tap fallback stays for
-	// low-end GPUs / "performance" profile.
-	if(csmTuning2.x > 0.5){
+	// Three-mode PCF kernel — Sharp / Soft / Ultra. Branches are uniform
+	// (csmTuning2.x is a static constant for the whole frame), so the
+	// compiler keeps only one branch alive per draw. 4× and 8× the
+	// texture reads come at progressively softer + cleaner shadow edges;
+	// Ultra is the recommended quality preset for 1080p+ on modern GPUs.
+	if(csmTuning2.x > 1.5){
+		// Ultra — 32 taps. Halves visible PCF banding at the cost of 2×
+		// the work of Soft. Recommended at 1080p+ on modern GPUs.
+		[unroll]
+		for(int i = 0; i < 32; i++){
+			float2 ofs = csmPoisson32[i] * texelStep;
+			float d;
+			if(idx == 0)      d = tex2D(csmTex0, uv + ofs).r;
+			else if(idx == 1) d = tex2D(csmTex1, uv + ofs).r;
+			else              d = tex2D(csmTex2, uv + ofs).r;
+			vis += step(refZ, d);
+		}
+		return vis * (1.0/32.0);
+	}else if(csmTuning2.x > 0.5){
+		// Soft — 16 taps. Picks up 4× the samples vs Sharp for visibly
+		// less banding. Worth it on the player's car interior + close
+		// foliage where shadow edges are visible.
 		[unroll]
 		for(int i = 0; i < 16; i++){
 			float2 ofs = csmPoisson16[i] * texelStep;
@@ -269,6 +327,7 @@ float CSMSampleCascade(int idx, float3 worldPos)
 		}
 		return vis * (1.0/16.0);
 	}else{
+		// Sharp — 4 taps. Performance fallback for low-end GPUs.
 		[unroll]
 		for(int i = 0; i < 4; i++){
 			float2 ofs = csmPoisson4[i] * texelStep;

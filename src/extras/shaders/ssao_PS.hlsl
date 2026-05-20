@@ -56,6 +56,16 @@ struct VS_out {
 	float4 Color		: COLOR0;
 };
 
+// NaN-safe normalize — uninit gbuf pixels can read as (0,0,0,0); the
+// subsequent normalize() returns NaN and AO writes a black ring around
+// the artifact. Skip-on-empty is the primary defense; this is the
+// belt-and-braces for borderline-valid normals.
+float3 SafeNormalize(float3 v)
+{
+	float l2 = dot(v, v);
+	return v * rsqrt(max(l2, 1e-8));
+}
+
 float4 main(VS_out input) : COLOR
 {
 	float2 uv = input.TexCoord0;
@@ -68,6 +78,8 @@ float4 main(VS_out input) : COLOR
 	if(depth < 0.0001 || dot(N, N) < 0.01)
 		return float4(1.0, 1.0, 1.0, 1.0);
 
+	N = SafeNormalize(N);
+
 	// Random rotation from the noise tile — sample at a higher-frequency
 	// UV so the 4x4 tile actually tiles across the screen.
 	float3 rnd = tex2D(noiseTex, uv * ssaoTexel.z).xyz * 2.0 - 1.0;
@@ -75,7 +87,7 @@ float4 main(VS_out input) : COLOR
 
 	// Build TBN from world-space normal + random tangent — classic Crytek
 	// orientation step.
-	float3 T = normalize(rnd - N * dot(rnd, N));
+	float3 T = SafeNormalize(rnd - N * dot(rnd, N));
 	float3 B = cross(N, T);
 	float3x3 TBN = float3x3(T, B, N);
 

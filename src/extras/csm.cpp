@@ -22,7 +22,7 @@ int32 CCSM::MapSize = CSM_DEFAULT_SIZE;
 float CCSM::Strength = 0.85f;
 float CCSM::Bias = 0.003f;
 int32 CCSM::NumCascades = 3;
-int32 CCSM::SoftnessMode = 0;	// default to 4-tap PCF; 16-tap is opt-in
+int32 CCSM::SoftnessMode = 0;	// 0 = Sharp (4-tap), 1 = Soft (16-tap), 2 = Ultra (32-tap)
 float CCSM::SoftnessRadius = 1.5f;	// slight softening by default
 
 void *csmDepthVS;

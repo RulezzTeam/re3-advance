@@ -43,6 +43,15 @@ struct VS_out {
 	float4 Color		: COLOR0;
 };
 
+// NaN-safe normalize — see hdrResolve_PS.hlsl. A NaN motion vector at a
+// single pixel grows into a smeared cloud as the next frame's TAA reads it
+// back, so guarding every reproject step matters even when input looks OK.
+float3 SafeNormalize(float3 v)
+{
+	float l2 = dot(v, v);
+	return v * rsqrt(max(l2, 1e-8));
+}
+
 // YCoCg encode/decode — gives a perceptually meaningful clamp space.
 float3 RGB2YCoCg(float3 c){
 	return float3(
@@ -111,6 +120,15 @@ float4 main(VS_out input) : COLOR
 		if(gbuf.a < 0.0005) onScreen = 0.0;	// sky: no reproject
 	}
 	prevUV = lerp(uv, prevUV, onScreen);
+
+	// Final NaN/Inf guard on the reprojected UV — if anything went wrong
+	// in the reconstruction (degenerate ray, divide-by-zero in clip /= w
+	// after the >1e-4 check), fall back to the current frame UV so the
+	// shader doesn't bake garbage into the history.
+	if(any(isnan(prevUV)) || any(isinf(prevUV))){
+		prevUV = uv;
+		onScreen = 0.0;
+	}
 
 	// History sample at the reprojected UV.
 	float3 hisRgb = tex2D(historyTex, prevUV).rgb;

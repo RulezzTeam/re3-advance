@@ -35,6 +35,16 @@ struct VS_out {
 	float4 Color		: COLOR0;
 };
 
+// NaN-safe normalize — see hdrResolve_PS.hlsl. GTAO normals get reused as
+// horizon-cosine references; a NaN N makes one slice contribute a NaN
+// contribution which becomes white through the saturate path, drilling a
+// bright hole into the AO buffer.
+float3 SafeNormalize(float3 v)
+{
+	float l2 = dot(v, v);
+	return v * rsqrt(max(l2, 1e-8));
+}
+
 float fastAcos(float x)
 {
 	// 3-term polynomial approximation of acos — fits in budget on
@@ -56,7 +66,7 @@ float4 main(VS_out input) : COLOR
 	if(depth < 0.0001 || dot(N, N) < 0.01)
 		return float4(1.0, 1.0, 1.0, 1.0);
 
-	N = normalize(N);
+	N = SafeNormalize(N);
 	float farClip = gtaoParams.w;
 	float centreZ = depth * farClip;
 

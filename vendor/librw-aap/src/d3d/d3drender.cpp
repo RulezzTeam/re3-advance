@@ -177,7 +177,11 @@ uploadIBL(void)
 // Soft-PCF tuning — second c-reg block beyond the basic CSM upload.
 // Host calls setCsmSoftness(mode, radiusMul) once per change; uploadCSM
 // pushes it together with the rest of the cascade params so the receiver
-// sees a consistent snapshot. mode=0 → 4-tap PCF, mode=1 → 16-tap soft.
+// sees a consistent snapshot.
+//   mode = 0 → Sharp (4-tap PCF)
+//   mode = 1 → Soft  (16-tap Poisson)
+//   mode = 2 → Ultra (32-tap Poisson) — best edge quality at ~2× the cost
+//             of Soft. Recommended on modern hardware @ 1080p+.
 static float csmTuning2[4] = { 0.0f, 1.0f, 0.0f, 0.0f };
 void
 setCsmSoftness(int mode, float radiusMul)

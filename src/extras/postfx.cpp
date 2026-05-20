@@ -63,13 +63,17 @@ float CPostFX::GodRaysExposure = 0.45f;
 float CPostFX::GodRaysWeight = 0.45f;
 #endif
 #ifdef POSTFX_TONEMAP
-// ACES expects linear HDR input; running it on the existing sRGB LDR
-// scene desaturates the picture and clips shadows. Default OFF — players
-// can opt in once we have a true HDR backbuffer.
-bool CPostFX::TonemapACES = false;
+// ACES expects linear HDR input — which is exactly what pHdrScene holds.
+// With the full HDR pipeline online we run ACES by default; it bakes a
+// sRGB-ish rolloff into the tonemap so the gamma toggle becomes redundant
+// (and double-encoding it crushes shadows: the "HDR but dark as night"
+// regression). Exposure 1.6 matches the typical TimeCycle scene mid grey;
+// the previous 1.0 default was the no-op linear pass-through that made
+// the HDR backbuffer look ~2 stops underexposed vs the LDR baseline.
+bool CPostFX::TonemapACES = true;
 bool CPostFX::TonemapGamma = false;
-float CPostFX::Exposure = 1.0f;
-float CPostFX::Saturation = 1.0f;	// neutral
+float CPostFX::Exposure = 1.6f;
+float CPostFX::Saturation = 1.05f;	// slight pop — picture had read flat at 1.0
 float CPostFX::VignetteIntensity = 0.0f;
 float CPostFX::VignetteSoftness = 0.45f;
 float CPostFX::VignetteRoundness = 1.0f;
@@ -150,6 +154,11 @@ float CPostFX::VolFogGroundZ = -10.0f;	// VC ground is around z=0..20; -10 gives
 float CPostFX::VolFogMaxDist = 350.0f;
 float CPostFX::VolFogHG = 0.55f;
 float CPostFX::VolFogSunBoost = 1.0f;
+// Default ON — cones are decoupled from the global fog toggle so headlights
+// and muzzle flashes still produce visible volumetric in-scatter at night
+// without paying for full-screen height-fog. Cheap (≈4 ALU per step per
+// light slot) and gated per-slot by light radius at upload time.
+bool CPostFX::VolSpotEnable = true;
 RwRaster *CPostFX::pTaaHistA;
 RwRaster *CPostFX::pTaaHistB;
 bool CPostFX::TaaEnable = false;	// opt-in (FXAA stays default)
@@ -1536,23 +1545,34 @@ CPostFX::ResolveHDR(RwCamera *cam)
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(23, skyH, 1);
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(24, skyG, 1);
 
-		// c25..c28, c29..c32: volumetric spotlight slots — up to 4 in-
+		// c25..c32, c33..c40: volumetric spotlight slots — up to 8 in-
 		// scatter sources for the volumetric ray-march to pick up
 		// vehicle headlights, lamp posts, gunfire flashes, explosions.
 		// We score every active CPointLights by (luminance × inverse-
-		// distance²) relative to the camera and take the top 4. The
+		// distance²) relative to the camera and take the top 8. The
 		// ray-march in hdrResolve_PS adds each light's contribution
 		// per step weighted by density × inverse-square falloff, so
 		// the scene reads with proper volumetric haze around bright
 		// sources at night / in rain.
-		float volSpotPos[4][4] = { {0,0,0,0}, {0,0,0,0}, {0,0,0,0}, {0,0,0,0} };
-		float volSpotCol[4][4] = { {0,0,0,0}, {0,0,0,0}, {0,0,0,0}, {0,0,0,0} };
-
-		// Pick top-4 by score (luminance / dist²) relative to camera.
-		struct ScoredVL { int idx; float score; };
-		ScoredVL pick[4] = {
-			{-1, 0.0f}, {-1, 0.0f}, {-1, 0.0f}, {-1, 0.0f}
+		//
+		// Gating is independent of the global VolFog toggle — players
+		// who don't want the full-screen height fog still get headlight
+		// / muzzle-flash cones at night. The shader's per-light loop is
+		// unrolled and masked by col.a so empty slots cost ~0 ALU.
+		enum { VOL_SPOT_MAX = 8 };
+		float volSpotPos[VOL_SPOT_MAX][4] = {
+			{0,0,0,0}, {0,0,0,0}, {0,0,0,0}, {0,0,0,0},
+			{0,0,0,0}, {0,0,0,0}, {0,0,0,0}, {0,0,0,0},
 		};
+		float volSpotCol[VOL_SPOT_MAX][4] = {
+			{0,0,0,0}, {0,0,0,0}, {0,0,0,0}, {0,0,0,0},
+			{0,0,0,0}, {0,0,0,0}, {0,0,0,0}, {0,0,0,0},
+		};
+
+		// Pick top-N by score (luminance / dist²) relative to camera.
+		struct ScoredVL { int idx; float score; };
+		ScoredVL pick[VOL_SPOT_MAX];
+		for(int k = 0; k < VOL_SPOT_MAX; k++){ pick[k].idx = -1; pick[k].score = 0.0f; }
 		CVector camV(camPos.x, camPos.y, camPos.z);
 		for(int i = 0; i < CPointLights::NumLights; i++){
 			const CRegisteredPointLight &L = CPointLights::aLights[i];
@@ -1563,11 +1583,11 @@ CPostFX::ResolveHDR(RwCamera *cam)
 			float d2 = d.x*d.x + d.y*d.y + d.z*d.z;
 			if(d2 < 0.01f) d2 = 0.01f;
 			float score = lum / d2;
-			// Insertion into the 4-slot top-K by simple unrolled
+			// Insertion into the N-slot top-K by simple unrolled
 			// comparison — picks the dimmest current slot and
 			// replaces if our score is higher.
 			int worst = 0;
-			for(int k = 1; k < 4; k++)
+			for(int k = 1; k < VOL_SPOT_MAX; k++)
 				if(pick[k].score < pick[worst].score) worst = k;
 			if(score > pick[worst].score){
 				pick[worst].idx = i;
@@ -1575,11 +1595,16 @@ CPostFX::ResolveHDR(RwCamera *cam)
 			}
 		}
 
-		// Pack the 4 picked lights. radius squared in .w so the shader
-		// can skip the sqrt; intensity in colour.a as the master multiplier.
-		for(int k = 0; k < 4; k++){
+		// Pack the picked lights. radius squared in .w so the shader can
+		// skip the sqrt; col.a is the master multiplier and ALSO the
+		// per-slot enable: 0 = inactive slot (shader unrolls cheap),
+		// 1 = active. Gated by the new CPostFX::VolSpotEnable toggle so
+		// players can disable the cones without touching the global fog.
+		const float spotMaster = VolSpotEnable ? 1.0f : 0.0f;
+		for(int k = 0; k < VOL_SPOT_MAX; k++){
 			if(pick[k].idx < 0) continue;
 			const CRegisteredPointLight &L = CPointLights::aLights[pick[k].idx];
+			if(L.radius < 0.1f) continue;	// degenerate / expired slot
 			volSpotPos[k][0] = L.coors.x;
 			volSpotPos[k][1] = L.coors.y;
 			volSpotPos[k][2] = L.coors.z;
@@ -1587,11 +1612,11 @@ CPostFX::ResolveHDR(RwCamera *cam)
 			volSpotCol[k][0] = L.red;
 			volSpotCol[k][1] = L.green;
 			volSpotCol[k][2] = L.blue;
-			volSpotCol[k][3] = volFogActive ? 1.0f : 0.0f;
+			volSpotCol[k][3] = spotMaster;
 		}
 
-		rw::d3d::d3ddevice->SetPixelShaderConstantF(25, &volSpotPos[0][0], 4);
-		rw::d3d::d3ddevice->SetPixelShaderConstantF(29, &volSpotCol[0][0], 4);
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(25, &volSpotPos[0][0], VOL_SPOT_MAX);
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(33, &volSpotCol[0][0], VOL_SPOT_MAX);
 	}
 
 	rw::d3d::im2dOverridePS = hdrResolve_PS;
