@@ -199,6 +199,12 @@ public:
 	// + uploadIBL → c67 in default_PS.
 	static bool CausticsEnable;
 	static float CausticsStrength;	// 0..2; default 1.0 = subtle
+
+	// Shoreline foam — animated white residue on beach ground near the
+	// waterline. Reuses the caustics water level as the reference.
+	// Cheap [branch] gate above and far above water. Default ON.
+	static bool FoamEnable;
+	static float FoamStrength;	// 0..2; default 1.0
 #endif
 
 	static void InitOnce(void);

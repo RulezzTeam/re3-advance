@@ -205,6 +205,8 @@
 		MENUACTION_CFO_SELECT, "FED_PUD", { new CCFOSelect((int8*)&CPostFX::PuddlesEnable, "Graphics", "Puddles", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_CAU", { new CCFOSelect((int8*)&CPostFX::CausticsEnable, "Graphics", "Caustics", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_CAS", { new CCFOSlider(&CPostFX::CausticsStrength, "Graphics", "CausticsStrength", 0.0f, 2.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_FOA", { new CCFOSelect((int8*)&CPostFX::FoamEnable, "Graphics", "ShoreFoam", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_FAS", { new CCFOSlider(&CPostFX::FoamStrength, "Graphics", "ShoreFoamStrength", 0.0f, 2.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_DOF", { new CCFOSelect((int8*)&CPostFX::DofEnable, "Graphics", "DoF", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_DFD", { new CCFOSlider(&CPostFX::DofFocusDistance, "Graphics", "DofFocus", 1.0f, 80.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_DFR", { new CCFOSlider(&CPostFX::DofFocusRange, "Graphics", "DofRange", 0.5f, 30.0f) }, 0, 0, MENUALIGN_LEFT, \
@@ -409,6 +411,9 @@ void RestoreDefGraphics(int8 action) {
 		// Caustics default ON — only fires below water level.
 		CPostFX::CausticsEnable = true;
 		CPostFX::CausticsStrength = 1.0f;
+		// Shoreline foam default ON — only fires near the waterline.
+		CPostFX::FoamEnable = true;
+		CPostFX::FoamStrength = 1.0f;
 		CPostFX::DofEnable = false;
 		CPostFX::DofFocusDistance = 15.0f;
 		CPostFX::DofFocusRange = 6.0f;

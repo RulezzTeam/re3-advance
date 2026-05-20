@@ -188,6 +188,11 @@ bool CPostFX::PuddlesEnable = true;
 // player goes diving / swims off a pier is significant.
 bool CPostFX::CausticsEnable = true;
 float CPostFX::CausticsStrength = 1.0f;
+// Shoreline foam default ON. Cheap [branch] gate, only fires within a
+// ~1m band above water on level ground. Adds noticeable life to beach
+// scenes without any new RT or asset cost.
+bool CPostFX::FoamEnable = true;
+float CPostFX::FoamStrength = 1.0f;
 
 void
 CPostFX::VolFogStepsAfterChange(int8 before, int8 after)
@@ -1152,6 +1157,19 @@ CPostFX::UpdateIBL(void)
 		causticsStr = CausticsStrength;
 	}
 	rw::d3d::setCaustics(sCausticsTime, causticsStr, 6.0f);
+
+	// Shoreline foam — separate time accumulator from caustics so they
+	// drift independently and don't read as one big repeated pattern.
+	// Same gate logic: only accumulate while the effect is enabled.
+	static float sFoamTime = 0.0f;
+	float foamStr = 0.0f;
+	if(FoamEnable){
+		float dtSec = CTimer::GetTimeStepNonClipped() * (1.0f/50.0f);
+		if(dtSec > 0.2f) dtSec = 0.2f;
+		sFoamTime += dtSec;
+		foamStr = FoamStrength;
+	}
+	rw::d3d::setFoam(sFoamTime, foamStr);
 
 	rw::d3d::uploadIBL();
 #endif

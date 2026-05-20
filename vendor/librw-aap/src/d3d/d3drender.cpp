@@ -119,6 +119,22 @@ setCaustics(float time, float strength, float waterLevelZ)
 	causticsParams[3] = 0.0f;
 }
 
+// Shoreline foam — beach-edge animated white-residue pattern.
+// Reuses the caustics water level as the reference; the shader gates
+// to a thin band above the waterline. Reads in default_pp_PS at c68.
+//   .x = time (drives foam drift)
+//   .y = strength
+//   .z, .w = reserved
+static float foamParams[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+void
+setFoam(float time, float strength)
+{
+	foamParams[0] = time;
+	foamParams[1] = strength;
+	foamParams[2] = 0.0f;
+	foamParams[3] = 0.0f;
+}
+
 // Dynamic point lights — host (CDynamicLights) picks the top-N brightest
 // CPointLights near the camera each frame and uploads them here. The
 // receiver in default_pp_PS samples this array at c100 (count) + c101..
@@ -226,6 +242,8 @@ uploadIBL(void)
 	d3ddevice->SetPixelShaderConstantF(66, puddlesParams, 1);
 	// Caustics — same cadence.
 	d3ddevice->SetPixelShaderConstantF(67, causticsParams, 1);
+	// Shoreline foam — same cadence.
+	d3ddevice->SetPixelShaderConstantF(68, foamParams, 1);
 }
 
 // CSM receiver — uploads 3 cascade light-view-proj matrices + per-cascade

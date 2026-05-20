@@ -111,6 +111,15 @@ float4 puddlesParams : register(c66);
 // water surface refraction.
 float4 causticsParams : register(c67);
 
+// Shoreline foam — procedural foam strip on beach surfaces near the
+// waterline. The shader reads the same water level as caustics; foam
+// fires when 0..1 m above water on flat up-facing ground.
+//   .x = accumulated time (drifts the foam pattern)
+//   .y = strength (0 = bypass)
+//   .z = reserved
+//   .w = reserved
+float4 foamParams : register(c68);
+
 float3 ComputeCaustic(float2 worldXY, float time, float depth)
 {
 	// Two layers drifting in slightly different directions so the
@@ -618,6 +627,28 @@ float4 ComputeShadedColor(VS_out input)
 			// Modulate by N.z so vertical walls catch less, level
 			// pool floors catch the full pattern.
 			lit += caust * causticsParams.y * saturate(N.z);
+		}
+	}
+
+	// Shoreline foam — animated white residue on beach surfaces near the
+	// waterline. Reuses the caustics water level as the reference. Foam
+	// zone = 0..1m above water on level (N.z > 0.7) ground; the foam
+	// mask peaks at +0.3m and fades to zero at +1m, matching where wave
+	// runup typically deposits surf residue. Pattern is a pinched noise
+	// product drifting in world XY, additive into `lit` so the beach
+	// sand reads correctly through the foam splash.
+	[branch]
+	if(foamParams.y > 0.01){
+		float aboveWater = input.WorldPos.z - causticsParams.z;
+		float foamMask = saturate(1.0 - aboveWater) * saturate(aboveWater + 0.4) * 2.5
+		               * saturate((N.z - 0.7) * 3.33);
+		if(foamMask > 0.01){
+			float2 fp = input.WorldPos.xy * 1.5 + foamParams.x * float2(0.10, 0.05);
+			float fn = abs(sin(fp.x) * sin(fp.y));
+			// pow(.., 6) sharpens the pattern into the foam-cell look —
+			// isolated bright splashes instead of a uniform white tint.
+			fn = pow(fn, 6.0) * 3.0;
+			lit += float3(1.0, 1.0, 1.0) * fn * foamMask * foamParams.y;
 		}
 	}
 

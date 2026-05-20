@@ -507,6 +507,12 @@ void setPuddles(float strength, float tileScale);
 // caustics apply. Uploaded to c67 inside uploadIBL.
 void setCaustics(float time, float strength, float waterLevelZ);
 
+// Shoreline foam — animated white residue on beach surfaces near the
+// waterline. Reuses the caustics water level as the reference. `time`
+// drifts the foam pattern. `strength` gates the effect. Uploaded to
+// c68 inside uploadIBL.
+void setFoam(float time, float strength);
+
 // Dynamic point lights — host picks top-N brightest CPointLights near
 // camera, calls setDynamicPointLights once per frame, then uploads. The
 // receiver in default_pp_PS applies them per-pixel with smooth window
