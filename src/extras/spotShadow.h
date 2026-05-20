@@ -25,7 +25,8 @@ public:
 	static RwCamera *lightCam;	// perspective FOV ~60..120°
 
 	static bool Enabled;
-	static int32 MapSize;		// 256 / 512 / 1024
+	static int32 MapSize;		// 256 / 512 / 1024 / 2048
+	static int8  MapSizeIndex;	// 0..3 = 256/512/1024/2048 — menu binding
 	static float Strength;		// 0..1 mix into the lit term
 	static float Bias;		// shadow comparison bias
 	static float Softness;		// pixel-space PCF radius
@@ -50,6 +51,10 @@ public:
 	static void RenderShadowMap(RwCamera *cam);
 	static void BindReceiver(void);
 	static void UnbindReceiver(void);
+
+	// Menu CCFOSelect AfterChange — maps MapSizeIndex to MapSize and
+	// reallocates the depth raster + Z buffer at the new resolution.
+	static void MapSizeAfterChange(int8 before, int8 after);
 };
 
 #endif

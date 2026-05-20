@@ -21,7 +21,28 @@ RwCamera *CWaterReflection::reflectionCam;
 bool CWaterReflection::Enabled = false;	// opt-in until water shader hooks land
 bool CWaterReflection::bRendering = false;
 float CWaterReflection::WaterPlaneZ = 6.0f;	// Vice City sea level ~6m world Z
-int32 CWaterReflection::Resolution = 512;
+// Default bumped 512 → 1024. The reflection RT is also used as the
+// glossy reflection on water at distance, and 512 visibly aliases the
+// reflected horizon line at high screen resolutions. 1024² RGBA16F is
+// 8 MB — fine on any modern VRAM budget.
+int32 CWaterReflection::Resolution = 1024;
+int8  CWaterReflection::ResolutionIndex = 2;	// 0..3 = 256/512/1024/2048 — default High (1024)
+
+void
+CWaterReflection::ResolutionAfterChange(int8 before, int8 after)
+{
+	(void)before;
+	static const int32 kSizeTable[4] = { 256, 512, 1024, 2048 };
+	int8 idx = after;
+	if(idx < 0) idx = 0;
+	if(idx > 3) idx = 3;
+	int32 newSize = kSizeTable[idx];
+	if(newSize == Resolution) return;
+	Resolution = newSize;
+	// RebuildResolution closes + reopens the RT pair at the new size.
+	// Safe when Enabled=false (RebuildResolution skips allocation then).
+	RebuildResolution();
+}
 
 void
 CWaterReflection::InitOnce(void)

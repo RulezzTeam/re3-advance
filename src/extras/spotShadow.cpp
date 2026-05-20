@@ -25,10 +25,35 @@ RwRaster *CSpotShadow::depthRT;
 RwRaster *CSpotShadow::zBuffer;
 RwCamera *CSpotShadow::lightCam;
 bool CSpotShadow::Enabled = false;
-int32 CSpotShadow::MapSize = 512;
+// Default bumped 512 → 1024. The shared map serves the brightest active
+// light each frame, and at 512 the receiver shows visible Mach banding
+// on close-up surfaces (corridor walls under street lamps). 1024² R32F
+// is 4 MB — still trivial.
+int32 CSpotShadow::MapSize = 1024;
+int8  CSpotShadow::MapSizeIndex = 2;   // 0..3 = 256/512/1024/2048 — default High (1024)
 float CSpotShadow::Strength = 0.85f;
 float CSpotShadow::Bias = 0.003f;
 float CSpotShadow::Softness = 1.5f;
+
+static bool sPendingSpotMapSizeRealloc = false;
+
+void
+CSpotShadow::MapSizeAfterChange(int8 before, int8 after)
+{
+	(void)before;
+	static const int32 kSizeTable[4] = { 256, 512, 1024, 2048 };
+	int8 idx = after;
+	if(idx < 0) idx = 0;
+	if(idx > 3) idx = 3;
+	int32 newSize = kSizeTable[idx];
+	if(newSize == MapSize) return;
+	MapSize = newSize;
+	// Deferred reallocation — Open dereferences cam to register the light
+	// camera with the scene world; menu changes happen without a live
+	// scene camera, so we defer to the next frame's PickActiveLight path
+	// which has one. Pattern mirrors CCSM::MapSizeAfterChange.
+	sPendingSpotMapSizeRealloc = true;
+}
 CSpotShadow::ActiveLight CSpotShadow::current = {};
 float CSpotShadow::lightViewProj[16] = {
 	1, 0, 0, 0,
@@ -107,6 +132,17 @@ CSpotShadow::Close(void)
 void
 CSpotShadow::PickActiveLight(RwCamera *cam)
 {
+	// Honour a deferred MapSize change from the menu — we have a live
+	// scene cam here, which Open needs to register the light camera
+	// with cam->world (the menu-time AfterChange path doesn't).
+	if(sPendingSpotMapSizeRealloc && cam != nullptr){
+		sPendingSpotMapSizeRealloc = false;
+		if(depthRT != nil){
+			Close();
+			Open(cam);
+		}
+	}
+
 	current.valid = false;
 	if(!Enabled || lightCam == nil)
 		return;

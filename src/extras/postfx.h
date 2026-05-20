@@ -174,6 +174,15 @@ public:
 	// the toggle is on. Default ON: cones are what makes the new dynamic
 	// point-light pipeline read in-scene at night.
 	static bool VolSpotEnable;
+
+	// VolFog raymarch quality — number of integration steps along the
+	// view ray. Lower = cheaper, banded; higher = smoother, slower.
+	// 12 steps was the old hardcoded value (matches the legacy behaviour);
+	// 16 is the new default. Plumbed into hdrResolve_PS as a uniform so
+	// changes take effect without re-link.
+	static int32 VolFogSteps;
+	static int8  VolFogStepsIndex;	// 0..4 = 8/12/16/24/32 — menu binding
+	static void VolFogStepsAfterChange(int8 before, int8 after);
 #endif
 
 	static void InitOnce(void);

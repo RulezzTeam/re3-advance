@@ -12,10 +12,6 @@ class CIBL
 {
 public:
 	enum {
-		// 64² source cube (sky capture). Small but enough — the destination
-		// irradiance is only 32² and convolved from this.
-		CAPTURE_SIZE   = 64,
-		IRRADIANCE_SIZE = 32,
 		// Refresh every N frames. Faster = more reactive (lightning,
 		// time-of-day) at the cost of more GPU. 30 is a good middle
 		// ground: visible reaction within ~half a second, 6 cube face
@@ -23,14 +19,29 @@ public:
 		REFRESH_PERIOD = 30,
 	};
 
-	static void *captureCube;	// IDirect3DCubeTexture9, RGBA16F, CAPTURE_SIZE²
-	static void *irradianceCube;	// same format, IRRADIANCE_SIZE²
+	static void *captureCube;	// IDirect3DCubeTexture9, RGBA16F, CaptureSize²
+	static void *irradianceCube;	// same format, IrradianceSize²
 	static bool Enabled;		// menu toggle
 	static int FrameCounter;	// drives the refresh schedule
 	// Reflection strength — drives the Fresnel-weighted specular term
 	// in default_pp_PS that samples captureCube on s8. 0 = off (just
 	// diffuse IBL), 1 = neutral, 2 = vivid.
 	static float ReflStrength;
+
+	// Runtime-configurable cube sizes. Defaults bumped from 64/32 to
+	// 128/64 — the previous defaults were Phase-1-ship-it picks; with
+	// modern 4+ GB VRAM and the engine's <200 MB total, paying ~3 MB
+	// for the larger captureCube is free. Menu sliders trigger a
+	// Close+Open re-allocation via SizesAfterChange. Old values stay
+	// valid as the "Small" tier entry in the menu list.
+	//
+	// The menu binds the int8 *Index fields; SizesAfterChange maps each
+	// to the actual pixel size in {Capture,Irradiance}Size and calls
+	// Reopen. Same shape as CustomPipes::EnvMapSizeAfterChange.
+	static int32 CaptureSize;
+	static int32 IrradianceSize;
+	static int8  CaptureSizeIndex;       // 0..3 = 64/128/256/512
+	static int8  IrradianceSizeIndex;    // 0..3 = 16/32/64/128
 
 	static void InitOnce(void);
 	static void Open(RwCamera *cam);
@@ -46,6 +57,17 @@ public:
 	// Mirror call to drop the binding before postfx passes.
 	static void BindReceiver(void);
 	static void UnbindReceiver(void);
+
+	// Re-open the cube allocations after the user changes CaptureSize /
+	// IrradianceSize via menu. Idempotent + safe to call when CIBL is
+	// disabled (no-op). Called from the menu CCFOSelect AfterChange hook.
+	static void Reopen(void);
+
+	// CCFOSelect AfterChange callbacks — map the index slot back to the
+	// actual pixel size and trigger Reopen. Static + non-member-friendly
+	// signature so CCFOSelect can take a plain function pointer.
+	static void CaptureSizeAfterChange(int8 before, int8 after);
+	static void IrradianceSizeAfterChange(int8 before, int8 after);
 };
 
 #endif

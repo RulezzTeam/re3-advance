@@ -19,11 +19,37 @@ CCSM::Cascade CCSM::Cascades[CSM_NUM_CASCADES];
 bool CCSM::Enabled = false;
 bool CCSM::bRendering = false;
 int32 CCSM::MapSize = CSM_DEFAULT_SIZE;
+int8  CCSM::MapSizeIndex = 1;	// 0=1024,1=2048,2=4096; default High (2048)
 float CCSM::Strength = 0.85f;
 float CCSM::Bias = 0.003f;
 int32 CCSM::NumCascades = 3;
 int32 CCSM::SoftnessMode = 0;	// 0 = Sharp (4-tap), 1 = Soft (16-tap), 2 = Ultra (32-tap)
 float CCSM::SoftnessRadius = 1.5f;	// slight softening by default
+
+// Set by MapSizeAfterChange so the next ComputeCascades sees the
+// requested size and triggers Close()+Open() with the live scene camera
+// (which we have at that point but don't have at menu-change time). The
+// menu callback only marks the request — actual reallocation runs on a
+// known-good engine state.
+static bool sPendingMapSizeRealloc = false;
+
+void
+CCSM::MapSizeAfterChange(int8 before, int8 after)
+{
+	(void)before;
+	static const int32 kSizeTable[3] = { 1024, 2048, 4096 };
+	int8 idx = after;
+	if(idx < 0) idx = 0;
+	if(idx > 2) idx = 2;
+	int32 newSize = kSizeTable[idx];
+	if(newSize == MapSize) return;
+	MapSize = newSize;
+	// Defer the reallocation — we don't have the scene camera here, and
+	// CCSM::Open dereferences sceneCam->world to register the cascade
+	// cameras. ComputeCascades runs each frame with a valid camera and
+	// can do the Close+Open then.
+	sPendingMapSizeRealloc = true;
+}
 
 void *csmDepthVS;
 void *csmDepthPS;
@@ -168,6 +194,17 @@ CCSM::Close(void)
 void
 CCSM::ComputeCascades(RwCamera *cam)
 {
+	// Honour a deferred Close+Open from MapSizeAfterChange now that we
+	// have a valid scene camera. Open dereferences cam->world to register
+	// the cascade cameras, which we couldn't do at menu-change time.
+	if(sPendingMapSizeRealloc && cam != nullptr){
+		sPendingMapSizeRealloc = false;
+		if(Cascades[0].depthRT != nil){
+			Close();
+			Open(cam);
+		}
+	}
+
 	if(!Enabled || Cascades[0].lightCam == nil)
 		return;
 

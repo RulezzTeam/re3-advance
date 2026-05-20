@@ -26,6 +26,39 @@ void *CIBL::irradianceCube;
 bool CIBL::Enabled = false;	// opt-in; gradient IBL stays the default
 int CIBL::FrameCounter = 0;
 float CIBL::ReflStrength = 1.0f;
+// Defaults bumped vs the original Phase-1 picks: 128² capture (was 64) +
+// 64² irradiance (was 32). Memory cost ≈ 3 MB total at 128 capture vs
+// ~0.75 MB at 64 — negligible against any modern VRAM budget — and the
+// captured sky / sun disc reads cleanly at the higher res so reflections
+// on cars + irradiance gradient on buildings stop looking blocky.
+int32 CIBL::CaptureSize = 128;
+int32 CIBL::IrradianceSize = 64;
+int8  CIBL::CaptureSizeIndex = 1;     // 0..3 = 64/128/256/512 — default "Standard (128)"
+int8  CIBL::IrradianceSizeIndex = 2;  // 0..3 = 16/32/64/128 — default "Large (64)"
+
+void
+CIBL::CaptureSizeAfterChange(int8 before, int8 after)
+{
+	(void)before;
+	static const int32 kSizeTable[4] = { 64, 128, 256, 512 };
+	int8 idx = after;
+	if(idx < 0) idx = 0;
+	if(idx > 3) idx = 3;
+	CaptureSize = kSizeTable[idx];
+	Reopen();
+}
+
+void
+CIBL::IrradianceSizeAfterChange(int8 before, int8 after)
+{
+	(void)before;
+	static const int32 kSizeTable[4] = { 16, 32, 64, 128 };
+	int8 idx = after;
+	if(idx < 0) idx = 0;
+	if(idx > 3) idx = 3;
+	IrradianceSize = kSizeTable[idx];
+	Reopen();
+}
 
 #ifdef RW_D3D9
 static void *iblSkyToCube_PS;
@@ -115,8 +148,8 @@ CIBL::Open(RwCamera *cam)
 	// nullptr cleanly on caps/format reject so we don't need to manage
 	// fallback here — just check + log + disable.
 	int colorFmt = (int)rw::Raster::F16_RGBA;
-	captureCube    = rw::d3d::createCubeTexture(CAPTURE_SIZE, colorFmt);
-	irradianceCube = rw::d3d::createCubeTexture(IRRADIANCE_SIZE, colorFmt);
+	captureCube    = rw::d3d::createCubeTexture(CaptureSize, colorFmt);
+	irradianceCube = rw::d3d::createCubeTexture(IrradianceSize, colorFmt);
 	if(captureCube == nullptr || irradianceCube == nullptr){
 		if(captureCube){ rw::d3d::destroyCubeTexture(captureCube); captureCube = nil; }
 		if(irradianceCube){ rw::d3d::destroyCubeTexture(irradianceCube); irradianceCube = nil; }
@@ -163,11 +196,11 @@ CIBL::Open(RwCamera *cam)
 	// lost/reset. librw will Release them on lost + CreateCubeTexture
 	// them back on reset, writing the new handle into the same
 	// captureCube/irradianceCube storage we own.
-	rw::d3d::registerVidmemCube((IDirect3DCubeTexture9**)&captureCube, CAPTURE_SIZE, colorFmt);
-	rw::d3d::registerVidmemCube((IDirect3DCubeTexture9**)&irradianceCube, IRRADIANCE_SIZE, colorFmt);
+	rw::d3d::registerVidmemCube((IDirect3DCubeTexture9**)&captureCube, CaptureSize, colorFmt);
+	rw::d3d::registerVidmemCube((IDirect3DCubeTexture9**)&irradianceCube, IrradianceSize, colorFmt);
 
 	rwLogf(rw::RW_LOG_INFO, "CIBL::Open OK — captureCube=%d irradianceCube=%d (Update deferred to first frame, registered with vidmemCubes)",
-	    CAPTURE_SIZE, IRRADIANCE_SIZE);
+	    CaptureSize, IrradianceSize);
 #endif
 }
 
@@ -186,6 +219,22 @@ CIBL::Close(void)
 	// cubeQuadDecl stays alive too; D3D9 vertex declarations are tiny
 	// and survive device resets unchanged.
 	rwLogf(rw::RW_LOG_INFO, "CIBL::Close");
+#endif
+}
+
+void
+CIBL::Reopen(void)
+{
+	// Hook for the menu's CCFOSelect AfterChange — drops the current cubes
+	// and re-allocates at the new CaptureSize / IrradianceSize. Safe to
+	// call even when CIBL is disabled (Close handles a null cube cleanly,
+	// Open early-outs on !Enabled). The first frame after the call will
+	// trigger an Update that re-bakes the sky into the new cube.
+#ifdef RW_D3D9
+	if(captureCube != nil || irradianceCube != nil)
+		Close();
+	if(Enabled)
+		Open(nullptr);	// cam isn't actually used by Open's allocation path
 #endif
 }
 
@@ -424,7 +473,7 @@ CIBL::Update(RwCamera *cam)
 		memcpy(consts + 5*4, skyGnd, sizeof(float)*4);
 		memcpy(consts + 6*4, sunDir, sizeof(float)*4);
 		memcpy(consts + 7*4, sunCol, sizeof(float)*4);
-		renderCubeFace(captureCube, face, (float)CAPTURE_SIZE,
+		renderCubeFace(captureCube, face, (float)CaptureSize,
 		               iblSkyToCube_PS, consts, 8);
 	}
 
@@ -440,7 +489,7 @@ CIBL::Update(RwCamera *cam)
 		memcpy(consts + 0*4, faceF, sizeof(float)*4);
 		memcpy(consts + 1*4, faceR, sizeof(float)*4);
 		memcpy(consts + 2*4, faceU, sizeof(float)*4);
-		renderCubeFace(irradianceCube, face, (float)IRRADIANCE_SIZE,
+		renderCubeFace(irradianceCube, face, (float)IrradianceSize,
 		               iblConvolve_PS, consts, 3);
 	}
 	rw::d3d::bindCubeToSampler(0, nil);

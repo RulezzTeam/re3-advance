@@ -28,6 +28,9 @@
 #ifdef POSTFX_CSM
 #include "csm.h"
 #endif
+#ifdef POSTFX_HDR
+#include "spotShadow.h"
+#endif
 #include "custompipes.h"
 #include "RwHelper.h"
 #include "Text.h"
@@ -185,6 +188,8 @@
 		MENUACTION_CFO_SLIDER, "FED_IBG", { new CCFOSlider(&CPostFX::IblGroundTint, "Graphics", "IblGroundTint", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_IBC", { new CCFOSelect((int8*)&CIBL::Enabled, "Graphics", "IblCube", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_IBR", { new CCFOSlider(&CIBL::ReflStrength, "Graphics", "IblRefl", 0.0f, 3.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_ICS", { new CCFOSelect(&CIBL::CaptureSizeIndex, "Graphics", "IblCubeSize", iblCubeCaptureSizes, 4, false, CIBL::CaptureSizeAfterChange) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_IIS", { new CCFOSelect(&CIBL::IrradianceSizeIndex, "Graphics", "IblIrrSize", iblIrradianceSizes, 4, false, CIBL::IrradianceSizeAfterChange) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_DPL", { new CCFOSelect((int8*)&CDynamicLights::Enabled, "Graphics", "DynLights", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_DPI", { new CCFOSlider(&CDynamicLights::Intensity, "Graphics", "DynLightInt", 0.0f, 3.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_DPR", { new CCFOSlider(&CDynamicLights::Reach, "Graphics", "DynLightReach", 0.5f, 4.0f) }, 0, 0, MENUALIGN_LEFT, \
@@ -207,6 +212,7 @@
 		MENUACTION_CFO_SLIDER, "FED_VFH", { new CCFOSlider(&CPostFX::VolFogHeightFalloff, "Graphics", "VolFogHeight", 0.0f, 0.1f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_VFG", { new CCFOSlider(&CPostFX::VolFogHG, "Graphics", "VolFogHG", 0.0f, 0.95f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_VFB", { new CCFOSlider(&CPostFX::VolFogSunBoost, "Graphics", "VolFogSunBoost", 0.0f, 4.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_VFQ", { new CCFOSelect(&CPostFX::VolFogStepsIndex, "Graphics", "VolFogSteps", volFogStepCounts, 5, false, CPostFX::VolFogStepsAfterChange) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_VSP", { new CCFOSelect((int8*)&CPostFX::VolSpotEnable, "Graphics", "VolSpot", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
 #else
 	#define POSTFX_HDR_SELECTORS
@@ -214,7 +220,8 @@
 
 #ifdef POSTFX_WATER_REFLECTION
 	#define POSTFX_WATER_REFLECTION_SELECTORS \
-		MENUACTION_CFO_SELECT, "FED_WRR", { new CCFOSelect((int8*)&CWaterReflection::Enabled, "Graphics", "WaterReflection", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_SELECT, "FED_WRR", { new CCFOSelect((int8*)&CWaterReflection::Enabled, "Graphics", "WaterReflection", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_WRZ", { new CCFOSelect(&CWaterReflection::ResolutionIndex, "Graphics", "WaterReflectionSize", waterReflectionSizes, 4, false, CWaterReflection::ResolutionAfterChange) }, 0, 0, MENUALIGN_LEFT,
 #else
 	#define POSTFX_WATER_REFLECTION_SELECTORS
 #endif
@@ -223,8 +230,12 @@
 	#define POSTFX_CSM_SELECTORS \
 		MENUACTION_CFO_SELECT, "FED_CSM", { new CCFOSelect((int8*)&CCSM::Enabled, "Graphics", "CSM", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_CSS", { new CCFOSlider(&CCSM::Strength, "Graphics", "CSMStrength", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_CMR", { new CCFOSelect(&CCSM::MapSizeIndex, "Graphics", "CSMMapSize", cascadeMapSizes, 3, false, CCSM::MapSizeAfterChange) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_CFM", { new CCFOSelect((int8*)&CCSM::SoftnessMode, "Graphics", "CSMSoft", csmSoftNames, 3, false) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_CFR", { new CCFOSlider(&CCSM::SoftnessRadius, "Graphics", "CSMSoftR", 1.0f, 4.0f) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_SLIDER, "FED_CFR", { new CCFOSlider(&CCSM::SoftnessRadius, "Graphics", "CSMSoftR", 1.0f, 4.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_SPS", { new CCFOSelect((int8*)&CSpotShadow::Enabled, "Graphics", "SpotShadow", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_SSZ", { new CCFOSelect(&CSpotShadow::MapSizeIndex, "Graphics", "SpotShadowSize", spotShadowSizes, 4, false, CSpotShadow::MapSizeAfterChange) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_SST", { new CCFOSlider(&CSpotShadow::Strength, "Graphics", "SpotShadowStrength", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT,
 #else
 	#define POSTFX_CSM_SELECTORS
 #endif
@@ -362,6 +373,14 @@ void RestoreDefGraphics(int8 action) {
 		CPostFX::IblGroundTint = 0.6f;
 		CIBL::Enabled = false;
 		CIBL::ReflStrength = 1.0f;
+		// Match the C++ initialisers — Standard (128) / Large (64).
+		CIBL::CaptureSize = 128;
+		CIBL::IrradianceSize = 64;
+		CIBL::CaptureSizeIndex = 1;
+		CIBL::IrradianceSizeIndex = 2;
+		// Don't call Reopen here — CIBL might not be Open yet (the menu
+		// can be entered before world init). The next Open call will pick
+		// up the restored sizes.
 		CDynamicLights::Enabled = true;
 		CDynamicLights::Intensity = 1.0f;
 		CDynamicLights::Reach = 1.0f;
@@ -398,9 +417,16 @@ void RestoreDefGraphics(int8 action) {
 		// forcing full-screen height fog. Matches the C++ initialiser
 		// in postfx.cpp.
 		CPostFX::VolSpotEnable = true;
+		// Default VolFog raymarch quality — High (16 steps).
+		CPostFX::VolFogSteps = 16;
+		CPostFX::VolFogStepsIndex = 2;
 	#endif
 	#ifdef POSTFX_WATER_REFLECTION
 		CWaterReflection::Enabled = false;	// off until water shader hooks land
+		// Match the bumped C++ default: High (1024). Was 512 before
+		// Stage 4 raised the floor.
+		CWaterReflection::Resolution = 1024;
+		CWaterReflection::ResolutionIndex = 2;
 	#endif
 	#ifdef POSTFX_CSM
 		CCSM::Enabled = false;			// off until receiver lands in default_pp_PS
@@ -408,6 +434,16 @@ void RestoreDefGraphics(int8 action) {
 		CCSM::Bias = 0.003f;
 		CCSM::SoftnessMode = 0;
 		CCSM::SoftnessRadius = 1.5f;
+		// MapSize stays at the C++ default (2048). Index aligns with
+		// the menu's cascadeMapSizes ordering: 0=1024, 1=2048, 2=4096.
+		CCSM::MapSize = 2048;
+		CCSM::MapSizeIndex = 1;
+		// SpotShadow defaults — High (1024) matches the C++ initialiser
+		// (was Medium 512 before Stage 4 bumped the floor).
+		CSpotShadow::Enabled = false;
+		CSpotShadow::Strength = 0.85f;
+		CSpotShadow::MapSize = 1024;
+		CSpotShadow::MapSizeIndex = 2;
 	#endif
 
 	#ifdef GRAPHICS_MENU_OPTIONS // otherwise Frontend will handle those

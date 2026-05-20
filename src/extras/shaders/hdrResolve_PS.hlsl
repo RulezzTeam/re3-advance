@@ -44,6 +44,12 @@ float4 volColor : register(c18);
 // .w = enable flag (0 = bypass, >0 = on; also controls overall strength lerp)
 float4 volParams : register(c19);
 
+// VolFog raymarch quality — .x = step count (clamped 4..32 by the host).
+// Pulled out of the shader so the menu's CCFOSelect can dial cost vs
+// quality without a re-link. The legacy 12-step value is the .x=12 path.
+// Sits at c41 because c25..c40 is the volSpot pos+col array block.
+float4 volQuality : register(c41);
+
 // SSR compose. .x = strength (0 = off), .y = Schlick F0 bias,
 // .z = sky-fallback strength (0 = none, 1 = full IBL sky as miss
 // fallback so reflections never go pitch-black)
@@ -151,7 +157,10 @@ float4 main(in float2 uv : TEXCOORD0) : COLOR0
 		float cosTheta = dot(fwd, volSun.xyz);
 		float phase = HGPhase(cosTheta, volSun.w);
 
-		const int STEPS = 12;
+		// Host-driven step count. Clamp inside the shader as belt-and-
+		// braces against junk uploads — the [loop] cost scales linearly
+		// so a runaway value is more annoying than dangerous.
+		int STEPS = (int)clamp(volQuality.x, 4.0, 32.0);
 		float stepLen = maxD / (float)STEPS;
 
 		// Per-pixel jitter — kills banding from low step count.

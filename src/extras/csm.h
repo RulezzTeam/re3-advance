@@ -29,10 +29,11 @@ public:
 	static bool Enabled;
 	static bool bRendering;		// guard so pipelines can early-out
 	static int32 MapSize;		// per-cascade resolution (1024 / 2048 / 4096)
+	static int8  MapSizeIndex;	// 0..2 = 1024/2048/4096 — menu binding
 	static float Strength;		// 0..1 mix into the lit term
 	static float Bias;		// depth comparison bias (~0.001..0.01)
 	static int32 NumCascades;	// usable cascades (1..CSM_NUM_CASCADES)
-	static int32 SoftnessMode;	// 0 = 4-tap PCF, 1 = 16-tap soft PCF
+	static int32 SoftnessMode;	// 0 = Sharp (4-tap), 1 = Soft (16-tap), 2 = Ultra (32-tap)
 	static float SoftnessRadius;	// radius multiplier on the PCF texel step
 
 	static void InitOnce(void);
@@ -47,6 +48,11 @@ public:
 	// cascades during the opaque world pass.
 	static void BindReceiver(void);
 	static void UnbindReceiver(void);
+
+	// Menu CCFOSelect AfterChange — maps MapSizeIndex to MapSize and
+	// reallocates the cascade depth/Z rasters. Safe to call when CSM
+	// is disabled.
+	static void MapSizeAfterChange(int8 before, int8 after);
 };
 
 extern void *csmDepthVS;

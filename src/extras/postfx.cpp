@@ -159,6 +159,24 @@ float CPostFX::VolFogSunBoost = 1.0f;
 // without paying for full-screen height-fog. Cheap (≈4 ALU per step per
 // light slot) and gated per-slot by light radius at upload time.
 bool CPostFX::VolSpotEnable = true;
+// VolFog raymarch quality. The host pushes this into hdrResolve_PS as a
+// uniform; the shader's [loop] reads it as the bound count. 12 was the
+// legacy hardcoded value; 16 is the new default — quality bump that's
+// visually noticeable on banding-prone gradients (sky toward sun).
+int32 CPostFX::VolFogSteps = 16;
+int8  CPostFX::VolFogStepsIndex = 2;	// 0..4 = 8/12/16/24/32 — default High (16)
+
+void
+CPostFX::VolFogStepsAfterChange(int8 before, int8 after)
+{
+	(void)before;
+	static const int32 kStepsTable[5] = { 8, 12, 16, 24, 32 };
+	int8 idx = after;
+	if(idx < 0) idx = 0;
+	if(idx > 4) idx = 4;
+	VolFogSteps = kStepsTable[idx];
+	// No reallocation needed — the uniform is read fresh each frame.
+}
 RwRaster *CPostFX::pTaaHistA;
 RwRaster *CPostFX::pTaaHistB;
 bool CPostFX::TaaEnable = false;	// opt-in (FXAA stays default)
@@ -1617,6 +1635,16 @@ CPostFX::ResolveHDR(RwCamera *cam)
 
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(25, &volSpotPos[0][0], VOL_SPOT_MAX);
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(33, &volSpotCol[0][0], VOL_SPOT_MAX);
+
+		// c41: volQuality.x = host-driven step count for the volumetric
+		// raymarch. Allows the menu's "VolFog quality" tier (Low..Ultra)
+		// to dial cost vs quality without a shader re-link. c25..c40 is
+		// volSpot pos+col so we sit just after.
+		float volQuality[4] = {
+			(float)VolFogSteps,
+			0.0f, 0.0f, 0.0f,
+		};
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(41, volQuality, 1);
 	}
 
 	rw::d3d::im2dOverridePS = hdrResolve_PS;
