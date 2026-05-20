@@ -325,6 +325,10 @@ static RasterFormatInfo formatInfoRW[16] = {
 	{ D3DFMT_X1R5G5B5, 16, 0, Raster::C555 },
 	// 0x0B00 = Raster::F16_RGBA — RGBA16F float render target for HDR / G-buffer.
 	{ D3DFMT_A16B16G16R16F, 64, 1, Raster::F16_RGBA },
+	// 0x0C00 = Raster::F32_RGBA — RGBA32F for EVSM / high-precision
+	// probe data. depth=128 bits/pixel, has alpha. The slot index in
+	// this table is `(format >> 8) & 0xF` = 0xC, matches the enum.
+	{ D3DFMT_A32B32G32R32F, 128, 1, Raster::F32_RGBA },
 };
 
 static RasterFormatInfo formatInfoFull[] = {

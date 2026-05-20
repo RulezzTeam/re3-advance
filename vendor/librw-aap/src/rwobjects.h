@@ -289,6 +289,13 @@ struct Raster
 		// HDR / G-buffer floating-point format for camera-texture RTs.
 		// Maps to D3DFMT_A16B16G16R16F in the D3D9 backend; ignored on others.
 		F16_RGBA   = 0x0B00,
+		// Full 32-bit float per channel — needed for EVSM (exp(k×depth)
+		// at k=80 overflows F16's ~6.5e4 cap) and high-precision probe
+		// data. Maps to D3DFMT_A32B32G32R32F in the D3D9 backend.
+		// Costs 2× VRAM vs F16_RGBA. Filterable on DX10+ GPUs; older
+		// DX9-only cards may reject as RT — caller should check caps
+		// and fall back to F16_RGBA path.
+		F32_RGBA   = 0x0C00,
 		AUTOMIPMAP = 0x1000,
 		PAL8       = 0x2000,
 		PAL4       = 0x4000,

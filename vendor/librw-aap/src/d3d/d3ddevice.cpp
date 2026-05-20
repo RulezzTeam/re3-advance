@@ -316,6 +316,8 @@ clearMRT(void)
 //
 // Format codes map onto our existing librw enum:
 //   F16_RGBA = D3DFMT_A16B16G16R16F — for HDR irradiance / prefilter
+//   F32_RGBA = D3DFMT_A32B32G32R32F — for EVSM cascades / high-precision
+//              probe data; 2× VRAM cost vs F16, filterable on DX10+.
 //   anything else falls back to D3DFMT_A8R8G8B8.
 
 void*
@@ -336,6 +338,8 @@ createCubeTextureMips(int size, int format, int mipCount)
 	D3DFORMAT fmt = D3DFMT_A8R8G8B8;
 	if(format == (int)Raster::F16_RGBA)
 		fmt = D3DFMT_A16B16G16R16F;
+	else if(format == (int)Raster::F32_RGBA)
+		fmt = D3DFMT_A32B32G32R32F;
 	IDirect3DCubeTexture9 *cube = nil;
 	HRESULT hr = d3ddevice->CreateCubeTexture((UINT)size, (UINT)mipCount,
 	                                          D3DUSAGE_RENDERTARGET,
@@ -1336,6 +1340,8 @@ recreateVidmemRasters(void)
 		D3DFORMAT fmt = D3DFMT_A8R8G8B8;
 		if(v->format == (int)Raster::F16_RGBA)
 			fmt = D3DFMT_A16B16G16R16F;
+		else if(v->format == (int)Raster::F32_RGBA)
+			fmt = D3DFMT_A32B32G32R32F;
 		int mips = (v->mips >= 1) ? v->mips : 1;
 		IDirect3DCubeTexture9 *cube = nullptr;
 		HRESULT hr = d3ddevice->CreateCubeTexture((UINT)v->size, (UINT)mips,
