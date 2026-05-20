@@ -441,6 +441,19 @@ extern void *default_pp_gbuf_all_VS;
 extern void *default_pp_gbuf_PS;
 extern void *default_pp_gbuf_tex_PS;
 
+// IBL — procedural sky/horizon/ground hemisphere gradient used as an
+// ambient-replacement term in the per-pixel lighting shader. Host fills
+// the four c44..c47 PS constants once per scene render.
+//
+//   sky[3]      — colour at N.z = +1 (e.g. CTimeCycle SkyTop * exposure)
+//   horizon[3]  — colour at |N.z| ≈ 0
+//   ground[3]   — colour at N.z = -1 (mute / earth tone)
+//   intensity   — multiplier (0 = off, 1 = neutral, 2 = vivid)
+//   horizonExp  — falloff exponent (1 = soft band, 4 = sharp)
+extern bool iblEnabled;
+void setIblColors(const float sky[3], const float horizon[3], const float ground[3], float intensity, float horizonExp);
+void uploadIBL(void);
+
 void createDefaultShaders(void);
 void destroyDefaultShaders(void);
 

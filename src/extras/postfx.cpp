@@ -84,6 +84,14 @@ float CPostFX::SsaoBias = 0.03f;
 float CPostFX::SsaoIntensity = 1.2f;
 float CPostFX::SsaoStrength = 0.6f;
 float CPostFX::SsaoPower = 1.4f;
+// Procedural IBL — defaults that feel like a "global gradient" ambient.
+// Off by default until the player opts in via the menu; settings.ini
+// remembers the choice.
+bool CPostFX::IblEnabled = false;
+float CPostFX::IblIntensity = 0.55f;
+float CPostFX::IblHorizonExp = 2.2f;
+float CPostFX::IblExposure = 1.0f / 255.0f;	// CTimeCycle gives 0..255 bytes
+float CPostFX::IblGroundTint = 0.6f;
 // Contact AO defaults — subtle by default; the player can crank it via
 // the menu if they want sharper foot/tyre/door contacts.
 float CPostFX::SsaoContactStrength = 0.35f;
@@ -800,6 +808,41 @@ BindRasterToSampler(int slot, RwRaster *raster)
 	rw::d3d::d3ddevice->SetSamplerState(slot, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
 	rw::d3d::d3ddevice->SetSamplerState(slot, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
 	rw::d3d::d3ddevice->SetSamplerState(slot, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+#endif
+}
+
+void
+CPostFX::UpdateIBL(void)
+{
+	// Pull the current sky-top / sky-bottom colours from the time-cycle —
+	// they already encode the dawn-noon-dusk-night progression. Top drives
+	// the zenith colour, bottom drives the horizon, and the ground is a
+	// muted earthy tint biased toward the horizon (so a green afternoon
+	// horizon doesn't make pavements glow green).
+	float top[3] = {
+		(float)CTimeCycle::GetSkyTopRed()   * IblExposure,
+		(float)CTimeCycle::GetSkyTopGreen() * IblExposure,
+		(float)CTimeCycle::GetSkyTopBlue()  * IblExposure,
+	};
+	float bot[3] = {
+		(float)CTimeCycle::GetSkyBottomRed()   * IblExposure,
+		(float)CTimeCycle::GetSkyBottomGreen() * IblExposure,
+		(float)CTimeCycle::GetSkyBottomBlue()  * IblExposure,
+	};
+	// Ground colour: lerp from neutral mid-grey toward a desaturated horizon
+	// tint based on IblGroundTint. Stays plausible at night (everything goes
+	// blueish dark) and at dusk (warms slightly).
+	float grey[3] = { 0.06f, 0.055f, 0.05f };
+	float ground[3] = {
+		grey[0] + (bot[0] * 0.25f - grey[0]) * IblGroundTint,
+		grey[1] + (bot[1] * 0.25f - grey[1]) * IblGroundTint,
+		grey[2] + (bot[2] * 0.25f - grey[2]) * IblGroundTint,
+	};
+
+#ifdef RW_D3D9
+	rw::d3d::iblEnabled = IblEnabled;
+	rw::d3d::setIblColors(top, bot, ground, IblIntensity, IblHorizonExp);
+	rw::d3d::uploadIBL();
 #endif
 }
 

@@ -45,6 +45,40 @@ void *default_pp_gbuf_all_VS;
 void *default_pp_gbuf_PS;
 void *default_pp_gbuf_tex_PS;
 
+// IBL — the host (CGBuffer / CIBL) uploads four per-frame constants to
+// PS slots c44..c47 (sky / horizon / ground / params). When iblEnabled
+// is false uploadIBL() forces iblParams.x = 0 so the PS contribution
+// multiplies out cleanly. This avoids needing a shader variant just to
+// gate the gradient — saves on shader permutation bloat.
+bool iblEnabled = false;
+static float iblSkyColor    [4] = { 0.30f, 0.55f, 0.85f, 0 };
+static float iblHorizonColor[4] = { 0.55f, 0.55f, 0.50f, 0 };
+static float iblGroundColor [4] = { 0.10f, 0.09f, 0.07f, 0 };
+static float iblParams      [4] = { 0.0f,  2.0f,  0.0f,  0 };	// .x=intensity (0 = off)
+
+void
+setIblColors(const float sky[3], const float horizon[3], const float ground[3], float intensity, float horizonExp)
+{
+	iblSkyColor[0] = sky[0]; iblSkyColor[1] = sky[1]; iblSkyColor[2] = sky[2];
+	iblHorizonColor[0] = horizon[0]; iblHorizonColor[1] = horizon[1]; iblHorizonColor[2] = horizon[2];
+	iblGroundColor[0] = ground[0]; iblGroundColor[1] = ground[1]; iblGroundColor[2] = ground[2];
+	iblParams[0] = iblEnabled ? intensity : 0.0f;
+	iblParams[1] = horizonExp;
+}
+
+void
+uploadIBL(void)
+{
+	if(!perPixelLightingEnabled)
+		return;
+	float intensity = iblEnabled ? iblParams[0] : 0.0f;
+	float live[4] = { intensity, iblParams[1], iblParams[2], iblParams[3] };
+	d3ddevice->SetPixelShaderConstantF(44, iblSkyColor,    1);
+	d3ddevice->SetPixelShaderConstantF(45, iblHorizonColor, 1);
+	d3ddevice->SetPixelShaderConstantF(46, iblGroundColor, 1);
+	d3ddevice->SetPixelShaderConstantF(47, live,           1);
+}
+
 
 void
 createDefaultShaders(void)

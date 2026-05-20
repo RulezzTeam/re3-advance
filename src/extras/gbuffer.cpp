@@ -91,6 +91,13 @@ CGBuffer::BeginScenePass(RwCamera *cam)
 	RwCameraBeginUpdate(cam);
 	bSceneInHDR = true;
 
+	// Refresh the procedural IBL constants from CTimeCycle so the ambient
+	// term in default_pp_PS reflects this frame's time-of-day. Cheap (a
+	// few float copies + four SetPixelShaderConstantF calls), runs once
+	// per scene render. When CPostFX::IblEnabled is false the intensity
+	// is forced to zero inside librw — the shader contribution cancels.
+	CPostFX::UpdateIBL();
+
 	// Bind the G-buffer MRT slot BEFORE clearing so the clear hits both
 	// targets atomically. If we bind after the clear, slot 1 keeps the
 	// previous frame's normal/depth — sky/water pixels (which never write

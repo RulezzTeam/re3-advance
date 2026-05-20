@@ -89,6 +89,18 @@ public:
 	static float SsaoContactRadius;	// screen-space pixels (2..6 typical)
 	static float SsaoContactMaxDz;	// metres — discard farther occluders
 
+	// Image-Based Lighting — procedural hemisphere gradient (sky + horizon
+	// + ground) sampled by world normal inside default_pp_PS as a soft
+	// ambient term. Colours are derived from CTimeCycle's SkyTop/SkyBottom
+	// each frame, so dusk/dawn naturally bleed warm ambient onto upward-
+	// facing surfaces.
+	static bool IblEnabled;
+	static float IblIntensity;	// 0 = off, 1 = neutral, 2 = vivid
+	static float IblHorizonExp;	// horizon falloff exponent (1..6)
+	static float IblExposure;	// CTimeCycle → linear scale before upload
+	static float IblGroundTint;	// 0 = neutral grey, 1 = warm earthy ground
+	static void UpdateIBL(void);	// host-side: pulls colours, uploads to librw
+
 	// Volumetric fog — single-scattering height fog with Henyey-Greenstein
 	// directional in-scatter from the sun. Composed inside hdrResolve_PS
 	// using the G-buffer normal/depth raster on sampler s2.

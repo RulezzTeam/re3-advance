@@ -33,6 +33,21 @@ float4 fogColor : register(c0);
 // .xyz = world-space camera position
 // .w   = Blinn-Phong specular power (32 by default, tweaked by host)
 float4 eyePosPS : register(c42);
+
+// Procedural IBL — sky/horizon/ground gradient sampled by world-space normal.
+// Host uploads these once per scene render from CTimeCycle (sky colours +
+// derived horizon mix). Intensity = 0 → zero contribution, so the per-frame
+// upload doesn't cost anything when IBL is off.
+//
+// .rgb = colour, .a unused (kept for c-register alignment).
+float4 iblSky      : register(c44);	// hemisphere zenith (N.z = +1)
+float4 iblHorizon  : register(c45);	// hemisphere ring (|N.z| ≈ 0)
+float4 iblGround   : register(c46);	// hemisphere nadir (N.z = -1, muted)
+// .x = intensity multiplier (0 = off)
+// .y = horizon falloff exponent (1.0 = linear, larger = sharper horizon band)
+// .z = directional-light tinting (0..1 — lerps lit toward iblSky on shadowed faces)
+// .w = unused
+float4 iblParams   : register(c47);
 #endif
 
 #ifdef GBUFFER
@@ -82,6 +97,23 @@ float4 ComputeShadedColor(VS_out input)
 		for(i = 0; i < numDirLights; i++)
 			spec += DoDirLightSpec(lights[i+firstDirLight], N, V, power) * surfSpecular;
 #endif
+	}
+
+	// IBL — procedural hemisphere gradient driven by world normal. iblParams.x
+	// gates the whole contribution; when the host sets it to 0 we trade three
+	// mul-adds for nothing. The horizon weight uses 1 - |N.z|^p so a larger
+	// exponent gives a sharper sky/horizon transition (good for daytime).
+	{
+		float up   = saturate( N.z);
+		float down = saturate(-N.z);
+		float hor  = 1.0 - saturate(pow(abs(N.z), max(iblParams.y, 0.5)));
+		float3 iblCol = up   * iblSky.rgb
+		              + down * iblGround.rgb
+		              + hor  * iblHorizon.rgb;
+		// Treat IBL as a soft diffuse — modulate by the material diffuse
+		// coefficient so unlit materials (like UI quads, particles) don't
+		// pick up sky bleed when this branch is somehow hit.
+		lit += iblCol * iblParams.x * surfDiffuse;
 	}
 
 	// In LDR mode we clamp prelight+ambient+lit BEFORE matCol — matches the
