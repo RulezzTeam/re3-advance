@@ -67,6 +67,62 @@ setWetness(float wetness, float diffuseDarken, float specBoost, float powerMul)
 	wetnessParams[3] = powerMul;
 }
 
+// Dynamic point lights — host (CDynamicLights) picks the top-N brightest
+// CPointLights near the camera each frame and uploads them here. The
+// receiver in default_pp_PS samples this array at c100 (count) + c101..
+// c116 (8 lights × 2 vec4 each: position+radius, colour+intensity).
+//
+// This bypasses the librw lightingCB_Shader path (which only walks the
+// World's directional light list + extra directionals added by certain
+// entity SetupLighting overrides) and gives EVERY pp_PS-rendered atomic
+// a uniform set of dynamic point lights. Buildings + props that don't
+// invoke CPointLights::GenerateLightsAffectingObject now finally get
+// illuminated by car headlights, lamps, gunshots, and explosions.
+#define DYN_LIGHT_SLOTS 8
+static float dynLightCount[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+static float dynLightData[DYN_LIGHT_SLOTS * 2 * 4] = { 0 };
+void
+setDynamicPointLights(int count,
+                      const float positions[][3],
+                      const float radii[],
+                      const float colours[][3],
+                      const float intensities[])
+{
+	if(count < 0) count = 0;
+	if(count > DYN_LIGHT_SLOTS) count = DYN_LIGHT_SLOTS;
+	dynLightCount[0] = (float)count;
+	// Zero unused slots so a residual previous-frame light doesn't bleed
+	// in if the host shrinks the active count.
+	for(int i = 0; i < DYN_LIGHT_SLOTS; i++){
+		float *posReg = &dynLightData[(i*2 + 0) * 4];
+		float *colReg = &dynLightData[(i*2 + 1) * 4];
+		if(i < count){
+			posReg[0] = positions[i][0];
+			posReg[1] = positions[i][1];
+			posReg[2] = positions[i][2];
+			posReg[3] = radii[i];
+			colReg[0] = colours[i][0];
+			colReg[1] = colours[i][1];
+			colReg[2] = colours[i][2];
+			colReg[3] = intensities[i];
+		}else{
+			posReg[0] = posReg[1] = posReg[2] = 0.0f;
+			posReg[3] = 0.0f;	// zero radius → if check skips it
+			colReg[0] = colReg[1] = colReg[2] = 0.0f;
+			colReg[3] = 0.0f;
+		}
+	}
+}
+
+void
+uploadDynamicPointLights(void)
+{
+	if(!perPixelLightingEnabled)
+		return;
+	d3ddevice->SetPixelShaderConstantF(100, dynLightCount, 1);
+	d3ddevice->SetPixelShaderConstantF(101, dynLightData, DYN_LIGHT_SLOTS * 2);
+}
+
 // IBL — the host (CGBuffer / CIBL) uploads four per-frame constants to
 // PS slots c44..c47 (sky / horizon / ground / params). When iblEnabled
 // is false uploadIBL() forces iblParams.x = 0 so the PS contribution

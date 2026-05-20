@@ -488,6 +488,19 @@ void uploadIBL(void);
 // gets a consistent snapshot.
 void setWetness(float wetness, float diffuseDarken, float specBoost, float powerMul);
 
+// Dynamic point lights — host picks top-N brightest CPointLights near
+// camera, calls setDynamicPointLights once per frame, then uploads. The
+// receiver in default_pp_PS applies them per-pixel with smooth window
+// attenuation, so headlights / lamps / gunfire light up every pp-rendered
+// surface (including static buildings that the legacy SetupLighting
+// path skipped). Slot count capped at 8 inside librw.
+void setDynamicPointLights(int count,
+                           const float positions[][3],
+                           const float radii[],
+                           const float colours[][3],
+                           const float intensities[]);
+void uploadDynamicPointLights(void);
+
 // CSM receiver upload — matrices is 3 stacked 4×4s (row-major, 48 floats).
 // splits = 3 view-space split distances in metres. strength = 0 disables
 // the receiver path even if the maps are populated. The depth maps still

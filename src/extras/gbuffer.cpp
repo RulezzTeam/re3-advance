@@ -12,6 +12,7 @@
 #include "Camera.h"
 #include "gbuffer.h"
 #include "postfx.h"
+#include "dynamicLights.h"
 #include "ibl.h"
 
 extern RwRGBA gColourTop;
@@ -104,6 +105,13 @@ CGBuffer::BeginScenePass(RwCamera *cam)
 	// instead of the gradient when iblParams.z is set.
 	CIBL::Update(cam);
 	CIBL::BindReceiver();
+
+	// Dynamic point lights — pick top-N nearby CPointLights and push to
+	// PS c100/c101. Buildings, props, peds (which CEntity::SetupLighting
+	// silently skipped) now finally get illuminated by car headlights,
+	// lamps, gunfire, and explosions — same as the road has been the
+	// whole time.
+	CDynamicLights::Update(cam);
 
 	// Bind the G-buffer MRT slot BEFORE clearing so the clear hits both
 	// targets atomically. If we bind after the clear, slot 1 keeps the

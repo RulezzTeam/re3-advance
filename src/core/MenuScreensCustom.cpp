@@ -20,6 +20,7 @@
 #ifdef POSTFX_HDR
 #include "gbuffer.h"
 #include "ibl.h"
+#include "dynamicLights.h"
 #endif
 #ifdef POSTFX_WATER_REFLECTION
 #include "waterReflection.h"
@@ -184,6 +185,9 @@
 		MENUACTION_CFO_SLIDER, "FED_IBG", { new CCFOSlider(&CPostFX::IblGroundTint, "Graphics", "IblGroundTint", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_IBC", { new CCFOSelect((int8*)&CIBL::Enabled, "Graphics", "IblCube", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_IBR", { new CCFOSlider(&CIBL::ReflStrength, "Graphics", "IblRefl", 0.0f, 3.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_DPL", { new CCFOSelect((int8*)&CDynamicLights::Enabled, "Graphics", "DynLights", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_DPI", { new CCFOSlider(&CDynamicLights::Intensity, "Graphics", "DynLightInt", 0.0f, 3.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_DPR", { new CCFOSlider(&CDynamicLights::Reach, "Graphics", "DynLightReach", 0.5f, 4.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_SSR", { new CCFOSelect((int8*)&CPostFX::SsrEnable, "Graphics", "SSR", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_SSS", { new CCFOSlider(&CPostFX::SsrStrength, "Graphics", "SsrStrength", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_SSD", { new CCFOSlider(&CPostFX::SsrMaxDistance, "Graphics", "SsrDistance", 5.0f, 120.0f) }, 0, 0, MENUALIGN_LEFT, \
@@ -334,6 +338,10 @@ void RestoreDefGraphics(int8 action) {
 		CPostFX::IblGroundTint = 0.6f;
 		CIBL::Enabled = false;
 		CIBL::ReflStrength = 1.0f;
+		CDynamicLights::Enabled = true;
+		CDynamicLights::Intensity = 1.0f;
+		CDynamicLights::Reach = 1.0f;
+		CDynamicLights::MaxLights = CDynamicLights::MAX_LIGHTS;
 		CPostFX::SsrEnable = false;
 		CPostFX::SsrMaxDistance = 30.0f;
 		CPostFX::SsrStepCount = 28;

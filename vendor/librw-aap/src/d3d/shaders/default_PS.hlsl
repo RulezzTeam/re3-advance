@@ -79,6 +79,48 @@ float4 iblReflParams : register(c64);
 // .w = specular power multiplier (typical 2.0 → tighter highlight)
 float4 wetnessParams : register(c63);
 
+// Dynamic point lights — independent of librw's per-atomic lights[]
+// array. Host (CDynamicLights) picks the top-8 brightest CPointLights
+// near the camera each frame and uploads them here once per scene.
+// EVERY pp_PS atomic samples this array, so buildings + props + peds
+// (which weren't fed by GenerateLightsAffectingObject in re3) finally
+// get illuminated by car headlights, lamp posts, gunshots, explosions.
+//
+// dynLightCount.x = active light count (0..8). When 0 the [loop]
+// short-circuits and pays nothing.
+//
+// Each light is two vec4s: position+radius and color+intensity. Two
+// vec4s per light × 8 lights = 16 registers at c101..c116.
+float4 dynLightCount : register(c100);
+float4 dynLightData[16] : register(c101);
+
+float3 ApplyDynamicPointLights(float3 worldPos, float3 N)
+{
+	float3 sum = float3(0, 0, 0);
+	int n = (int)dynLightCount.x;
+	[loop]
+	for(int i = 0; i < n; i++){
+		float4 lp  = dynLightData[i*2 + 0];	// xyz = world pos, w = radius
+		float4 lc  = dynLightData[i*2 + 1];	// rgb = colour, w = intensity
+		float3 toL = lp.xyz - worldPos;
+		float distSq = dot(toL, toL);
+		float radius = lp.w;
+		// Sphere cutoff — out-of-range lights add nothing. Branch is
+		// per-pixel + per-light so cheap on modern GPUs.
+		if(distSq > radius * radius)
+			continue;
+		float dist = sqrt(max(distSq, 1e-6));
+		float3 L = toL / dist;
+		float ndotl = saturate(dot(N, L));
+		// Inverse-square attenuation with smooth window cutoff at
+		// `radius`. Standard formula: (1 - d/r)² × falloff.
+		float t = 1.0 - dist / radius;
+		float atten = t * t;
+		sum += lc.rgb * lc.w * ndotl * atten;
+	}
+	return sum;
+}
+
 // CSM receiver — 3 cascades worth of light-view-proj matrices + split
 // distances, plus a per-cascade depth sampler. Disabled when csmParams.w
 // (overall strength) is 0; uploadCSM() forces it there when the host
@@ -267,6 +309,13 @@ float4 ComputeShadedColor(VS_out input)
 	for(i = 0; i < numSpotLights; i++)
 		lit += DoSpotLight(lights[i+firstSpotLight], input.WorldPos, N) * wetDiffuse;
 #endif
+
+	// Dynamic point lights — host-side selected top-N nearby CPointLights
+	// applied per-pixel. This is the path that lets car headlights / lamps
+	// / muzzle flashes / explosions illuminate buildings + props that the
+	// legacy CEntity::SetupLighting() path bypassed. Modulated by
+	// wetDiffuse so a wet road still darkens correctly under headlights.
+	lit += ApplyDynamicPointLights(input.WorldPos, N) * wetDiffuse;
 
 	[branch]
 	if(surfSpecular > 0.001 || wetMask > 0.05){
