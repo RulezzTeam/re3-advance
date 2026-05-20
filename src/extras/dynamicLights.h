@@ -18,7 +18,15 @@
 class CDynamicLights
 {
 public:
-	enum { MAX_LIGHTS = 8 };
+	// 32 chosen as the upper bound — ps_3_0 has 224 float constants
+	// total, and each light needs 2 vec4 (position+radius, colour+
+	// intensity). 32 × 2 = 64 registers (c101..c164), leaving plenty of
+	// headroom for CSM (c48..c62), spot shadow (c70..c75), and the IBL/
+	// wetness/ssr constants. 64 lights would overflow the budget by 5
+	// registers. In practice scenes rarely have more than ~20 active
+	// CPointLights anyway (the engine itself caps at 128 + MAX_DIST=22
+	// filter), so 32 is comfortable headroom.
+	enum { MAX_LIGHTS = 32 };
 
 	// Menu / settings.ini hookable.
 	static bool Enabled;

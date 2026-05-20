@@ -38,9 +38,42 @@ struct SpecLight {
 };
 SpecLight specLights[5] : register(c43);
 
+// Dynamic point lights — same data block as default_pp_PS so the host
+// uploads once and every pp/world/vehicle pipe samples the same set.
+// c100 = active light count, c101..c164 = 32 lights × (pos+radius,
+// colour+intensity). This is what gives vehicle paint a warm bath
+// from another car's headlights / from street lamps / from gunfire,
+// where previously cars only got the planar env reflection + Blinn-
+// Phong directional from the sun.
+float4 dynLightCount : register(c100);
+float4 dynLightData[64] : register(c101);
+
 float3 ReflectV(float3 V, float3 N)
 {
 	return N * dot(V, N) * 2.0 - V;
+}
+
+float3 ApplyDynamicPointLights(float3 worldPos, float3 N)
+{
+	float3 sum = float3(0, 0, 0);
+	int n = (int)dynLightCount.x;
+	[loop]
+	for(int i = 0; i < n; i++){
+		float4 lp = dynLightData[i*2 + 0];
+		float4 lc = dynLightData[i*2 + 1];
+		float3 toL = lp.xyz - worldPos;
+		float distSq = dot(toL, toL);
+		float radius = lp.w;
+		if(distSq > radius * radius)
+			continue;
+		float dist = sqrt(max(distSq, 1e-6));
+		float3 L = toL / dist;
+		float ndotl = saturate(dot(N, L));
+		float t = 1.0 - dist / radius;
+		float atten = t * t;
+		sum += lc.rgb * lc.w * ndotl * atten;
+	}
+	return sum;
 }
 
 float3 BlinnPhong(SpecLight L, float3 N, float3 V)
@@ -76,6 +109,13 @@ float4 main(VS_out input) : COLOR
 	float3 envmap = lerp(envmapPlanar, envmapCube, saturate(reflProps2.x));
 
 	float3 base = lerp(diffuse.rgb, envmap, reflStrength);
+
+	// Dynamic point lights — host-side selected nearby CPointLights apply
+	// to vehicle paint just like to any pp_PS surface. Modulated by the
+	// diffuse term so dark-coloured cars don't suddenly glow neon under
+	// a streetlamp. Applied before the spec pass so a wet/headlit hood
+	// still picks up the BlinnPhong sun spec on top.
+	base += ApplyDynamicPointLights(input.WorldPos, N) * diffuse.rgb;
 
 	// Per-pixel specular highlights — five directional spec lights pushed
 	// from custompipes_d3d9.cpp::uploadSpecLights.

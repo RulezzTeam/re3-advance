@@ -78,7 +78,7 @@ setWetness(float wetness, float diffuseDarken, float specBoost, float powerMul)
 // a uniform set of dynamic point lights. Buildings + props that don't
 // invoke CPointLights::GenerateLightsAffectingObject now finally get
 // illuminated by car headlights, lamps, gunshots, and explosions.
-#define DYN_LIGHT_SLOTS 8
+#define DYN_LIGHT_SLOTS 32
 static float dynLightCount[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 static float dynLightData[DYN_LIGHT_SLOTS * 2 * 4] = { 0 };
 void

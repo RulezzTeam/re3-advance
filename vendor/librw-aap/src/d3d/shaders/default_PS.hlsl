@@ -80,19 +80,21 @@ float4 iblReflParams : register(c64);
 float4 wetnessParams : register(c63);
 
 // Dynamic point lights — independent of librw's per-atomic lights[]
-// array. Host (CDynamicLights) picks the top-8 brightest CPointLights
+// array. Host (CDynamicLights) picks the top-N brightest CPointLights
 // near the camera each frame and uploads them here once per scene.
 // EVERY pp_PS atomic samples this array, so buildings + props + peds
 // (which weren't fed by GenerateLightsAffectingObject in re3) finally
 // get illuminated by car headlights, lamp posts, gunshots, explosions.
 //
-// dynLightCount.x = active light count (0..8). When 0 the [loop]
+// dynLightCount.x = active light count (0..32). When 0 the [loop]
 // short-circuits and pays nothing.
 //
-// Each light is two vec4s: position+radius and color+intensity. Two
-// vec4s per light × 8 lights = 16 registers at c101..c116.
+// Each light is two vec4s: position+radius and color+intensity.
+// 32 lights × 2 vec4 = 64 registers at c101..c164 — fits ps_3_0's
+// 224-float-constant budget alongside CSM (c48..c62), spot shadow
+// (c70..c75), and the wetness / IBL constants.
 float4 dynLightCount : register(c100);
-float4 dynLightData[16] : register(c101);
+float4 dynLightData[64] : register(c101);
 
 float3 ApplyDynamicPointLights(float3 worldPos, float3 N)
 {

@@ -41,8 +41,8 @@ CDynamicLights::Update(RwCamera *cam)
 {
 	if(!Enabled){
 		// Zero count → shader [loop] short-circuits.
-		float zeroPos[8][3] = {0}; float zeroR[8] = {0};
-		float zeroCol[8][3] = {0}; float zeroI[8] = {0};
+		float zeroPos[MAX_LIGHTS][3] = {0}; float zeroR[MAX_LIGHTS] = {0};
+		float zeroCol[MAX_LIGHTS][3] = {0}; float zeroI[MAX_LIGHTS] = {0};
 		rw::d3d::setDynamicPointLights(0, zeroPos, zeroR, zeroCol, zeroI);
 		rw::d3d::uploadDynamicPointLights();
 		return;
@@ -59,8 +59,8 @@ CDynamicLights::Update(RwCamera *cam)
 	// only forward position + radius + colour to it.
 	rw::Camera *sceneCam = (rw::Camera*)cam;
 	if(sceneCam == nullptr || CPointLights::NumLights == 0){
-		float zeroPos[8][3] = {0}; float zeroR[8] = {0};
-		float zeroCol[8][3] = {0}; float zeroI[8] = {0};
+		float zeroPos[MAX_LIGHTS][3] = {0}; float zeroR[MAX_LIGHTS] = {0};
+		float zeroCol[MAX_LIGHTS][3] = {0}; float zeroI[MAX_LIGHTS] = {0};
 		rw::d3d::setDynamicPointLights(0, zeroPos, zeroR, zeroCol, zeroI);
 		rw::d3d::uploadDynamicPointLights();
 		return;
@@ -110,11 +110,12 @@ CDynamicLights::Update(RwCamera *cam)
 		numScored = activeCount;
 	}
 
-	// Pack into the format librw expects.
-	float positions[8][3]  = {0};
-	float radii[8]         = {0};
-	float colours[8][3]    = {0};
-	float intensities[8]   = {0};
+	// Pack into the format librw expects. MAX_LIGHTS-sized arrays match
+	// what librw expects on its side (DYN_LIGHT_SLOTS = MAX_LIGHTS = 32).
+	float positions[MAX_LIGHTS][3]  = {0};
+	float radii[MAX_LIGHTS]         = {0};
+	float colours[MAX_LIGHTS][3]    = {0};
+	float intensities[MAX_LIGHTS]   = {0};
 	int outCount = numScored < activeCount ? numScored : activeCount;
 	for(int i = 0; i < outCount; i++){
 		const CRegisteredPointLight &L = CPointLights::aLights[scored[i].idx];
