@@ -23,7 +23,11 @@ int8  CCSM::MapSizeIndex = 1;	// 0=1024,1=2048,2=4096; default High (2048)
 float CCSM::Strength = 0.85f;
 float CCSM::Bias = 0.003f;
 int32 CCSM::NumCascades = 3;
-int32 CCSM::SoftnessMode = 0;	// 0 = Sharp (4-tap), 1 = Soft (16-tap), 2 = Ultra (32-tap), 3 = VSM
+// 0 = Sharp (4-tap PCF), 1 = Soft (16-tap PCF), 2 = Ultra (32-tap PCF),
+// 3 = VSM, 4 = EVSM (Stage 28, deferred — needs F32 CSM allocation),
+// 5 = MSM (Stage 29, simplified dual-Chebyshev — works in F16),
+// 6 = Hybrid (Stage 30, per-cascade dispatch — deferred).
+int32 CCSM::SoftnessMode = 0;
 float CCSM::SoftnessRadius = 1.5f;	// slight softening by default
 
 // Set by MapSizeAfterChange so the next ComputeCascades sees the

@@ -262,6 +262,15 @@ uploadIBL(void)
 //   mode = 3 → VSM   (Variance Shadow Maps via Chebyshev) — naturally
 //             smooth edges, one .rg fetch per pixel, no Poisson kernel.
 //             Trade-off: "light bleed" through thin/stacked occluders.
+//   mode = 4 → EVSM  (Exponential VSM — Stage 28). Needs F32_RGBA CSM
+//             cascade allocation; deferred until that switch lands.
+//   mode = 5 → MSM   (Moment Shadow Maps simplified dual-Chebyshev —
+//             Stage 29). Reads all 4 moments (z, z², z³, z⁴) and
+//             applies two Chebyshev bounds in parallel; tighter wins.
+//             Stays in F16 precision. Resists light bleed better than
+//             plain VSM.
+//   mode = 6 → Hybrid (Stage 30) — Near=PCF, Mid=EVSM, Far=MSM.
+//             Per-cascade dispatch; deferred with EVSM.
 static float csmTuning2[4] = { 0.0f, 1.0f, 0.0f, 0.0f };
 void
 setCsmSoftness(int mode, float radiusMul)

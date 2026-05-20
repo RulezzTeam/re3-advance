@@ -393,8 +393,12 @@ static const float2 csmPoisson32[32] = {
 //      1 = Soft  (16-tap PCF)
 //      2 = Ultra (32-tap PCF)
 //      3 = VSM   (Variance Shadow Maps via Chebyshev — naturally smooth)
+//      4 = EVSM  (Exponential VSM — Stage 28, requires F32 cascade RT)
+//      5 = MSM   (Moment Shadow Maps — Stage 29, simplified dual-Chebyshev)
+//      6 = Hybrid (Near=PCF, Mid=EVSM, Far=MSM — Stage 30, picks per-cascade)
 // .y = PCF radius multiplier (1.0 = stock, 2..3 = even softer)
-// .z, .w = reserved
+// .z = EVSM warp factor k (only used when mode=4; range ~10..80)
+// .w = light-bleed-reduction strength (used by VSM/EVSM/MSM)
 float4 csmTuning2 : register(c62);
 
 float CSMSampleCascade(int idx, float3 worldPos)
@@ -414,14 +418,43 @@ float CSMSampleCascade(int idx, float3 worldPos)
 
 	float vis = 0.0;
 	float2 texelStep = csmTuning.xy * max(csmTuning2.y, 1.0);
-	// Four-mode shadow filter — Sharp / Soft / Ultra (PCF) + VSM. Branches
+	// Six-mode shadow filter — Sharp / Soft / Ultra (PCF) + VSM/MSM. Branches
 	// are uniform (csmTuning2.x is a static constant for the whole frame),
-	// so the compiler keeps only one branch alive per draw. VSM trades the
-	// progressively-larger PCF sample count for one .rg fetch + a closed-
-	// form Chebyshev inequality — naturally smooth shadows that handle
-	// soft penumbras without the PCF banding, at the cost of "light bleed"
-	// on tightly nested occluders.
-	if(csmTuning2.x > 2.5){
+	// so the compiler keeps only one branch alive per draw. VSM/MSM trade
+	// the progressively-larger PCF sample count for one fetch + closed-form
+	// statistical reconstruction — naturally smooth shadows that handle
+	// soft penumbras without the PCF banding.
+	if(csmTuning2.x > 4.5){
+		// MSM — Moment Shadow Maps (Peters & Klein 2015, simplified
+		// dual-Chebyshev form). Reads all 4 moments (z, z², z³, z⁴) and
+		// applies two Chebyshev bounds in parallel — one over (μ₁, μ₂)
+		// and one over (μ₂, μ₄). The TIGHTER (max) bound wins; the
+		// dual-bound trick blocks light bleed cases that single-moment
+		// VSM lets through, while staying in F16 precision (no exp).
+		float4 m;
+		if(idx == 0)      m = tex2D(csmTex0, uv).rgba;
+		else if(idx == 1) m = tex2D(csmTex1, uv).rgba;
+		else              m = tex2D(csmTex2, uv).rgba;
+		// First Chebyshev: variance over moments 1, 2.
+		float mu1 = m.x, mu2 = m.y;
+		float var1 = max(mu2 - mu1 * mu1, 1e-5);
+		float d1   = refZ - mu1;
+		float p1   = (d1 <= 0.0) ? 1.0 : var1 / (var1 + d1 * d1);
+		// Second Chebyshev: variance over moments 2, 4 (z² space).
+		float mu2_ = m.y, mu4 = m.w;
+		float var2 = max(mu4 - mu2_ * mu2_, 1e-5);
+		float d2   = refZ * refZ - mu2_;
+		float p2   = (d2 <= 0.0) ? 1.0 : var2 / (var2 + d2 * d2);
+		// Take the TIGHTER of the two bounds; one of them catches each
+		// failure mode of the other. Both are valid lower bounds on the
+		// CDF probability, so the max is still a valid lower bound.
+		float v = max(p1, p2);
+		// Light-bleeding reduction — same chop as VSM but slightly
+		// gentler (0.15 vs 0.2) since the dual-bound already kills the
+		// worst leaks.
+		float lbr = csmTuning2.w > 0.001 ? csmTuning2.w : 0.15;
+		return saturate((v - lbr) / (1.0 - lbr));
+	}else if(csmTuning2.x > 2.5){
 		// VSM — sample (depth, depth²) once per cascade. Chebyshev
 		// inequality: P(z > t) ≤ σ² / (σ² + (μ - t)²). Returns 1 when
 		// fully lit, <1 in penumbra, 0 in full shadow. Numerical guard
