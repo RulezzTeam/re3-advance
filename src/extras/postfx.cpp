@@ -15,8 +15,11 @@
 #include "Weather.h"	// CWeather::LightningFlash, Rain, WetRoads
 #include "WaterLevel.h"	// CWaterLevel::GetWaterLevelNoWaves (underwater fog detection)
 #include "Lights.h"	// pDirect (sun light) + DirectionalLightColourForFrame
+#include "PointLights.h"	// CPointLights::aLights — volumetric in-scatter sources
+#include "Camera.h"
 #include "postfx.h"
 #include "ibl.h"	// CIBL::Enabled / irradianceCube for the Phase 2 receiver
+#include "spotShadow.h"	// CSpotShadow::Open/Close — RT lifecycle
 #ifdef POSTFX_HDR
 #include "gbuffer.h"
 extern RwRGBAReal DirectionalLightColourForFrame;
@@ -329,6 +332,10 @@ CPostFX::Open(RwCamera *cam)
 #ifdef POSTFX_CSM
 	CCSM::Open(cam);
 #endif
+	// Spot shadow map — shared 512² R32F + light camera. Allocated
+	// here so the BindReceiver / RenderShadowMap path called from
+	// main.cpp's frame loop sees valid resources.
+	CSpotShadow::Open(cam);
 	// Phase 2 IBL cubes — opens both source and irradiance cubes, runs
 	// the first capture+convolve so the cube has content before the
 	// first scene draw reads it.
@@ -719,6 +726,7 @@ CPostFX::Close(void)
 #ifdef POSTFX_CSM
 	CCSM::Close();
 #endif
+	CSpotShadow::Close();
 	CIBL::Close();
 	CGBuffer::Close();
 #endif
@@ -1530,12 +1538,58 @@ CPostFX::ResolveHDR(RwCamera *cam)
 
 		// c25..c28, c29..c32: volumetric spotlight slots — up to 4 in-
 		// scatter sources for the volumetric ray-march to pick up
-		// vehicle headlights, lamp posts, etc.
-		// v1 ships with empty slots (intensity = 0 in slot.col.a) so
-		// the unrolled loop multiplies to zero. Phase 2 will walk
-		// CPointLights and populate the brightest few each frame.
+		// vehicle headlights, lamp posts, gunfire flashes, explosions.
+		// We score every active CPointLights by (luminance × inverse-
+		// distance²) relative to the camera and take the top 4. The
+		// ray-march in hdrResolve_PS adds each light's contribution
+		// per step weighted by density × inverse-square falloff, so
+		// the scene reads with proper volumetric haze around bright
+		// sources at night / in rain.
 		float volSpotPos[4][4] = { {0,0,0,0}, {0,0,0,0}, {0,0,0,0}, {0,0,0,0} };
 		float volSpotCol[4][4] = { {0,0,0,0}, {0,0,0,0}, {0,0,0,0}, {0,0,0,0} };
+
+		// Pick top-4 by score (luminance / dist²) relative to camera.
+		struct ScoredVL { int idx; float score; };
+		ScoredVL pick[4] = {
+			{-1, 0.0f}, {-1, 0.0f}, {-1, 0.0f}, {-1, 0.0f}
+		};
+		CVector camV(camPos.x, camPos.y, camPos.z);
+		for(int i = 0; i < CPointLights::NumLights; i++){
+			const CRegisteredPointLight &L = CPointLights::aLights[i];
+			if(L.type != CPointLights::LIGHT_POINT) continue;
+			float lum = L.red + L.green + L.blue;
+			if(lum < 0.05f) continue;
+			CVector d = L.coors - camV;
+			float d2 = d.x*d.x + d.y*d.y + d.z*d.z;
+			if(d2 < 0.01f) d2 = 0.01f;
+			float score = lum / d2;
+			// Insertion into the 4-slot top-K by simple unrolled
+			// comparison — picks the dimmest current slot and
+			// replaces if our score is higher.
+			int worst = 0;
+			for(int k = 1; k < 4; k++)
+				if(pick[k].score < pick[worst].score) worst = k;
+			if(score > pick[worst].score){
+				pick[worst].idx = i;
+				pick[worst].score = score;
+			}
+		}
+
+		// Pack the 4 picked lights. radius squared in .w so the shader
+		// can skip the sqrt; intensity in colour.a as the master multiplier.
+		for(int k = 0; k < 4; k++){
+			if(pick[k].idx < 0) continue;
+			const CRegisteredPointLight &L = CPointLights::aLights[pick[k].idx];
+			volSpotPos[k][0] = L.coors.x;
+			volSpotPos[k][1] = L.coors.y;
+			volSpotPos[k][2] = L.coors.z;
+			volSpotPos[k][3] = L.radius * L.radius;
+			volSpotCol[k][0] = L.red;
+			volSpotCol[k][1] = L.green;
+			volSpotCol[k][2] = L.blue;
+			volSpotCol[k][3] = volFogActive ? 1.0f : 0.0f;
+		}
+
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(25, &volSpotPos[0][0], 4);
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(29, &volSpotCol[0][0], 4);
 	}

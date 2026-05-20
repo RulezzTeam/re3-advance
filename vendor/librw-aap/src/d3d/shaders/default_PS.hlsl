@@ -96,10 +96,58 @@ float4 wetnessParams : register(c63);
 float4 dynLightCount : register(c100);
 float4 dynLightData[64] : register(c101);
 
+// Spot shadow receiver — CSpotShadow picks the brightest CPointLights
+// LIGHT_POINT each frame, renders a depth-only pass from its position
+// looking down, and binds the result here. The receiver projects the
+// pixel's world position into the light's clip space, compares depth
+// to the shadow map sample, and modulates slot-0 of the dyn light
+// array by the resulting visibility.
+//
+// Slot 0 is the same light CSpotShadow picked (both rank by luminance
+// × inverse-distance²). When CSpotShadow disables itself (no valid
+// light, GPU lacks R32F, …), tuning.x = 0 and the lerp(1, shadow,0)
+// reduces to fully lit.
+sampler2D spotShadowTex : register(s9);
+float4x4  spotShadowMat : register(c70);
+float4    spotShadowLightPos : register(c74);	// xyz pos, w radius
+float4    spotShadowTune : register(c75);	// .x = strength, .y = invMapSize, .z = bias, .w = softness
+
+// Local visibility helper — avoids the deprecated `step()` intrinsic
+// path which HLSL flags on some configurations with non-constant args.
+float SpotShadow_Visible(float ref, float sampled) { return sampled >= ref ? 1.0 : 0.0; }
+
+float SampleSpotShadow(float3 worldPos)
+{
+	float4 lp = mul(spotShadowMat, float4(worldPos, 1.0));
+	if(lp.w <= 0.0001) return 1.0;
+	lp.xyz /= lp.w;
+	float2 uv = lp.xy * 0.5 + 0.5;
+	uv.y = 1.0 - uv.y;
+	float refZ = lp.z - spotShadowTune.z;
+	// Out-of-frustum → fully lit. (Pixel is outside the spot light's
+	// cone, so it doesn't get any of its contribution anyway.)
+	if(any(uv < 0.0) || any(uv > 1.0) || refZ > 1.0 || refZ < 0.0)
+		return 1.0;
+	// 4-tap unit cross PCF — soft, cheap, no Poisson noise pattern.
+	float2 stp = spotShadowTune.yy * max(spotShadowTune.w, 0.5);
+	float vis = 0.0;
+	vis += SpotShadow_Visible(refZ, tex2D(spotShadowTex, uv + float2( stp.x, 0)).r);
+	vis += SpotShadow_Visible(refZ, tex2D(spotShadowTex, uv + float2(-stp.x, 0)).r);
+	vis += SpotShadow_Visible(refZ, tex2D(spotShadowTex, uv + float2(0,  stp.y)).r);
+	vis += SpotShadow_Visible(refZ, tex2D(spotShadowTex, uv + float2(0, -stp.y)).r);
+	return vis * 0.25;
+}
+
 float3 ApplyDynamicPointLights(float3 worldPos, float3 N)
 {
 	float3 sum = float3(0, 0, 0);
 	int n = (int)dynLightCount.x;
+	// Spot shadow visibility for slot 0 (the brightest light). Cheap
+	// `if` skips the texture sample + projection when CSpotShadow is
+	// off (tune.x = 0).
+	float spotVis = 1.0;
+	if(spotShadowTune.x > 0.001)
+		spotVis = lerp(1.0, SampleSpotShadow(worldPos), saturate(spotShadowTune.x));
 	[loop]
 	for(int i = 0; i < n; i++){
 		float4 lp  = dynLightData[i*2 + 0];	// xyz = world pos, w = radius
@@ -118,7 +166,12 @@ float3 ApplyDynamicPointLights(float3 worldPos, float3 N)
 		// `radius`. Standard formula: (1 - d/r)² × falloff.
 		float t = 1.0 - dist / radius;
 		float atten = t * t;
-		sum += lc.rgb * lc.w * ndotl * atten;
+		// Apply spot shadow only to the brightest light (slot 0) —
+		// matches what CSpotShadow rendered its depth map for. Other
+		// slots get full contribution because we have no shadow map
+		// for them.
+		float lightShadow = (i == 0) ? spotVis : 1.0;
+		sum += lc.rgb * lc.w * ndotl * atten * lightShadow;
 	}
 	return sum;
 }

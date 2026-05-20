@@ -75,6 +75,7 @@
 #include "custompipes.h"
 #ifdef POSTFX_HDR
 #include "gbuffer.h"
+#include "spotShadow.h"
 #ifdef POSTFX_CSM
 #include "csm.h"
 #endif
@@ -1643,6 +1644,20 @@ Idle(void *arg)
 		CCSM::BindReceiver();
 #endif
 
+#ifdef POSTFX_HDR
+		// Spot shadow for the brightest dynamic point light — picks
+		// the nearest bright CPointLights, renders scene depth from
+		// its position into a 512² map, and binds it on s9 for the
+		// receiver in default_pp_PS to occlude slot-0 of the dyn
+		// light array. Cheap (one extra scene depth pass; lots of
+		// atomics skipped because CSpotShadow piggy-backs on the
+		// CSM shadowDepthOnly fast path and most pipes early-out
+		// during it).
+		CSpotShadow::PickActiveLight(Scene.camera);
+		CSpotShadow::RenderShadowMap(Scene.camera);
+		CSpotShadow::BindReceiver();
+#endif
+
 		tbStartTimer(0, "RenderScene");
 		RenderScene();
 		tbEndTimer("RenderScene");
@@ -1664,6 +1679,12 @@ Idle(void *arg)
 		// cascades and we don't want a stray texture binding to alias
 		// against the cascade map's R32F values.
 		CCSM::UnbindReceiver();
+#endif
+#ifdef POSTFX_HDR
+		// Same idea for spot shadow — release sampler s9 + force
+		// receiver strength to 0 so the postfx PSs don't try to
+		// sample what they don't need.
+		CSpotShadow::UnbindReceiver();
 #endif
 		// SSAO runs between the scene pass (which filled the G-buffer)
 		// and the tonemap-resolve (which composes AO into the output).
