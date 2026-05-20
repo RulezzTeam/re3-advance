@@ -3,12 +3,15 @@
 // Inputs:
 //   tex0 = current LDR frame (CPostFX::pBackBuffer)
 //   tex1 = history buffer from previous frame (pTaaHistA/B ping-pong)
+//   tex2 = G-buffer (RGB = world normal*0.5+0.5, A = linear depth)
 // Output: temporally accumulated colour, written to the next history slot
 //
-// Reprojection is currently camera-only — we sample the history at the
-// same UV (small camera motion gives acceptable results) but clamp the
-// history into the 3x3 neighbourhood AABB to suppress ghosting on object
-// motion. Per-object motion vectors are a future upgrade.
+// Reprojection — reconstruct per-pixel world position from gbuf depth +
+// the camera's frustum corners, then project through the previous frame's
+// view-projection matrix to find the matching UV in the history buffer.
+// Camera motion is now properly handled; per-object motion is still
+// missing (vehicles + peds will ghost a little on direction changes),
+// which we mitigate via the YCoCg neighbourhood clamp.
 //
 // taaParams:
 //   .x = blend factor (~0.10..0.15; smaller = sharper but more flicker)
@@ -18,9 +21,21 @@
 
 sampler2D currentTex : register(s0);
 sampler2D historyTex : register(s1);
+sampler2D gbufTex    : register(s2);
 
 float4 taaParams : register(c10);
 float4 taaTexel  : register(c11);	// .xy = 1/W, 1/H
+
+// Reprojection constants — same layout as the volumetric fog / SSR.
+// .xyz = camera world pos, .w = farClip.
+float4 taaCamera : register(c12);
+// 4 frustum corner rays (uv = TL/TR/BR/BL) for view-ray reconstruction.
+float4 taaRayTL  : register(c13);
+float4 taaRayTR  : register(c14);
+float4 taaRayBR  : register(c15);
+float4 taaRayBL  : register(c16);
+// Previous frame's world-to-clip matrix (row-major).
+float4x4 taaPrevViewProj : register(c17);
 
 struct VS_out {
 	float4 Position		: POSITION;
@@ -73,15 +88,42 @@ float4 main(VS_out input) : COLOR
 	mn = mean - ext * 0.5;
 	mx = mean + ext * 0.5;
 
-	// History sample at the same UV (camera-only reproject).
-	float3 hisRgb = tex2D(historyTex, uv).rgb;
+	// Reproject through last frame's viewProj. Reconstruct world position
+	// from gbuf depth + bilerped view ray, then transform to NDC under
+	// prevViewProj. Off-screen reads fall back to current-frame UV.
+	float4 gbuf = tex2D(gbufTex, uv);
+	float  viewZ = gbuf.a * taaCamera.w;
+	float3 ray = lerp(lerp(taaRayTL.xyz, taaRayTR.xyz, uv.x),
+	                  lerp(taaRayBL.xyz, taaRayBR.xyz, uv.x),
+	                  uv.y);
+	float3 wp = taaCamera.xyz + ray * viewZ;
+	float4 prevClip = mul(float4(wp, 1.0), taaPrevViewProj);
+	float2 prevUV = uv;
+	float onScreen = 1.0;
+	if(abs(prevClip.w) > 1e-4){
+		prevClip.xyz /= prevClip.w;
+		prevUV = prevClip.xy * 0.5 + 0.5;
+		prevUV.y = 1.0 - prevUV.y;
+		// Reject off-screen reprojections (camera cut / sky / extreme
+		// pan); the YCoCg clamp + same-UV fallback handles those.
+		float2 chk = step(0.0, prevUV) * step(prevUV, 1.0);
+		onScreen = chk.x * chk.y;
+		if(gbuf.a < 0.0005) onScreen = 0.0;	// sky: no reproject
+	}
+	prevUV = lerp(uv, prevUV, onScreen);
+
+	// History sample at the reprojected UV.
+	float3 hisRgb = tex2D(historyTex, prevUV).rgb;
 	float3 hisY   = RGB2YCoCg(hisRgb);
 
 	// Clamp history into neighbourhood AABB — kills ghosting silhouettes
-	// when objects move and we don't have per-pixel velocity.
+	// from moving objects (we have no per-object velocity yet) and
+	// occlusion mismatches at frame boundaries.
 	hisY = clamp(hisY, mn, mx);
 
-	// Blend.
-	float3 outY = lerp(hisY, curY, saturate(taaParams.x));
+	// Blend. When we couldn't reproject (off-screen / sky / new-pixel),
+	// bias toward the current frame so we don't smear stale content.
+	float blend = lerp(1.0, saturate(taaParams.x), onScreen);
+	float3 outY = lerp(hisY, curY, blend);
 	return float4(YCoCg2RGB(outY), 1.0);
 }

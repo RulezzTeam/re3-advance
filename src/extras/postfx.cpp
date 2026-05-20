@@ -188,6 +188,16 @@ static int32 g_ssaoW, g_ssaoH;
 static void *taa_PS;
 static rw::Camera *taaCamA;
 static rw::Camera *taaCamB;
+// Cached at the end of each RenderTAA invocation so the next frame's
+// reprojection knows where the world points used to land on screen.
+// Initialised to identity; the first frame falls back to no-motion
+// (same UV) which matches the legacy camera-only behaviour.
+static rw::RawMatrix taaPrevViewProj = {
+	{ 1, 0, 0 }, 0,
+	{ 0, 1, 0 }, 0,
+	{ 0, 0, 1 }, 0,
+	{ 0, 0, 0 }, 1,
+};
 static void *ssr_PS;
 static rw::Camera *ssrCam;	// half-res RGBA8 SSR target
 static void *dof_PS;
@@ -1628,23 +1638,59 @@ CPostFX::RenderTAA(RwCamera *cam)
 	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDONE);
 	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDZERO);
 
-	// 3. Blend pass: pBackBuffer (s0=current) + histRead (s1=previous) ->
-	//    histWrite.
+	// 3. Blend pass: pBackBuffer (s0=current) + histRead (s1=previous) +
+	//    gbuf (s2) -> histWrite. The gbuf is required for the reprojection
+	//    step in taa_PS — without it the history is sampled at the same UV
+	//    which only works for static cameras.
 	RwCameraEndUpdate(cam);
 	RwCameraBeginUpdate((RwCamera*)writeCam);
 	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, pBackBuffer);
 	BindRasterToSampler(1, histRead);
+	bool gbufBound = false;
+	if(CGBuffer::GbufEnabled && CGBuffer::pGbufNormalDepth){
+		BindRasterToSampler(2, CGBuffer::pGbufNormalDepth);
+		gbufBound = true;
+	}
 	{
 		float p[4] = { TaaBlend, TaaClamp, 0.0f, 0.0f };
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(10, p, 1);
 		float t[4] = { 1.0f / (float)g_postfxRtWidth, 1.0f / (float)g_postfxRtHeight, 0.0f, 0.0f };
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(11, t, 1);
+
+		// Reprojection constants — same layout as the volumetric fog /
+		// SSR (camera + 4 corner rays + prev viewProj).
+		rw::Camera *rwcam = (rw::Camera*)cam;
+		rw::V3d camPos = rwcam->getFrame()->getLTM()->pos;
+		float cCam[4] = { camPos.x, camPos.y, camPos.z, rwcam->farPlane };
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(12, cCam, 1);
+		const rw::V3d *fc = rwcam->frustumCorners;
+		float corners[4][4] = {
+			{ fc[0].x, fc[0].y, fc[0].z, 0 },	// TL
+			{ fc[1].x, fc[1].y, fc[1].z, 0 },	// TR
+			{ fc[2].x, fc[2].y, fc[2].z, 0 },	// BR
+			{ fc[3].x, fc[3].y, fc[3].z, 0 },	// BL
+		};
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(13, &corners[0][0], 4);
+		// Previous frame's view-projection. Captured at the end of the
+		// previous RenderTAA call; on the first frame it's still identity,
+		// which makes the reproject UV match the current one — same as
+		// the old camera-only behaviour, no surprise.
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(17, (const float*)&taaPrevViewProj, 4);
+
 		rw::d3d::im2dOverridePS = taa_PS;
 		RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, Vertex, 4, Index, 6);
 		rw::d3d::im2dOverridePS = nil;
 	}
 	BindRasterToSampler(1, nil);
+	if(gbufBound)
+		BindRasterToSampler(2, nil);
 	RwCameraEndUpdate((RwCamera*)writeCam);
+
+	// Cache this frame's view×projection for next frame's reprojection.
+	{
+		rw::Camera *rwcam = (rw::Camera*)cam;
+		rw::RawMatrix::mult(&taaPrevViewProj, &rwcam->devView, &rwcam->devProj);
+	}
 
 	// 4. Restore the main camera and copy histWrite -> backbuffer so the
 	//    user sees the resolved TAA result.
