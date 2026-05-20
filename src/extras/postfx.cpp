@@ -86,7 +86,8 @@ float CPostFX::SsaoBias = 0.03f;
 float CPostFX::SsaoIntensity = 1.2f;
 float CPostFX::SsaoStrength = 0.6f;
 float CPostFX::SsaoPower = 1.4f;
-int CPostFX::SsaoAlgorithm = 0;	// default to classic SSAO; GTAO is opt-in
+int CPostFX::SsaoAlgorithm = 0;	// default to classic SSAO; alt algorithms opt-in
+int CPostFX::SsaoMixMode = 1;	// weighted average is the friendliest default
 // Procedural IBL — defaults that feel like a "global gradient" ambient.
 // Off by default until the player opts in via the menu; settings.ini
 // remembers the choice.
@@ -118,7 +119,7 @@ float CPostFX::ContactShadowBias = 0.05f;
 RwRaster *CPostFX::pSsrA;
 bool CPostFX::SsrEnable = false;
 float CPostFX::SsrMaxDistance = 30.0f;
-int CPostFX::SsrStepCount = 18;
+int CPostFX::SsrStepCount = 28;	// bumped from 18 — binary refinement makes the extra steps cheap
 float CPostFX::SsrThickness = 0.5f;
 float CPostFX::SsrStrength = 0.6f;
 float CPostFX::SsrFresnelBias = 0.04f;
@@ -147,6 +148,9 @@ bool CPostFX::TaaEnable = false;	// opt-in (FXAA stays default)
 float CPostFX::TaaBlend = 0.12f;
 float CPostFX::TaaClamp = 1.0f;
 int CPostFX::TaaFrameIdx = 0;
+// AaMode 0..3 — drives which AA pass(es) run. Default 1 (FXAA only)
+// keeps the old behaviour when settings.ini doesn't have the new key.
+int CPostFX::AaMode = 1;
 #endif
 
 static RwIm2DVertex Vertex[4];
@@ -181,6 +185,10 @@ void *hdrResolve_PS;
 static void *ssao_PS;
 static void *ssaoBlur_PS;
 static void *gtao_PS;	// alternative AO algorithm (CPostFX::SsaoAlgorithm = 1)
+static void *hbao_PS;	// HBAO (SsaoAlgorithm = 2)
+static void *aoMix_PS;	// mix shader (SsaoAlgorithm = 3 → combine SSAO+GTAO+HBAO)
+static RwRaster *pSsaoMixC;	// third scratch RT for HBAO output during mix
+static rw::Camera *ssaoMixCam;
 static rw::Camera *ssaoCamA;
 static rw::Camera *ssaoCamB;
 static RwIm2DVertex SsaoVertex[4];	// half-res quad sized to SSAO RT
@@ -338,6 +346,11 @@ CPostFX::Open(RwCamera *cam)
 	pSsaoB = RwRasterCreate(sw, sh, depth, rwRASTERTYPECAMERATEXTURE);
 	ssaoCamA = CreateBloomCam(pSsaoA);
 	ssaoCamB = CreateBloomCam(pSsaoB);
+	// Third half-res RT — only used in Mixed AO mode (HBAO output before
+	// the aoMix_PS compose). Allocated here so we don't pay the create
+	// cost during gameplay if the user toggles modes.
+	pSsaoMixC = RwRasterCreate(sw, sh, depth, rwRASTERTYPECAMERATEXTURE);
+	ssaoMixCam = CreateBloomCam(pSsaoMixC);
 	g_ssaoW = sw;
 	g_ssaoH = sh;
 
@@ -619,6 +632,14 @@ CPostFX::Open(RwCamera *cam)
 #include "shaders/obj/gtao_PS.inc"
 	gtao_PS = rw::d3d::createPixelShader(gtao_PS_cso);
 	}
+	{
+#include "shaders/obj/hbao_PS.inc"
+	hbao_PS = rw::d3d::createPixelShader(hbao_PS_cso);
+	}
+	{
+#include "shaders/obj/aoMix_PS.inc"
+	aoMix_PS = rw::d3d::createPixelShader(aoMix_PS_cso);
+	}
 #endif
 #ifdef SOFT_SHADOWS
 	{
@@ -673,6 +694,8 @@ CPostFX::Close(void)
 	if(ssaoCamB){ DestroyBloomCam(ssaoCamB); ssaoCamB = nil; }
 	if(pSsaoA){ RwRasterDestroy(pSsaoA); pSsaoA = nil; }
 	if(pSsaoB){ RwRasterDestroy(pSsaoB); pSsaoB = nil; }
+	if(ssaoMixCam){ DestroyBloomCam(ssaoMixCam); ssaoMixCam = nil; }
+	if(pSsaoMixC){ RwRasterDestroy(pSsaoMixC); pSsaoMixC = nil; }
 	if(ssrCam){ DestroyBloomCam(ssrCam); ssrCam = nil; }
 	if(pSsrA){ RwRasterDestroy(pSsrA); pSsrA = nil; }
 	if(dofCam){ DestroyBloomCam(dofCam); dofCam = nil; }
@@ -717,6 +740,8 @@ CPostFX::Close(void)
 	if(ssr_PS){ rw::d3d::destroyPixelShader(ssr_PS); ssr_PS = nil; }
 	if(dof_PS){ rw::d3d::destroyPixelShader(dof_PS); dof_PS = nil; }
 	if(gtao_PS){ rw::d3d::destroyPixelShader(gtao_PS); gtao_PS = nil; }
+	if(hbao_PS){ rw::d3d::destroyPixelShader(hbao_PS); hbao_PS = nil; }
+	if(aoMix_PS){ rw::d3d::destroyPixelShader(aoMix_PS); aoMix_PS = nil; }
 #endif
 #ifdef SOFT_SHADOWS
 	if(shadowPCF_PS){ rw::d3d::destroyPixelShader(shadowPCF_PS); shadowPCF_PS = nil; }
@@ -1066,14 +1091,61 @@ CPostFX::RenderSSAO(RwCamera *cam)
 			};
 			rw::d3d::d3ddevice->SetPixelShaderConstantF(14, csTune, 1);
 		}
-		// Pick the AO algorithm. GTAO has a different sampling model
-		// (horizon angles vs hemisphere) but shares the same c10/c11
-		// constants for radius/bias/intensity/farClip + texel + noise.
-		rw::d3d::im2dOverridePS = (SsaoAlgorithm == 1 && gtao_PS) ? gtao_PS : ssao_PS;
+		// Pick the AO algorithm. All algorithms share c10/c11 constants
+		// (radius/bias/intensity/farClip + texel/noise). In Mixed mode
+		// (algorithm 3) we run SSAO here, then GTAO into pSsaoB, then
+		// HBAO into pSsaoMixC, and finally compose via aoMix_PS.
+		void *aoShader = ssao_PS;
+		if(SsaoAlgorithm == 1 && gtao_PS) aoShader = gtao_PS;
+		else if(SsaoAlgorithm == 2 && hbao_PS) aoShader = hbao_PS;
+		else if(SsaoAlgorithm == 3 && gtao_PS) aoShader = ssao_PS; // Mixed: start with SSAO
+		rw::d3d::im2dOverridePS = aoShader;
 #endif
 		RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, SsaoVertex, 4, Index, 6);
 	}
 	RwCameraEndUpdate((RwCamera*)ssaoCamA);
+
+#ifdef RW_D3D9
+	// Mixed mode — render GTAO into pSsaoB and HBAO into pSsaoMixC, then
+	// compose via aoMix_PS. The compose writes back to pSsaoA so the
+	// downstream bilateral blur picks up the merged result.
+	if(SsaoAlgorithm == 3 && gtao_PS && hbao_PS && aoMix_PS &&
+	   pSsaoMixC != nil && ssaoMixCam != nil){
+		// Pass 1b: GTAO → pSsaoB
+		RwCameraBeginUpdate((RwCamera*)ssaoCamB);
+		RwRenderStateSet(rwRENDERSTATETEXTURERASTER, CGBuffer::pGbufNormalDepth);
+		{
+			rw::d3d::im2dOverridePS = gtao_PS;
+			RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, SsaoVertex, 4, Index, 6);
+		}
+		RwCameraEndUpdate((RwCamera*)ssaoCamB);
+
+		// Pass 1c: HBAO → pSsaoMixC
+		RwCameraBeginUpdate((RwCamera*)ssaoMixCam);
+		RwRenderStateSet(rwRENDERSTATETEXTURERASTER, CGBuffer::pGbufNormalDepth);
+		{
+			rw::d3d::im2dOverridePS = hbao_PS;
+			RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, SsaoVertex, 4, Index, 6);
+		}
+		RwCameraEndUpdate((RwCamera*)ssaoMixCam);
+
+		// Compose: pSsaoA (SSAO) + pSsaoB (GTAO) + pSsaoMixC (HBAO) →
+		// pSsaoA (in-place). Bind s0/s1/s2 explicitly.
+		RwCameraBeginUpdate((RwCamera*)ssaoCamA);
+		RwRenderStateSet(rwRENDERSTATETEXTURERASTER, pSsaoA);
+		BindRasterToSampler(1, pSsaoB);
+		BindRasterToSampler(2, pSsaoMixC);
+		{
+			float pp[4] = { 1.0f, 1.0f, 1.0f, (float)SsaoMixMode };
+			rw::d3d::d3ddevice->SetPixelShaderConstantF(10, pp, 1);
+			rw::d3d::im2dOverridePS = aoMix_PS;
+			RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, SsaoVertex, 4, Index, 6);
+		}
+		BindRasterToSampler(1, nil);
+		BindRasterToSampler(2, nil);
+		RwCameraEndUpdate((RwCamera*)ssaoCamA);
+	}
+#endif
 
 	// Pass 2: bilateral blur H — pSsaoA -> pSsaoB. Also bind G-buffer on s1
 	// for the depth weights.
@@ -1868,22 +1940,29 @@ CPostFX::Render(RwCamera *cam, uint32 red, uint32 green, uint32 blue, uint32 blu
 
 #ifdef POSTFX_HDR
 	// TAA and FXAA are mutually exclusive AA strategies — TAA runs first
-	// and disables FXAA for this frame when it's active.
-	bool taaActive = false;
-	if(TaaEnable && !bJustInitialised && type != MOTION_BLUR_SNIPER &&
-	   EffectSwitch != POSTFX_OFF){
+	// AA mode drives both passes:
+	//   1 (FXAA): RenderFXAA only
+	//   2 (TAA):  RenderTAA only
+	//   3 (Combined): RenderTAA then RenderFXAA — TAA stabilises the
+	//      temporal signal first, FXAA finishes any geometric edges
+	//      the neighbourhood clamp left aliased. Slightly more blur
+	//      than TAA-alone but much cleaner static + motion shots.
+	// 0 (Off): no AA. Legacy FxaaEnable/TaaEnable bools no longer
+	// participate — AaMode is authoritative.
+	if((AaMode == 2 || AaMode == 3) && !bJustInitialised &&
+	   type != MOTION_BLUR_SNIPER && EffectSwitch != POSTFX_OFF){
 		RenderTAA(cam);
-		taaActive = true;
 	}
 #endif
 
 #ifdef POSTFX_FXAA
-	if(FxaaEnable && !bJustInitialised && type != MOTION_BLUR_SNIPER &&
-	   EffectSwitch != POSTFX_OFF
 #ifdef POSTFX_HDR
-	   && !taaActive
+	bool runFxaa = (AaMode == 1 || AaMode == 3);
+#else
+	bool runFxaa = FxaaEnable;
 #endif
-	  )
+	if(runFxaa && !bJustInitialised && type != MOTION_BLUR_SNIPER &&
+	   EffectSwitch != POSTFX_OFF)
 		RenderFXAA(cam);
 #endif
 

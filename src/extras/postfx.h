@@ -43,15 +43,19 @@ public:
 #endif
 #ifdef POSTFX_HDR
 	// TAA (also gated by POSTFX_HDR so we have a clean colour pipeline +
-	// matching RT sizes). FXAA is auto-disabled while TaaEnable is on
-	// because both passes do edge smoothing — running together adds
-	// blur without quality gain.
+	// matching RT sizes). AA mode select governs whether FXAA, TAA, or
+	// both are active (Combined runs TAA → FXAA so geometric edges get
+	// the sharper FXAA pass after temporal accumulation).
 	static RwRaster *pTaaHistA;
 	static RwRaster *pTaaHistB;
 	static bool TaaEnable;
 	static float TaaBlend;		// 0.05..0.20 typical; smaller = more temporal accumulation
 	static float TaaClamp;		// neighbourhood AABB expansion (1.0 default)
 	static int   TaaFrameIdx;	// 0 or 1 ping-pong slot for the current history
+	// 0 = Off, 1 = FXAA only, 2 = TAA only, 3 = TAA + FXAA combined.
+	// Overrides FxaaEnable/TaaEnable when non-zero — kept separate so
+	// settings.ini upgrades cleanly from the old paired bools.
+	static int   AaMode;
 #endif
 #ifdef POSTFX_GODRAYS
 	static bool GodRaysEnable;
@@ -82,9 +86,17 @@ public:
 	static float SsaoIntensity;	// occlusion scale (~1..3)
 	static float SsaoStrength;	// final compose lerp (0 = off, 1 = full effect)
 	static float SsaoPower;		// AO curve power (>1 = darker, <1 = softer)
-	// Algorithm select: 0 = classic SSAO (Crytek hemisphere), 1 = GTAO
-	// (horizon-based, less noisy, slightly more expensive per tap).
+	// Algorithm select:
+	//   0 = classic SSAO (Crytek hemisphere) — strongest, fastest
+	//   1 = GTAO (ground-truth horizon integration) — less noisy
+	//   2 = HBAO (horizon-based) — sharper edges
+	//   3 = Mixed (runs all three + blends; expensive but richest)
 	static int SsaoAlgorithm;
+	// AO mix mode (only used when SsaoAlgorithm == 3):
+	//   0 = min (darkest wins, most aggressive)
+	//   1 = weighted average
+	//   2 = multiply (most natural with well-tuned inputs)
+	static int SsaoMixMode;
 
 	// Contact AO — short cross-tap ray-march on top of the hemisphere
 	// kernel. Catches sub-pixel contacts the main kernel jumps over.

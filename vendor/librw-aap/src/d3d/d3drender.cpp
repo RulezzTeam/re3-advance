@@ -109,6 +109,18 @@ uploadIBL(void)
 // (rather than 3 separate calls) for the matrix block. Strength gated to
 // 0 by the host when CSM is disabled, so the receiver `lerp(1.0, raw, w)`
 // short-circuits without any branch.
+// Soft-PCF tuning — second c-reg block beyond the basic CSM upload.
+// Host calls setCsmSoftness(mode, radiusMul) once per change; uploadCSM
+// pushes it together with the rest of the cascade params so the receiver
+// sees a consistent snapshot. mode=0 → 4-tap PCF, mode=1 → 16-tap soft.
+static float csmTuning2[4] = { 0.0f, 1.0f, 0.0f, 0.0f };
+void
+setCsmSoftness(int mode, float radiusMul)
+{
+	csmTuning2[0] = (float)mode;
+	csmTuning2[1] = (radiusMul > 0.1f ? radiusMul : 1.0f);
+}
+
 void
 uploadCSM(const float matrices[48], const float splits[3], float strength,
           float invSize, float depthBias, float blendMetres)
@@ -121,6 +133,7 @@ uploadCSM(const float matrices[48], const float splits[3], float strength,
 	d3ddevice->SetPixelShaderConstantF(60, params, 1);
 	float tuning[4] = { invSize, invSize, depthBias, blendMetres };
 	d3ddevice->SetPixelShaderConstantF(61, tuning, 1);
+	d3ddevice->SetPixelShaderConstantF(62, csmTuning2, 1);
 }
 
 

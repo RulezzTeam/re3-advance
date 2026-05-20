@@ -32,6 +32,8 @@ public:
 	static float Strength;		// 0..1 mix into the lit term
 	static float Bias;		// depth comparison bias (~0.001..0.01)
 	static int32 NumCascades;	// usable cascades (1..CSM_NUM_CASCADES)
+	static int32 SoftnessMode;	// 0 = 4-tap PCF, 1 = 16-tap soft PCF
+	static float SoftnessRadius;	// radius multiplier on the PCF texel step
 
 	static void InitOnce(void);
 	static void Open(RwCamera *cam);

@@ -477,6 +477,8 @@ void setWetness(float wetness, float diffuseDarken, float specBoost, float power
 // need to be bound on samplers s4..s6 by the host before the scene draws.
 void uploadCSM(const float matrices[48], const float splits[3], float strength,
                float invSize, float depthBias, float blendMetres);
+// PCF softness tuning — mode 0 = 4-tap, mode 1 = 16-tap soft.
+void setCsmSoftness(int mode, float radiusMul);
 
 void createDefaultShaders(void);
 void destroyDefaultShaders(void);

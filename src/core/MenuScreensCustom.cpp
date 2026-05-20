@@ -134,7 +134,7 @@
 
 #ifdef POSTFX_HDR
 	#define POSTFX_TAA_SELECTORS \
-		MENUACTION_CFO_SELECT, "FED_TAA", { new CCFOSelect((int8*)&CPostFX::TaaEnable, "Graphics", "TAA", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_AAM", { new CCFOSelect((int8*)&CPostFX::AaMode, "Graphics", "AaMode", aaModeNames, 4, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_TAB", { new CCFOSlider(&CPostFX::TaaBlend, "Graphics", "TaaBlend", 0.02f, 0.5f) }, 0, 0, MENUALIGN_LEFT,
 #else
 	#define POSTFX_TAA_SELECTORS
@@ -168,7 +168,8 @@
 		MENUACTION_CFO_SELECT, "FED_HDR", { new CCFOSelect((int8*)&CGBuffer::HdrEnabled, "Graphics", "HDR", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_GBF", { new CCFOSelect((int8*)&CGBuffer::GbufEnabled, "Graphics", "GBuffer", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_SAO", { new CCFOSelect((int8*)&CPostFX::SsaoEnable, "Graphics", "SSAO", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SELECT, "FED_SAA", { new CCFOSelect((int8*)&CPostFX::SsaoAlgorithm, "Graphics", "SsaoAlgo", ssaoAlgoNames, 2, false) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_SAA", { new CCFOSelect((int8*)&CPostFX::SsaoAlgorithm, "Graphics", "SsaoAlgo", ssaoAlgoNames, 4, false) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_SAM", { new CCFOSelect((int8*)&CPostFX::SsaoMixMode, "Graphics", "SsaoMix", ssaoMixNames, 3, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_SAR", { new CCFOSlider(&CPostFX::SsaoRadius, "Graphics", "SsaoRadius", 0.2f, 3.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_SAI", { new CCFOSlider(&CPostFX::SsaoIntensity, "Graphics", "SsaoIntensity", 0.0f, 4.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_SAS", { new CCFOSlider(&CPostFX::SsaoStrength, "Graphics", "SsaoStrength", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
@@ -212,7 +213,9 @@
 #ifdef POSTFX_CSM
 	#define POSTFX_CSM_SELECTORS \
 		MENUACTION_CFO_SELECT, "FED_CSM", { new CCFOSelect((int8*)&CCSM::Enabled, "Graphics", "CSM", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FED_CSS", { new CCFOSlider(&CCSM::Strength, "Graphics", "CSMStrength", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_SLIDER, "FED_CSS", { new CCFOSlider(&CCSM::Strength, "Graphics", "CSMStrength", 0.0f, 1.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_CFM", { new CCFOSelect((int8*)&CCSM::SoftnessMode, "Graphics", "CSMSoft", csmSoftNames, 2, false) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_CFR", { new CCFOSlider(&CCSM::SoftnessRadius, "Graphics", "CSMSoftR", 1.0f, 4.0f) }, 0, 0, MENUALIGN_LEFT,
 #else
 	#define POSTFX_CSM_SELECTORS
 #endif
@@ -235,7 +238,12 @@ const char *off_on[] = { "FEM_OFF", "FEM_ON" };
 const char *envMapSizes[] = { "256", "512", "1024", "2048" };
 #endif
 #ifdef POSTFX_HDR
-const char *ssaoAlgoNames[] = { "SSAO", "GTAO" };
+const char *ssaoAlgoNames[] = { "SSAO", "GTAO", "HBAO", "Mixed" };
+const char *ssaoMixNames[] = { "Min", "Average", "Multiply" };
+const char *aaModeNames[] = { "Off", "FXAA", "TAA", "TAA+FXAA" };
+#endif
+#ifdef POSTFX_CSM
+const char *csmSoftNames[] = { "Hard (4-tap)", "Soft (16-tap)" };
 #endif
 
 void RestoreDefGraphics(int8 action) {
@@ -308,6 +316,7 @@ void RestoreDefGraphics(int8 action) {
 		CPostFX::SsaoIntensity = 1.2f;
 		CPostFX::SsaoStrength = 0.6f;
 		CPostFX::SsaoAlgorithm = 0;
+		CPostFX::SsaoMixMode = 1;
 		CPostFX::SsaoContactStrength = 0.35f;
 		CPostFX::SsaoContactRadius = 3.5f;
 		CPostFX::SsaoContactMaxDz = 0.6f;
@@ -321,7 +330,7 @@ void RestoreDefGraphics(int8 action) {
 		CPostFX::IblGroundTint = 0.6f;
 		CPostFX::SsrEnable = false;
 		CPostFX::SsrMaxDistance = 30.0f;
-		CPostFX::SsrStepCount = 18;
+		CPostFX::SsrStepCount = 28;
 		CPostFX::SsrThickness = 0.5f;
 		CPostFX::SsrStrength = 0.6f;
 		CPostFX::SsrFresnelBias = 0.04f;
@@ -337,6 +346,7 @@ void RestoreDefGraphics(int8 action) {
 		CPostFX::TaaEnable = false;
 		CPostFX::TaaBlend = 0.12f;
 		CPostFX::TaaClamp = 1.0f;
+		CPostFX::AaMode = 1;
 		CPostFX::VolFogEnable = false;
 		CPostFX::VolFogStrength = 0.8f;
 		CPostFX::VolFogDensity = 0.015f;
@@ -353,6 +363,8 @@ void RestoreDefGraphics(int8 action) {
 		CCSM::Enabled = false;			// off until receiver lands in default_pp_PS
 		CCSM::Strength = 0.85f;
 		CCSM::Bias = 0.003f;
+		CCSM::SoftnessMode = 0;
+		CCSM::SoftnessRadius = 1.5f;
 	#endif
 
 	#ifdef GRAPHICS_MENU_OPTIONS // otherwise Frontend will handle those

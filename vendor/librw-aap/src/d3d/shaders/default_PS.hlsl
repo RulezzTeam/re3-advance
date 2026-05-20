@@ -82,15 +82,42 @@ sampler2D csmTex0 : register(s4);
 sampler2D csmTex1 : register(s5);
 sampler2D csmTex2 : register(s6);
 
-// 4-tap Poisson disc — small kernel, sub-pixel offsets, fits ps_3_0
-// instruction budget easily. Larger 16-tap variants are an optional
-// follow-up gated by an extra #define.
+// 4-tap Poisson disc — small kernel, sub-pixel offsets. Used when the
+// host requests low-quality CSM PCF (csmTuning2.x = 0).
 static const float2 csmPoisson4[4] = {
 	float2( 0.94558,  0.76995),
 	float2(-0.81544,  0.18687),
 	float2(-0.20254, -0.86342),
 	float2( 0.51842, -0.40664),
 };
+
+// 16-tap Poisson disc (Mitchell-style distribution) — much softer + less
+// banding at the cost of 4× the texture reads. Used when csmTuning2.x = 1
+// (high-quality soft shadows).
+static const float2 csmPoisson16[16] = {
+	float2( 0.94558,  0.76995),
+	float2(-0.81544,  0.18687),
+	float2(-0.20254, -0.86342),
+	float2( 0.51842, -0.40664),
+	float2( 0.31334,  0.92577),
+	float2(-0.55781,  0.65728),
+	float2(-0.92345, -0.32018),
+	float2(-0.42124, -0.10918),
+	float2( 0.04123, -0.51284),
+	float2( 0.79827,  0.10342),
+	float2(-0.13567,  0.34128),
+	float2( 0.61283,  0.43712),
+	float2(-0.30852, -0.59123),
+	float2(-0.71042,  0.36018),
+	float2( 0.18267, -0.18412),
+	float2( 0.45123,  0.05731),
+};
+
+// Additional tuning slot (csmTuning is c61, this lives at c62).
+// .x = PCF mode (0 = 4-tap, 1 = 16-tap soft)
+// .y = PCF radius multiplier (1.0 = stock, 2..3 = even softer)
+// .z, .w = reserved
+float4 csmTuning2 : register(c62);
 
 float CSMSampleCascade(int idx, float3 worldPos)
 {
@@ -108,16 +135,34 @@ float CSMSampleCascade(int idx, float3 worldPos)
 		return 1.0;
 
 	float vis = 0.0;
-	[unroll]
-	for(int i = 0; i < 4; i++){
-		float2 ofs = csmPoisson4[i] * csmTuning.xy;
-		float d;
-		if(idx == 0)      d = tex2D(csmTex0, uv + ofs).r;
-		else if(idx == 1) d = tex2D(csmTex1, uv + ofs).r;
-		else              d = tex2D(csmTex2, uv + ofs).r;
-		vis += step(refZ, d);
+	float2 texelStep = csmTuning.xy * max(csmTuning2.y, 1.0);
+	// 16-tap soft path — picks up 4× the samples for visibly less
+	// banding. Worth it on the player's car interior + close foliage
+	// where shadow edges are visible. The 4-tap fallback stays for
+	// low-end GPUs / "performance" profile.
+	if(csmTuning2.x > 0.5){
+		[unroll]
+		for(int i = 0; i < 16; i++){
+			float2 ofs = csmPoisson16[i] * texelStep;
+			float d;
+			if(idx == 0)      d = tex2D(csmTex0, uv + ofs).r;
+			else if(idx == 1) d = tex2D(csmTex1, uv + ofs).r;
+			else              d = tex2D(csmTex2, uv + ofs).r;
+			vis += step(refZ, d);
+		}
+		return vis * (1.0/16.0);
+	}else{
+		[unroll]
+		for(int i = 0; i < 4; i++){
+			float2 ofs = csmPoisson4[i] * texelStep;
+			float d;
+			if(idx == 0)      d = tex2D(csmTex0, uv + ofs).r;
+			else if(idx == 1) d = tex2D(csmTex1, uv + ofs).r;
+			else              d = tex2D(csmTex2, uv + ofs).r;
+			vis += step(refZ, d);
+		}
+		return vis * 0.25;
 	}
-	return vis * 0.25;
 }
 
 float CSMShadowFactor(float3 worldPos, float viewDist)

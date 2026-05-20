@@ -22,6 +22,8 @@ int32 CCSM::MapSize = CSM_DEFAULT_SIZE;
 float CCSM::Strength = 0.85f;
 float CCSM::Bias = 0.003f;
 int32 CCSM::NumCascades = 3;
+int32 CCSM::SoftnessMode = 0;	// default to 4-tap PCF; 16-tap is opt-in
+float CCSM::SoftnessRadius = 1.5f;	// slight softening by default
 
 void *csmDepthVS;
 void *csmDepthPS;
@@ -354,6 +356,7 @@ CCSM::BindReceiver(void)
 		Cascades[1].splitDist,
 		Cascades[2].splitDist,
 	};
+	rw::d3d::setCsmSoftness((int)SoftnessMode, SoftnessRadius);
 	rw::d3d::uploadCSM(matrices, splits, Strength, 1.0f / (float)MapSize, Bias, 4.0f /* blend metres */);
 #endif
 }

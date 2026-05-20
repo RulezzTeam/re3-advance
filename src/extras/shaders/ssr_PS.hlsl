@@ -98,9 +98,11 @@ float4 main(VS_out input) : COLOR
 	float3 hitColor = float3(0, 0, 0);
 	float  hitMask = 0.0;
 	float  alive = 1.0;	// runtime "found" gate, replaces break for ps_3_0
+	float  hitT    = 0.0;	// distance along R where we found the hit
+	float  prevDz  = -thickness;	// previous step's dz, used for refinement
 
 	[loop]
-	for(int i = 0; i < 32; i++){
+	for(int i = 0; i < 48; i++){
 		// Bail out of further work once we've found a hit (or gone off-
 		// screen). We can't `break` here because the gbuf/hdr tex2D
 		// calls below use computed UVs (gradient instructions can't live
@@ -130,13 +132,45 @@ float4 main(VS_out input) : COLOR
 		float4 col = tex2Dlod(hdrTex, float4(spUV, 0, 0));
 		float2 fade = smoothstep(0.0, 0.08, spUV) * smoothstep(0.0, 0.08, 1.0 - spUV);
 
+		// Remember the march parameters at hit time so we can refine.
+		hitT = lerp(hitT, t, thisHit);
 		hitColor = lerp(hitColor, col.rgb, thisHit);
 		hitMask  = lerp(hitMask,  fade.x * fade.y, thisHit);
+		prevDz = lerp(prevDz, dz, doStep);
 		// Once we hit, mute further iterations.
 		alive *= 1.0 - thisHit;
 		// If we go off-screen, also stop further hits.
 		alive *= onScreen;
 	}
+
+	// Binary refinement — narrow the hit point with 4 bisection steps
+	// between (hitT - stepLen) and hitT. Only meaningful when we
+	// actually had a hit (hitMask > 0); otherwise the loop runs but
+	// can't move hitColor since the depth tests will keep failing.
+	float refineLow  = max(hitT - stepLen, 0.0);
+	float refineHigh = hitT;
+	float foundFlag  = step(0.5, hitMask);
+	[unroll]
+	for(int j = 0; j < 4; j++){
+		float midT = (refineLow + refineHigh) * 0.5;
+		float3 mp = wp + R * midT;
+		float3 mpProj = WorldToUVDepth(mp);
+		float2 mpUV = mpProj.xy;
+		float4 mpGbuf = tex2Dlod(gbufTex, float4(mpUV, 0, 0));
+		float mpViewZ = mpGbuf.a * ssrCamera.w;
+		float mpRayZ = length(mp - ssrCamera.xyz);
+		float mpDz = mpRayZ - mpViewZ;
+		// If mid is in front of geometry (mpDz > 0) we're past the hit,
+		// so the actual hit is in [low, mid]; otherwise [mid, high].
+		float pastHit = step(0.0, mpDz);
+		refineHigh = lerp(refineHigh, midT, pastHit);
+		refineLow  = lerp(midT, refineLow, pastHit);
+	}
+	// Take the refined colour only if we actually had a hit.
+	float3 refinedHitUV = wp + R * ((refineLow + refineHigh) * 0.5);
+	float3 refinedProj  = WorldToUVDepth(refinedHitUV);
+	float4 refinedCol   = tex2Dlod(hdrTex, float4(refinedProj.xy, 0, 0));
+	hitColor = lerp(hitColor, refinedCol.rgb, foundFlag);
 
 	return float4(hitColor, hitMask * ssrParams.w);
 }
