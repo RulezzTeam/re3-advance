@@ -770,11 +770,12 @@ CMenuManager::CheckSliderMovement(int value)
 	case MENUACTION_CFO_SLIDER:
 	{
 		CMenuScreenCustom::CMenuEntry &option = aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption];
-		// Dependency gate — silently absorb left/right input when the
-		// parent toggle is off so the slider can't be moved while the
-		// effect it controls is disabled. Same UX as disableIfGameLoaded
-		// on a CCFOSelect.
-		if (option.m_CFOSlider->enableDep != nil && *option.m_CFOSlider->enableDep == 0)
+		// Cascade dependency gate — silently absorb left/right input
+		// when ANY dependency in the chain is off. Walks both slots
+		// via CCFODepsActive so the slider stays locked even when its
+		// immediate parent toggle reads 1 but a transitive prerequisite
+		// (HDR / GBuf master) is off.
+		if (!CCFODepsActive(option.m_CFOSlider->enableDep, option.m_CFOSlider->enableDep2))
 			break;
 
 		float oldValue = *(float*)option.m_CFOSlider->value;
@@ -1369,12 +1370,13 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 				case MENUACTION_CFO_SLIDER:
 				{
 					// Slider label dependency gate — dim the leftText when
-					// the parent toggle is off. The slider BAR itself is
-					// drawn separately by ProcessSlider (see further down);
-					// the label text gets the dim color via the standard
-					// leftText render pipeline that runs after this switch.
+					// any dependency in the chain is off. CCFODepsActive
+					// walks (enableDep, enableDep2) so cascades like
+					// VolFogStrength → VolFogEnable → HdrEnabled fire
+					// correctly: turning off HDR grays VolFogStrength
+					// even though VolFogEnable still reads 1 in memory.
 					CMenuScreenCustom::CMenuEntry &option = aScreens[m_nCurrScreen].m_aEntries[i];
-					if (option.m_CFOSlider->enableDep != nil && *option.m_CFOSlider->enableDep == 0)
+					if (!CCFODepsActive(option.m_CFOSlider->enableDep, option.m_CFOSlider->enableDep2))
 						CFont::SetColor(CRGBA(DARKMENUOPTION_COLOR.r, DARKMENUOPTION_COLOR.g, DARKMENUOPTION_COLOR.b, FadeIn(255)));
 					break;
 				}
@@ -1384,13 +1386,15 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 					if (option.m_Action == MENUACTION_CFO_SELECT) {
 						if (option.m_CFOSelect->disableIfGameLoaded && !m_bGameNotLoaded)
 							CFont::SetColor(CRGBA(DARKMENUOPTION_COLOR.r, DARKMENUOPTION_COLOR.g, DARKMENUOPTION_COLOR.b, FadeIn(255)));
-						// Dependency gate — when the parent toggle the
-						// host registered is off, dim the entry just like
-						// disableIfGameLoaded does. The input-side gate
-						// (CFO_SELECT enter handler) skips action on the
-						// same condition, so the option reads as visibly
-						// inert.
-						if (option.m_CFOSelect->enableDep != nil && *option.m_CFOSelect->enableDep == 0)
+						// Cascade dependency gate — walks both enableDep
+						// slots via CCFODepsActive so a child option's
+						// disabled state propagates correctly even when
+						// the immediate-parent toggle's underlying value
+						// is still 1 in memory (e.g. SsaoEnable might
+						// read 1 while HDR is off — the option is still
+						// effectively disabled, and CCFODepsActive
+						// catches the HDR=off through the second slot).
+						if (!CCFODepsActive(option.m_CFOSelect->enableDep, option.m_CFOSelect->enableDep2))
 							CFont::SetColor(CRGBA(DARKMENUOPTION_COLOR.r, DARKMENUOPTION_COLOR.g, DARKMENUOPTION_COLOR.b, FadeIn(255)));
 
 						// To whom manipulate option.m_CFO->value of static options externally (like RestoreDef functions)
@@ -5017,11 +5021,12 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 				if (option.m_Action == MENUACTION_CFO_SELECT) {
 					if (option.m_CFOSelect->disableIfGameLoaded && !m_bGameNotLoaded)
 							break;
-					// Dependency gate — block the enter / cycle action
-					// when the parent toggle is off. Pairs with the
-					// dim-render path so disabled options can't be
-					// silently mutated by clicking on them.
-					if (option.m_CFOSelect->enableDep != nil && *option.m_CFOSelect->enableDep == 0)
+					// Cascade dependency gate — block the enter / cycle
+					// action when any dependency in the chain is off.
+					// Walks both slots via CCFODepsActive; mirrors the
+					// dim-render path so the option can't be mutated
+					// while it visually reads as disabled.
+					if (!CCFODepsActive(option.m_CFOSelect->enableDep, option.m_CFOSelect->enableDep2))
 							break;
 
 					if (!option.m_CFOSelect->onlyApplyOnEnter) {

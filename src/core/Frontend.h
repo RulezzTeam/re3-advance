@@ -434,6 +434,18 @@ struct CCFO
 	const char *save;
 };
 
+// Walks the cascade dependency chain stored on a CCFOSelect / CCFOSlider.
+// Returns true when EVERY non-null pointer in (a, b) reads non-zero —
+// the option is "enabled". Returns false otherwise → menu code grays
+// out the entry and absorbs input. Inline + tiny so the render loop
+// can call it per option without overhead.
+inline bool CCFODepsActive(const int8 *a, const int8 *b)
+{
+	if (a != nil && *a == 0) return false;
+	if (b != nil && *b == 0) return false;
+	return true;
+}
+
 struct CCFOSelect : CCFO
 {
 	char** rightTexts;
@@ -443,18 +455,23 @@ struct CCFOSelect : CCFO
 	int8 lastSavedValue; // only if onlyApplyOnEnter enabled
 	ChangeFunc changeFunc;
 	bool disableIfGameLoaded;
-	// Optional dependency pointer — when non-null and *enableDep == 0,
-	// the menu renders this option grayed out (DARKMENUOPTION_COLOR)
-	// AND skips input handling (left/right arrows + enter become
-	// no-ops). Lets the user see that the option exists without it
-	// vanishing from the menu when a prerequisite toggle is off
-	// (e.g. SSAO sliders gray when SsaoEnable=false; DoF focus distance
-	// grays when DofEnable=false). int8 because both bool and the
-	// existing toggle fields use that storage class.
+	// Cascade-aware dependency chain — up to 2 levels deep, which
+	// covers every practical case in this menu (e.g. SsaoStrength
+	// depends on SsaoEnable AND HdrEnabled). The option is enabled
+	// only when EVERY non-null pointer in the chain reads non-zero.
+	// Two slots is plenty: the longest natural chain we have is
+	// [sub-option toggle] → [feature toggle] → [HDR master].
+	//
+	// Gray-out + input-skip happens via CCFOIsDisabled() in Frontend.cpp
+	// which walks both slots; sub-options that share a chain
+	// (e.g. several VolFog sliders all gate on VolFogEnable + HdrEnabled)
+	// just repeat both pointers — the chain is explicit rather than
+	// inferred, which keeps the rules readable in the menu DSL.
 	const int8 *enableDep;
+	const int8 *enableDep2;
 
 	CCFOSelect() {};
-	CCFOSelect(int8* value, const char* saveCat, const char* save, const char** rightTexts, int8 numRightTexts, bool onlyApplyOnEnter, ChangeFunc changeFunc = nil, bool disableIfGameLoaded = false, const int8 *enableDep = nil){
+	CCFOSelect(int8* value, const char* saveCat, const char* save, const char** rightTexts, int8 numRightTexts, bool onlyApplyOnEnter, ChangeFunc changeFunc = nil, bool disableIfGameLoaded = false, const int8 *enableDep = nil, const int8 *enableDep2 = nil){
 		this->value = value;
 		if (value)
 			this->lastSavedValue = this->displayedValue = *value;
@@ -467,6 +484,7 @@ struct CCFOSelect : CCFO
 		this->changeFunc = changeFunc;
 		this->disableIfGameLoaded = disableIfGameLoaded;
 		this->enableDep = enableDep;
+		this->enableDep2 = enableDep2;
 	}
 };
 
@@ -476,12 +494,14 @@ struct CCFOSlider : CCFO
 	ChangeFuncFloat changeFunc;
 	float min;
 	float max;
-	// Same dependency hook as CCFOSelect — non-null + *enableDep == 0
-	// grays out the slider track AND ignores the left/right input.
+	// Same 2-level cascade dependency as CCFOSelect — see comment there.
+	// Slider is disabled (grayed + input-blocked) when ANY non-null
+	// pointer reads zero.
 	const int8 *enableDep;
+	const int8 *enableDep2;
 
 	CCFOSlider() {};
-	CCFOSlider(float* value, const char* saveCat, const char* save, float min, float max, ChangeFuncFloat changeFunc = nil, const int8 *enableDep = nil){
+	CCFOSlider(float* value, const char* saveCat, const char* save, float min, float max, ChangeFuncFloat changeFunc = nil, const int8 *enableDep = nil, const int8 *enableDep2 = nil){
 		this->value = value;
 		this->saveCat = saveCat;
 		this->save = save;
@@ -489,6 +509,7 @@ struct CCFOSlider : CCFO
 		this->min = min;
 		this->max = max;
 		this->enableDep = enableDep;
+		this->enableDep2 = enableDep2;
 	}
 };
 
