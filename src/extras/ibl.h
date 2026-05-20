@@ -17,18 +17,30 @@ public:
 		// ground: visible reaction within ~half a second, 6 cube face
 		// renders per refresh = roughly free at half-second cadence.
 		REFRESH_PERIOD = 30,
+		// GGX prefilter mip chain depth — 6 levels covers roughness
+		// 0, 0.2, 0.4, 0.6, 0.8, 1.0 which is the canonical step set
+		// in the Karis split-sum literature. PREFILTER_SIZE = base
+		// mip-0 size (256² gives clean sharp reflections; smaller
+		// would visibly pixelate on car/glass surfaces).
+		PREFILTER_SIZE = 256,
+		PREFILTER_MIPS = 6,
 	};
 
 	static void *captureCube;	// IDirect3DCubeTexture9, RGBA16F, CaptureSize²
 	static void *irradianceCube;	// same format, IrradianceSize²
+	// GGX-prefiltered specular cube — 256² RGBA16F with PREFILTER_MIPS
+	// mip levels. Mip 0 = roughness 0 (sharp), mip N-1 = roughness 1
+	// (fully rough). Receiver samples via texCUBElod with mip =
+	// roughness × (PREFILTER_MIPS-1). Replaces texCUBE(captureCube, R)
+	// in the IBL specular path so rough surfaces actually look rough.
+	// Refreshed each CIBL::Update alongside the captureCube refresh.
+	static void *prefilterCube;
 	// Split-sum BRDF LUT — 256×256 F16_RGBA 2D texture (.r = scale,
 	// .g = bias for the Karis split-sum approximation). Baked once at
 	// CIBL::Open from brdfLut_PS — no per-frame upkeep. Binds on PS
 	// sampler s11 in default_pp_PS so the runtime IBL specular path
 	// becomes prefiltered(R) * (F0 * LUT.r + LUT.g) for proper
-	// Fresnel + roughness-aware reflectance. Stage 12 P1 = LUT only
-	// (uses the existing captureCube as the reflection source);
-	// Stage 12 P2 = full GGX-prefiltered mip-chain cube alongside.
+	// Fresnel + roughness-aware reflectance.
 	static void *brdfLut;
 	static bool Enabled;		// menu toggle
 	static int FrameCounter;	// drives the refresh schedule

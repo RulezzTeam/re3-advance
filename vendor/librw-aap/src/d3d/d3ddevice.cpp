@@ -46,6 +46,7 @@ struct VidmemCube
 	IDirect3DCubeTexture9 **slot;
 	int size;
 	int format;	// 0 = RGBA8 default, Raster::F16_RGBA for HDR
+	int mips;	// 1 = single-mip (default); >1 for prefilter chains
 	VidmemCube *next;
 };
 static VidmemCube *vidmemCubes;
@@ -320,11 +321,24 @@ clearMRT(void)
 void*
 createCubeTexture(int size, int format)
 {
+	return createCubeTextureMips(size, format, 1);
+}
+
+// Mip-aware variant — used by the IBL GGX prefilter cube where each
+// mip level holds a roughness-prefiltered version of the same cube.
+// Levels = mipCount means D3D9 allocates exactly that many mip levels;
+// the caller is responsible for writing each one via
+// setCubeFaceRenderTargetMip(cube, face, mip).
+void*
+createCubeTextureMips(int size, int format, int mipCount)
+{
+	if(mipCount < 1) mipCount = 1;
 	D3DFORMAT fmt = D3DFMT_A8R8G8B8;
 	if(format == (int)Raster::F16_RGBA)
 		fmt = D3DFMT_A16B16G16R16F;
 	IDirect3DCubeTexture9 *cube = nil;
-	HRESULT hr = d3ddevice->CreateCubeTexture((UINT)size, 1, D3DUSAGE_RENDERTARGET,
+	HRESULT hr = d3ddevice->CreateCubeTexture((UINT)size, (UINT)mipCount,
+	                                          D3DUSAGE_RENDERTARGET,
 	                                          fmt, D3DPOOL_DEFAULT, &cube, nil);
 	if(FAILED(hr)) return nil;
 	return cube;
@@ -344,12 +358,22 @@ destroyCubeTexture(void *cubeTex)
 void
 setCubeFaceRenderTarget(void *cubeTex, int face)
 {
+	setCubeFaceRenderTargetMip(cubeTex, face, 0);
+}
+
+// Mip-aware variant — picks a specific mip face surface. Used by the
+// GGX prefilter pass which bakes a different (roughness-convolved)
+// reflection radiance into each mip level of the same cube.
+void
+setCubeFaceRenderTargetMip(void *cubeTex, int face, int mip)
+{
 	if(cubeTex == nil){
 		setRenderTarget(0, nil);
 		return;
 	}
 	IDirect3DSurface9 *surf = nil;
-	((IDirect3DCubeTexture9*)cubeTex)->GetCubeMapSurface((D3DCUBEMAP_FACES)face, 0, &surf);
+	((IDirect3DCubeTexture9*)cubeTex)->GetCubeMapSurface((D3DCUBEMAP_FACES)face,
+	    (UINT)mip, &surf);
 	setRenderTarget(0, surf);
 	if(surf) surf->Release();
 }
@@ -1146,13 +1170,24 @@ found:
 void
 registerVidmemCube(IDirect3DCubeTexture9 **slot, int size, int format)
 {
+	registerVidmemCubeMips(slot, size, format, 1);
+}
+
+// Mip-aware register — used by the GGX prefilter cube which holds
+// `mipCount` roughness-prefiltered levels in the same texture and
+// must be recreated with the same mip count on device reset.
+void
+registerVidmemCubeMips(IDirect3DCubeTexture9 **slot, int size, int format, int mipCount)
+{
 	if(slot == nullptr) return;
+	if(mipCount < 1) mipCount = 1;
 	// Dedupe — if the same slot pointer is already registered, just
-	// update size/format instead of allocating a second entry.
+	// update size/format/mips instead of allocating a second entry.
 	for(VidmemCube *v = vidmemCubes; v; v = v->next){
 		if(v->slot == slot){
 			v->size = size;
 			v->format = format;
+			v->mips = mipCount;
 			return;
 		}
 	}
@@ -1160,6 +1195,7 @@ registerVidmemCube(IDirect3DCubeTexture9 **slot, int size, int format)
 	v->slot = slot;
 	v->size = size;
 	v->format = format;
+	v->mips = mipCount;
 	v->next = vidmemCubes;
 	vidmemCubes = v;
 }
@@ -1293,13 +1329,17 @@ recreateVidmemRasters(void)
 
 	// Recreate registered cubes — caller's slot pointer is written
 	// back with the new handle so the host's variable stays valid.
+	// Honour the recorded mip count so prefilter chains come back with
+	// all their levels intact.
 	for(VidmemCube *v = vidmemCubes; v; v = v->next){
 		if(v->slot == nullptr) continue;
 		D3DFORMAT fmt = D3DFMT_A8R8G8B8;
 		if(v->format == (int)Raster::F16_RGBA)
 			fmt = D3DFMT_A16B16G16R16F;
+		int mips = (v->mips >= 1) ? v->mips : 1;
 		IDirect3DCubeTexture9 *cube = nullptr;
-		HRESULT hr = d3ddevice->CreateCubeTexture((UINT)v->size, 1, D3DUSAGE_RENDERTARGET,
+		HRESULT hr = d3ddevice->CreateCubeTexture((UINT)v->size, (UINT)mips,
+		                                          D3DUSAGE_RENDERTARGET,
 		                                          fmt, D3DPOOL_DEFAULT, &cube, nil);
 		if(FAILED(hr) || cube == nullptr){
 			*v->slot = nullptr;

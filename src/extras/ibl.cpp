@@ -23,6 +23,7 @@ extern RwRGBAReal DirectionalLightColourForFrame;
 
 void *CIBL::captureCube;
 void *CIBL::irradianceCube;
+void *CIBL::prefilterCube;	// 256² F16_RGBA, 6 mips — GGX-prefiltered radiance
 void *CIBL::brdfLut;	// 256×256 F16_RGBA RwRaster — baked once at Open
 bool CIBL::Enabled = false;	// opt-in; gradient IBL stays the default
 int CIBL::FrameCounter = 0;
@@ -68,6 +69,10 @@ static void *cubePass_VS;
 // Split-sum BRDF LUT bake PS — Stage 12 P1. Runs once at Open to
 // populate CIBL::brdfLut.
 static void *brdfLut_PS;
+// GGX prefilter bake PS — Stage 12 P2. Runs alongside captureCube
+// refresh in CIBL::Update to populate CIBL::prefilterCube (one
+// dispatch per face × mip).
+static void *iblPrefilter_PS;
 // Latches the first successful bake so a subsequent Update doesn't
 // keep re-baking the same content. Reset to false in Close.
 static bool sBrdfLutBaked = false;
@@ -157,13 +162,22 @@ CIBL::Open(RwCamera *cam)
 	int colorFmt = (int)rw::Raster::F16_RGBA;
 	captureCube    = rw::d3d::createCubeTexture(CaptureSize, colorFmt);
 	irradianceCube = rw::d3d::createCubeTexture(IrradianceSize, colorFmt);
+	// GGX prefilter cube — same format, 6 mips for the roughness chain.
+	// Non-fatal if it fails: the receiver falls back to the legacy sharp
+	// captureCube sample via iblReflParams.y gating.
+	prefilterCube  = rw::d3d::createCubeTextureMips(PREFILTER_SIZE, colorFmt, PREFILTER_MIPS);
 	if(captureCube == nullptr || irradianceCube == nullptr){
 		if(captureCube){ rw::d3d::destroyCubeTexture(captureCube); captureCube = nil; }
 		if(irradianceCube){ rw::d3d::destroyCubeTexture(irradianceCube); irradianceCube = nil; }
+		if(prefilterCube){ rw::d3d::destroyCubeTexture(prefilterCube); prefilterCube = nil; }
 		Enabled = false;
 		rwLogf(rw::RW_LOG_WARN, "CIBL::Open — cube creation failed, disabling (gradient IBL still works)");
 		return;
 	}
+	// Prefilter cube is best-effort: nil here just means the receiver
+	// will use the legacy sharp captureCube path. Log + carry on.
+	if(prefilterCube == nullptr)
+		rwLogf(rw::RW_LOG_WARN, "CIBL::Open — prefilter cube allocation failed; split-sum path will use sharp captureCube");
 
 	// Lazy-load shaders the first time we open. Stay loaded across
 	// game-state transitions.
@@ -182,6 +196,10 @@ CIBL::Open(RwCamera *cam)
 	if(brdfLut_PS == nullptr){
 		#include "shaders/obj/brdfLut_PS.inc"
 		brdfLut_PS = rw::d3d::createPixelShader(brdfLut_PS_cso);
+	}
+	if(iblPrefilter_PS == nullptr){
+		#include "shaders/obj/iblPrefilter_PS.inc"
+		iblPrefilter_PS = rw::d3d::createPixelShader(iblPrefilter_PS_cso);
 	}
 	if(iblSkyToCube_PS == nullptr || iblConvolve_PS == nullptr || cubePass_VS == nullptr){
 		rwLogf(rw::RW_LOG_ERROR, "CIBL::Open — shader creation failed, disabling");
@@ -224,6 +242,11 @@ CIBL::Open(RwCamera *cam)
 	// captureCube/irradianceCube storage we own.
 	rw::d3d::registerVidmemCube((IDirect3DCubeTexture9**)&captureCube, CaptureSize, colorFmt);
 	rw::d3d::registerVidmemCube((IDirect3DCubeTexture9**)&irradianceCube, IrradianceSize, colorFmt);
+	// Prefilter cube has a 6-mip chain so use the mips-aware register
+	// path — single-mip register would lose the chain on device reset.
+	if(prefilterCube)
+		rw::d3d::registerVidmemCubeMips((IDirect3DCubeTexture9**)&prefilterCube,
+		    PREFILTER_SIZE, colorFmt, PREFILTER_MIPS);
 
 	rwLogf(rw::RW_LOG_INFO, "CIBL::Open OK — captureCube=%d irradianceCube=%d (Update deferred to first frame, registered with vidmemCubes)",
 	    CaptureSize, IrradianceSize);
@@ -238,8 +261,10 @@ CIBL::Close(void)
 	// path doesn't try to recreate a cube we're about to delete.
 	rw::d3d::unregisterVidmemCube((IDirect3DCubeTexture9**)&captureCube);
 	rw::d3d::unregisterVidmemCube((IDirect3DCubeTexture9**)&irradianceCube);
+	rw::d3d::unregisterVidmemCube((IDirect3DCubeTexture9**)&prefilterCube);
 	if(captureCube){ rw::d3d::destroyCubeTexture(captureCube); captureCube = nil; }
 	if(irradianceCube){ rw::d3d::destroyCubeTexture(irradianceCube); irradianceCube = nil; }
+	if(prefilterCube){ rw::d3d::destroyCubeTexture(prefilterCube); prefilterCube = nil; }
 	// BRDF LUT — RwRasterDestroy is safe even on nil. Bake-latch reset
 	// so the next Open starts from a clean slate.
 	if(brdfLut){ RwRasterDestroy((RwRaster*)brdfLut); brdfLut = nil; }
@@ -291,9 +316,22 @@ CIBL::Reopen(void)
 // Save/restore: RT slot 0, depth-stencil surface, viewport, vertex
 // shader, pixel shader, vertex declaration. Each Get* returns an
 // AddRef'd handle that we Release after the corresponding Set*-back.
+// Wrapper for renderCubeFaceMip(face, 0). Most existing call sites
+// only ever touch mip 0; the GGX prefilter pass uses the mip-aware
+// variant directly.
+static void renderCubeFaceMip(void *dstCube, int face, int mip, float size,
+                              void *ps, const float *constsC10, int constCount);
+
 static void
 renderCubeFace(void *dstCube, int face, float size, void *ps,
                const float *constsC10, int constCount)
+{
+	renderCubeFaceMip(dstCube, face, 0, size, ps, constsC10, constCount);
+}
+
+static void
+renderCubeFaceMip(void *dstCube, int face, int mip, float size, void *ps,
+                  const float *constsC10, int constCount)
 {
 	if(dstCube == nullptr || ps == nullptr || size <= 0.0f)
 		return;
@@ -312,12 +350,15 @@ renderCubeFace(void *dstCube, int face, float size, void *ps,
 		return;
 	}
 
-	// Acquire destination face surface (AddRef'd).
+	// Acquire destination face surface (AddRef'd). `mip` selects which
+	// level of the mip chain to render to — 0 for single-mip cubes,
+	// 0..PREFILTER_MIPS-1 for the prefilter chain.
 	IDirect3DSurface9 *dstSurf = nullptr;
-	HRESULT hr = ((IDirect3DCubeTexture9*)dstCube)->GetCubeMapSurface((D3DCUBEMAP_FACES)face, 0, &dstSurf);
+	HRESULT hr = ((IDirect3DCubeTexture9*)dstCube)->GetCubeMapSurface(
+	    (D3DCUBEMAP_FACES)face, (UINT)mip, &dstSurf);
 	if(FAILED(hr) || dstSurf == nullptr){
-		rwLogf(rw::RW_LOG_ERROR, "renderCubeFace: GetCubeMapSurface face=%d hr=0x%08lX",
-		    face, (unsigned long)hr);
+		rwLogf(rw::RW_LOG_ERROR, "renderCubeFace: GetCubeMapSurface face=%d mip=%d hr=0x%08lX",
+		    face, mip, (unsigned long)hr);
 		return;
 	}
 
@@ -648,6 +689,38 @@ CIBL::Update(RwCamera *cam)
 		renderCubeFace(irradianceCube, face, (float)IrradianceSize,
 		               iblConvolve_PS, consts, 3);
 	}
+
+	// === Pass 3: GGX prefilter captureCube → prefilterCube ===
+	// One dispatch per (face, mip). Mip 0 = roughness 0 (sharp), mip
+	// PREFILTER_MIPS-1 = roughness 1 (fully diffuse-ish). Source cube
+	// stays bound on s0; iblPrefilter_PS reads c10 = (roughness, src
+	// size, 0, 0) + c11..c13 face basis. Skip the whole pass cleanly
+	// if the cube failed to allocate at Open.
+	if(prefilterCube && iblPrefilter_PS){
+		const int maxMip = PREFILTER_MIPS - 1;
+		for(int mip = 0; mip < PREFILTER_MIPS; mip++){
+			float mipSize = (float)(PREFILTER_SIZE >> mip);
+			if(mipSize < 1.0f) mipSize = 1.0f;
+			float roughness = (maxMip > 0) ? (float)mip / (float)maxMip : 0.0f;
+			for(int face = 0; face < 6; face++){
+				const float *b = cubeFaceBasis[face];
+				float faceF[4] = { b[0], b[1], b[2], 0 };
+				float faceR[4] = { b[3], b[4], b[5], 0 };
+				float faceU[4] = { b[6], b[7], b[8], 0 };
+				float consts[4 * 4];
+				// c10: prefilter params (roughness, srcSize, 0, 0)
+				consts[0] = roughness;
+				consts[1] = (float)CaptureSize;
+				consts[2] = 0.0f;
+				consts[3] = 0.0f;
+				memcpy(consts + 1*4, faceF, sizeof(float)*4);
+				memcpy(consts + 2*4, faceR, sizeof(float)*4);
+				memcpy(consts + 3*4, faceU, sizeof(float)*4);
+				renderCubeFaceMip(prefilterCube, face, mip, mipSize,
+				                  iblPrefilter_PS, consts, 4);
+			}
+		}
+	}
 	rw::d3d::bindCubeToSampler(0, nil);
 #endif
 }
@@ -658,12 +731,14 @@ CIBL::BindReceiver(void)
 #ifdef RW_D3D9
 	if(Enabled && irradianceCube)
 		rw::d3d::bindCubeToSampler(7, irradianceCube);
-	// Bind the capture cube as the reflection cube on s8. This drives
-	// the Fresnel-weighted specular reflection term in default_pp_PS
-	// — every reflective surface (buildings, road, peds) now picks up
-	// the live sky+sun. Strength gated by iblReflParams.x = ReflStrength
-	// (default 1.0, capped by surfSpecular per material).
-	if(Enabled && captureCube)
+	// Bind the reflection cube on s8 — prefilterCube when available (so
+	// the receiver gets roughness-aware blur via texCUBElod), otherwise
+	// fall back to the sharp captureCube. Strength gated by
+	// iblReflParams.x = ReflStrength (default 1.0, capped by
+	// surfSpecular per material).
+	if(Enabled && prefilterCube)
+		rw::d3d::bindCubeToSampler(8, prefilterCube);
+	else if(Enabled && captureCube)
 		rw::d3d::bindCubeToSampler(8, captureCube);
 	// Bind the split-sum BRDF LUT on s11. Only after the bake latch is
 	// set; pre-bake the texture contains undefined RT noise that would
@@ -683,11 +758,23 @@ CIBL::BindReceiver(void)
 			rw::d3d::d3ddevice->SetSamplerState(11, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
 		}
 	}
-	// iblReflParams.y = split-sum enable flag (0 = legacy analytic
-	// Fresnel, 1 = use LUT). Receiver gates the path on this so a
-	// failed bake (LUT raster nil, shader missing) falls back cleanly.
+	// iblReflParams uniform layout:
+	//   .x = ReflStrength (gate × material's surfSpecular)
+	//   .y = split-sum LUT enable (0 = legacy Schlick, 1 = use BRDF LUT)
+	//   .z = prefilter cube available (0 = sample sharp captureCube via
+	//        texCUBE, 1 = sample prefilterCube via texCUBElod with mip =
+	//        roughness × (PREFILTER_MIPS-1))
+	//   .w = PREFILTER_MIPS - 1 (max mip index, drives the roughness →
+	//        LOD mapping in the receiver)
 	float lutFlag = (Enabled && brdfLut != nil && sBrdfLutBaked) ? 1.0f : 0.0f;
-	float reflParams[4] = { Enabled ? ReflStrength : 0.0f, lutFlag, 0, 0 };
+	float prefilterFlag = (Enabled && prefilterCube != nil) ? 1.0f : 0.0f;
+	float maxMipFloat = (float)(PREFILTER_MIPS - 1);
+	float reflParams[4] = {
+		Enabled ? ReflStrength : 0.0f,
+		lutFlag,
+		prefilterFlag,
+		maxMipFloat,
+	};
 	rw::d3d::d3ddevice->SetPixelShaderConstantF(64, reflParams, 1);
 #endif
 }

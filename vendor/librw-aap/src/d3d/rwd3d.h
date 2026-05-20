@@ -337,6 +337,11 @@ void clearMRT(void);
 // (gl3, ps2, null) don't trip on the IDirect3DCubeTexture9 type.
 #ifdef _D3D9_H_
 void registerVidmemCube(IDirect3DCubeTexture9 **slot, int size, int format);
+// Mip-aware variant — same lifecycle hook but records the mip count
+// so the cube comes back with the same chain depth on device reset.
+// `mipCount` 1 = single mip (equivalent to registerVidmemCube), 6 =
+// typical GGX prefilter chain (roughness 0..1 in 6 steps).
+void registerVidmemCubeMips(IDirect3DCubeTexture9 **slot, int size, int format, int mipCount);
 void unregisterVidmemCube(IDirect3DCubeTexture9 **slot);
 #endif
 
@@ -540,9 +545,17 @@ void setCsmSoftness(int mode, float radiusMul);
 // `format` accepts the same enum the Raster path uses (0 = RGBA8 default,
 // Raster::F16_RGBA for HDR cubes).
 void* createCubeTexture(int size, int format);
+// Mip-chain variant — used by the IBL GGX prefilter cube where each
+// mip level holds a different roughness-prefiltered radiance. mipCount
+// 1 is equivalent to createCubeTexture.
+void* createCubeTextureMips(int size, int format, int mipCount);
 void  destroyCubeTexture(void *cubeTex);
 // Face indices: 0=+X, 1=-X, 2=+Y, 3=-Y, 4=+Z, 5=-Z (D3DCUBEMAP_FACES).
 void  setCubeFaceRenderTarget(void *cubeTex, int face);
+// Mip-aware variant — selects which mip level of which face becomes
+// the active RT. Used by the GGX prefilter bake to render each mip
+// separately (mip 0 = roughness 0, mip 1 = roughness 0.2, ...).
+void  setCubeFaceRenderTargetMip(void *cubeTex, int face, int mip);
 void  bindCubeToSampler(int slot, void *cubeTex);
 
 void createDefaultShaders(void);

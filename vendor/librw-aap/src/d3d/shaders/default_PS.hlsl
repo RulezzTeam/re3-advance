@@ -729,7 +729,26 @@ float4 ComputeShadedColor(VS_out input)
 		float3 V = normalize(eyePosPS.xyz - input.WorldPos);
 		float NoV = saturate(dot(N, V));
 		float3 R = reflect(-V, N);
-		float3 reflectionColor = texCUBE(iblReflectionCube, R).rgb;
+
+		// Effective roughness for this surface. Stage 13 PBR will replace
+		// this with per-material metallic/roughness from neo_pbr.txd; for
+		// now derive a plausible value from surfSpecular so glossy mats
+		// (high spec) read sharp and rough mats (low spec) read blurry.
+		float roughness = lerp(1.0, 0.2, saturate(surfSpecular));
+
+		// Reflection sample — when the prefilter cube is bound
+		// (iblReflParams.z = 1) use texCUBElod with mip selected by
+		// roughness so rough surfaces actually look rough. Fallback to
+		// the sharp sample if the prefilter isn't available (Open-time
+		// alloc failed or first frame before bake completes).
+		float3 reflectionColor;
+		if(iblReflParams.z > 0.5){
+			float mipLevel = roughness * iblReflParams.w;
+			reflectionColor = texCUBElod(iblReflectionCube,
+			    float4(R, mipLevel)).rgb;
+		}else{
+			reflectionColor = texCUBE(iblReflectionCube, R).rgb;
+		}
 
 		float3 specTerm;
 		// No [branch] attribute — tex2D(iblBrdfLut, ...) below uses
@@ -737,19 +756,14 @@ float4 ComputeShadedColor(VS_out input)
 		// fxc would error X3528. The compiler picks the cheapest branch
 		// strategy on its own.
 		if(iblReflParams.y > 0.5){
-			// Split-sum path. F0 = 0.04 dielectric baseline (Stage 13
-			// PBR will replace this with per-material metallic-aware
-			// F0). roughness derived from surfSpecular: glossy mats
-			// (spec=1) → rough=0.2, rough mats (spec=0) → rough=1.0.
-			float roughness = lerp(1.0, 0.2, saturate(surfSpecular));
+			// Split-sum path: cube(R, roughness-mip) × (F0×LUT.r + LUT.g).
 			float3 F0 = float3(0.04, 0.04, 0.04);
 			float2 envBRDF = tex2D(iblBrdfLut,
 			    float2(NoV, roughness)).rg;
 			specTerm = reflectionColor * (F0 * envBRDF.x + envBRDF.y);
 		}else{
-			// Legacy analytic Fresnel — kept as the fallback when the
-			// LUT bake hasn't completed (first frame after Open) or
-			// when the user disabled the IBL cube path entirely.
+			// Legacy analytic Fresnel — fallback when the LUT bake
+			// hasn't completed yet or the IBL cube path is disabled.
 			float oneMinus = 1.0 - NoV;
 			float f5 = oneMinus * oneMinus; f5 *= f5 * oneMinus;
 			float F0 = 0.04;
