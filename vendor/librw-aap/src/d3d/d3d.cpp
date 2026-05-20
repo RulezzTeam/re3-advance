@@ -6,6 +6,7 @@
 #define WITH_D3D
 #include "../rwbase.h"
 #include "../rwerror.h"
+#include "../rwlog.h"
 #include "../rwplg.h"
 #include "../rwpipeline.h"
 #include "../rwobjects.h"
@@ -242,8 +243,9 @@ createTexture(int32 width, int32 height, int32 numlevels, uint32 usage, uint32 f
 	HRESULT hr = d3ddevice->CreateTexture(width, height, numlevels, usage,
 	                                      (D3DFORMAT)format, D3DPOOL_MANAGED, &tex, nil);
 	if(FAILED(hr) || tex == nullptr){
-		// Callers (rasterCreateTexture, allocateDXT, …) handle the
-		// nullptr return cleanly by setting DONTALLOCATE / RWERROR.
+		rwLogf(RW_LOG_ERROR,
+		    "createTexture failed: %dx%d levels=%d fmt=%u usage=%u hr=0x%08lX",
+		    width, height, numlevels, format, usage, (unsigned long)hr);
 		return nullptr;
 	}
 	d3d9Globals.numTextures++;
@@ -499,6 +501,9 @@ rasterCreateCameraTexture(Raster *raster)
 				(natras->autogenMipmap ? D3DUSAGE_AUTOGENMIPMAP : 0) | D3DUSAGE_RENDERTARGET,
 				(D3DFORMAT)natras->format, D3DPOOL_DEFAULT, &tex, nil);
 	if(FAILED(hr) || tex == nullptr){
+		rwLogf(RW_LOG_ERROR,
+		    "rasterCreateCameraTexture failed: %dx%d levels=%d fmt=%u hr=0x%08lX",
+		    raster->width, raster->height, levels, natras->format, (unsigned long)hr);
 		RWERROR((ERR_NOTEXTURE));
 		natras->texture = nil;	// already nil from createNativeRaster but be explicit
 		return nil;
@@ -548,6 +553,10 @@ rasterCreateZbuffer(Raster *raster)
 			d3d9Globals.present.MultiSampleType, d3d9Globals.present.MultiSampleQuality,
 			FALSE, &surf, nil);
 		if(FAILED(hr) || surf == nullptr){
+			rwLogf(RW_LOG_ERROR,
+			    "rasterCreateZbuffer failed: %dx%d fmt=%u msaa=%u hr=0x%08lX",
+			    raster->width, raster->height, natras->format,
+			    d3d9Globals.present.MultiSampleType, (unsigned long)hr);
 			RWERROR((ERR_NOTEXTURE));
 			natras->texture = nil;
 			return nil;
@@ -1078,6 +1087,8 @@ allocateDXT(Raster *raster, int32 dxt, int32 numLevels, bool32 hasAlpha)
 	// combo, …), keep DONTALLOCATE set so subsequent setTexels skips this
 	// raster gracefully rather than dereferencing nullptr texture.
 	if(ras->texture == nullptr){
+		rwLogf(RW_LOG_ERROR,
+		    "allocateDXT failed: %dx%d dxt=%d numLevels=%d", raster->width, raster->height, dxt, numLevels);
 		raster->flags |= Raster::DONTALLOCATE;
 		return;
 	}

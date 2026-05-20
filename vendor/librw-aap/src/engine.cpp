@@ -6,6 +6,7 @@
 
 #include "rwbase.h"
 #include "rwerror.h"
+#include "rwlog.h"
 #include "rwplg.h"
 #include "rwpipeline.h"
 #include "rwobjects.h"
@@ -191,6 +192,13 @@ Engine::init(MemoryFunctions *memfuncs)
 		return 0;
 	}
 
+	// Bring the graphics log up before anything else can touch the
+	// renderer — caps detection, raster creation, shader load all want
+	// to log. File path is fixed for now; a future change could route
+	// it through Engine::memfuncs or a config callback.
+	rwLogInit("reVC-graphics.log");
+	rwLogf(RW_LOG_INFO, "Engine::init — log opened");
+
 	totalMemoryAllocated = 0;
 	allocations.init();
 
@@ -340,6 +348,8 @@ Engine::term(void)
 	d3d::nativeRasterOffset = 0;
 
 	Engine::state = Dead;
+	rwLogf(RW_LOG_INFO, "Engine::term — log closing");
+	rwLogShutdown();
 }
 
 void
