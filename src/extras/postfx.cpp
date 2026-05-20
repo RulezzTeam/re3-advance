@@ -178,6 +178,11 @@ bool CPostFX::VolSpotEnable = true;
 // visually noticeable on banding-prone gradients (sky toward sun).
 int32 CPostFX::VolFogSteps = 16;
 int8  CPostFX::VolFogStepsIndex = 2;	// 0..4 = 8/12/16/24/32 — default High (16)
+// Wet puddles — default ON: the effect costs ~6 ALU + a [branch] on dry
+// frames (zero strength → skips the whole block) so leaving it enabled
+// has negligible perf cost, and the visual upgrade during rain is
+// significant. Users can still toggle it off in menu.
+bool CPostFX::PuddlesEnable = true;
 
 void
 CPostFX::VolFogStepsAfterChange(int8 before, int8 after)
@@ -1113,6 +1118,20 @@ CPostFX::UpdateIBL(void)
 		sRainRippleTime += dtSec * rainNow;
 	}
 	rw::d3d::setRainRipples(sRainRippleTime, rainNow, 0.5f);
+
+	// Puddles — fade with the max of active rain and lingering WetRoads
+	// so puddles persist briefly after a storm ends (matches the existing
+	// wetness behaviour). Menu toggle hard-gates the whole effect.
+	float puddleStrength = 0.0f;
+	if(PuddlesEnable){
+		float wet = (CWeather::WetRoads > CWeather::Rain
+		                ? CWeather::WetRoads
+		                : CWeather::Rain);
+		if(wet < 0.0f) wet = 0.0f;
+		if(wet > 1.0f) wet = 1.0f;
+		puddleStrength = wet;
+	}
+	rw::d3d::setPuddles(puddleStrength, 0.08f);
 
 	rw::d3d::uploadIBL();
 #endif

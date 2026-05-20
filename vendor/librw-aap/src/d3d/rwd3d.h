@@ -495,6 +495,12 @@ void setWetness(float wetness, float diffuseDarken, float specBoost, float power
 // Uploaded to c65 inside uploadIBL alongside the wetness params.
 void setRainRipples(float time, float strength, float tileScale);
 
+// Wet puddles — spatial variation on the existing wetMask so isolated
+// patches read as actual puddles vs the surrounding damp ground.
+// `strength` fades with CWeather::Rain. tileScale ≈ 0.08 = ~12m puddle
+// period. Uploaded to c66 inside uploadIBL.
+void setPuddles(float strength, float tileScale);
+
 // Dynamic point lights — host picks top-N brightest CPointLights near
 // camera, calls setDynamicPointLights once per frame, then uploads. The
 // receiver in default_pp_PS applies them per-pixel with smooth window

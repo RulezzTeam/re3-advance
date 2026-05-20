@@ -202,6 +202,7 @@
 		MENUACTION_CFO_SELECT, "FED_WET", { new CCFOSelect((int8*)&CPostFX::WetSurfacesEnable, "Graphics", "WetSurfaces", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_WTI", { new CCFOSlider(&CPostFX::WetSurfacesIntensity, "Graphics", "WetIntensity", 0.0f, 2.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_WTS", { new CCFOSlider(&CPostFX::WetSurfacesSpec, "Graphics", "WetSpec", 1.0f, 6.0f) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_PUD", { new CCFOSelect((int8*)&CPostFX::PuddlesEnable, "Graphics", "Puddles", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_DOF", { new CCFOSelect((int8*)&CPostFX::DofEnable, "Graphics", "DoF", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_DFD", { new CCFOSlider(&CPostFX::DofFocusDistance, "Graphics", "DofFocus", 1.0f, 80.0f) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_DFR", { new CCFOSlider(&CPostFX::DofFocusRange, "Graphics", "DofRange", 0.5f, 30.0f) }, 0, 0, MENUALIGN_LEFT, \
@@ -398,6 +399,8 @@ void RestoreDefGraphics(int8 action) {
 		CPostFX::WetSurfacesDiffuse = 0.45f;
 		CPostFX::WetSurfacesSpec = 3.2f;
 		CPostFX::WetSurfacesPower = 2.5f;
+		// Puddles default ON — cheap [branch] gate, fades with rain.
+		CPostFX::PuddlesEnable = true;
 		CPostFX::DofEnable = false;
 		CPostFX::DofFocusDistance = 15.0f;
 		CPostFX::DofFocusRange = 6.0f;

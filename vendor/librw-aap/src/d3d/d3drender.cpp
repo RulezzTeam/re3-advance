@@ -85,6 +85,23 @@ setRainRipples(float time, float strength, float tileScale)
 	rainRipplesParams[3] = 0.0f;
 }
 
+// Wet puddles — spatial variation on the existing wetMask. Reads in
+// default_pp_PS at c66. Host fades strength with CWeather::Rain so
+// puddles fill in during active rain and dry up as the weather clears.
+//   .x = strength (0 = bypass)
+//   .y = tile scale (~0.08 default; smaller = larger puddles)
+//   .z = darken (reserved for future "deep puddle" tint)
+//   .w = reserved
+static float puddlesParams[4] = { 0.0f, 0.08f, 0.7f, 0.0f };
+void
+setPuddles(float strength, float tileScale)
+{
+	puddlesParams[0] = strength;
+	puddlesParams[1] = tileScale;
+	puddlesParams[2] = 0.7f;
+	puddlesParams[3] = 0.0f;
+}
+
 // Dynamic point lights — host (CDynamicLights) picks the top-N brightest
 // CPointLights near the camera each frame and uploads them here. The
 // receiver in default_pp_PS samples this array at c100 (count) + c101..
@@ -188,6 +205,8 @@ uploadIBL(void)
 	// Rain ripples — same cadence. Cheap one-vec4 upload; the shader
 	// [branch]es on strength so dry scenes pay essentially nothing.
 	d3ddevice->SetPixelShaderConstantF(65, rainRipplesParams, 1);
+	// Puddles — same cadence.
+	d3ddevice->SetPixelShaderConstantF(66, puddlesParams, 1);
 }
 
 // CSM receiver — uploads 3 cascade light-view-proj matrices + per-cascade

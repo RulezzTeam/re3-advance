@@ -87,6 +87,36 @@ float4 wetnessParams : register(c63);
 //   .w = reserved
 float4 rainRipplesParams : register(c65);
 
+// Wet puddles — spatial variation on the existing wetMask so that some
+// patches read as puddle spots (more reflective, deeper-looking) while
+// the surrounding ground reads as merely damp. Driven by a cheap 2-tap
+// world-XY noise function — no extra texture, no extra RT. Host
+// uploads via setPuddles + uploadIBL.
+//   .x = strength (0 = bypass, 1 = full puddle boost on top of wetness)
+//   .y = tile scale (smaller → larger puddle pattern; ~0.08 typical
+//        ≈ ~12m puddle period — feels plausible for street drainage)
+//   .z = darken multiplier (puddle spots darken diffuse this much further
+//        beyond the base wetnessParams.y; ~0.5..0.8 typical)
+//   .w = reserved
+float4 puddlesParams : register(c66);
+
+// Cheap procedural puddle mask. 2 sin terms at different scales — not
+// "real" noise but the eye reads it as a natural splotchy pattern on
+// the ground. Returns 0..1 puddle factor (0 = dry patch, 1 = full
+// puddle). Used by the wetness path to boost the local wet effect.
+float PuddleMask(float2 worldXY, float tileScale)
+{
+	float2 p = worldXY * tileScale;
+	// Octave 1 — large-scale splotches.
+	float a = sin(p.x * 0.9 + 1.7) * sin(p.y * 1.1 - 0.3);
+	// Octave 2 — small-scale detail breaks up the regular pattern.
+	float b = sin(p.x * 2.3 - 0.4) * sin(p.y * 2.7 + 1.1) * 0.4;
+	// Reshape to a roughly bell-shaped distribution so isolated bright
+	// spots become the actual puddles, not a 50/50 checker.
+	float n = (a + b) * 0.5 + 0.5;	// 0..1
+	return saturate(n * n * 2.0 - 0.8);	// peaks ~0..1, zero outside
+}
+
 // Procedural rain ripple normal perturbation. Two-octave sin pattern on
 // world XY, animated by time. Cheap (~8 ALU + 4 sin) vs sampling a
 // tiled normal-map texture; no extra TXD asset required. Returns the
@@ -446,6 +476,21 @@ float4 ComputeShadedColor(VS_out input)
 	// gets wet (water pools where gravity points it). Linearly mixes the
 	// dry surfDiffuse/surfSpecular with the wet values.
 	float wetMask = saturate(N.z) * saturate(wetnessParams.x);
+
+	// Puddle modulation — boost the wet effect locally on flat-ish
+	// up-facing surfaces using a cheap procedural splotch pattern. The
+	// mask peaks in isolated spots so the eye reads them as actual
+	// puddles, not a uniform wetness gradient. Strength=0 fully bypasses.
+	[branch]
+	if(puddlesParams.x > 0.01){
+		float puddleFlat = saturate((N.z - 0.9) * 10.0);	// 0..1 across z=0.9..1.0
+		float puddleMask = PuddleMask(input.WorldPos.xy, puddlesParams.y);
+		// Boost wetness inside puddle spots; outside (puddleMask ≈ 0)
+		// the base wetMask is unchanged.
+		float puddleBoost = puddleMask * puddleFlat * puddlesParams.x;
+		wetMask = saturate(wetMask + puddleBoost * 0.6);
+	}
+
 	float wetDiffuse = lerp(surfDiffuse, surfDiffuse * wetnessParams.y, wetMask);
 	float wetSpec    = lerp(surfSpecular, surfSpecular * wetnessParams.z, wetMask);
 	float wetPower   = lerp(1.0, max(wetnessParams.w, 1.0), wetMask);

@@ -184,6 +184,14 @@ public:
 	static int32 VolFogSteps;
 	static int8  VolFogStepsIndex;	// 0..4 = 8/12/16/24/32 — menu binding
 	static void VolFogStepsAfterChange(int8 before, int8 after);
+
+	// Wet puddles — adds spatial variation on top of the existing wetness
+	// mask so isolated patches read as actual puddles vs uniformly damp
+	// ground. Plumbed through setPuddles + uploadIBL → c66 in default_PS.
+	// Strength fades with CWeather::Rain on the host side so the menu
+	// toggle gates the *effect family* but the per-frame magnitude still
+	// follows the weather.
+	static bool PuddlesEnable;
 #endif
 
 	static void InitOnce(void);
