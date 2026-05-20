@@ -27,6 +27,10 @@ public:
 	static void *irradianceCube;	// same format, IRRADIANCE_SIZE²
 	static bool Enabled;		// menu toggle
 	static int FrameCounter;	// drives the refresh schedule
+	// Reflection strength — drives the Fresnel-weighted specular term
+	// in default_pp_PS that samples captureCube on s8. 0 = off (just
+	// diffuse IBL), 1 = neutral, 2 = vivid.
+	static float ReflStrength;
 
 	static void InitOnce(void);
 	static void Open(RwCamera *cam);

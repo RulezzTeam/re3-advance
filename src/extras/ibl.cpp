@@ -25,6 +25,7 @@ void *CIBL::captureCube;
 void *CIBL::irradianceCube;
 bool CIBL::Enabled = false;	// opt-in; gradient IBL stays the default
 int CIBL::FrameCounter = 0;
+float CIBL::ReflStrength = 1.0f;
 
 #ifdef RW_D3D9
 static void *iblSkyToCube_PS;
@@ -452,6 +453,15 @@ CIBL::BindReceiver(void)
 #ifdef RW_D3D9
 	if(Enabled && irradianceCube)
 		rw::d3d::bindCubeToSampler(7, irradianceCube);
+	// Bind the capture cube as the reflection cube on s8. This drives
+	// the Fresnel-weighted specular reflection term in default_pp_PS
+	// — every reflective surface (buildings, road, peds) now picks up
+	// the live sky+sun. Strength gated by iblReflParams.x = ReflStrength
+	// (default 1.0, capped by surfSpecular per material).
+	if(Enabled && captureCube)
+		rw::d3d::bindCubeToSampler(8, captureCube);
+	float reflParams[4] = { Enabled ? ReflStrength : 0.0f, 0, 0, 0 };
+	rw::d3d::d3ddevice->SetPixelShaderConstantF(64, reflParams, 1);
 #endif
 }
 
@@ -460,6 +470,11 @@ CIBL::UnbindReceiver(void)
 {
 #ifdef RW_D3D9
 	rw::d3d::bindCubeToSampler(7, nil);
+	rw::d3d::bindCubeToSampler(8, nil);
+	// Force reflection strength to 0 so non-pp passes don't accidentally
+	// pull from the (now-unbound) sampler.
+	float zero[4] = { 0, 0, 0, 0 };
+	rw::d3d::d3ddevice->SetPixelShaderConstantF(64, zero, 1);
 #endif
 }
 

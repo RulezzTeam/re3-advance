@@ -54,6 +54,21 @@ float4 iblParams   : register(c47);
 // texCUBE replaces the 3-term hemisphere split.
 samplerCUBE iblIrradianceCube : register(s7);
 
+// Specular reflection cube — same handle as the IBL capture cube,
+// sampled along the world-space reflection vector to give Fresnel-
+// weighted reflections on every shaded surface (buildings, road,
+// ground, peds — not just cars). When the host hasn't bound this cube
+// (iblParams.z = 0) the sample comes from the same s7 / irradiance
+// path and the contribution multiplies out via reflProps below.
+samplerCUBE iblReflectionCube : register(s8);
+
+// Per-pixel specular reflection weight. .x = strength (0 = off).
+// The pipeline still drives the lit/spec terms; this is a Fresnel-
+// weighted *additive* contribution on top of the colour, capturing
+// "this surface reflects the sky toward the camera". c64+ lives above
+// the CSM block (c48..c63) so we don't collide with the cascade matrices.
+float4 iblReflParams : register(c64);
+
 // Wet-surface modulation. Driven by CWeather::WetRoads + Rain. Up-facing
 // surfaces (puddles, car roofs, road tops) get the heaviest hit:
 //   - diffuse darkens (wet asphalt absorbs more light)
@@ -301,6 +316,28 @@ float4 ComputeShadedColor(VS_out input)
 #endif
 	color.rgb = baseLight * matCol.rgb + spec;
 	color.a *= matCol.a;
+
+	// Image-based specular reflection — sample the live capture cube
+	// along the world-space reflection vector, Fresnel-weight it,
+	// modulate by the material specular term, add on top. This gives
+	// every reflective surface (buildings, road, peds — not just
+	// cars) a directional sky reflection. The cube binding shares
+	// the iblIrradianceCube handle when the host doesn't bind a
+	// distinct reflection cube, so even in fallback mode there's a
+	// usable reflection source.
+	{
+		float3 V = normalize(eyePosPS.xyz - input.WorldPos);
+		float NoV = saturate(dot(N, V));
+		float oneMinus = 1.0 - NoV;
+		float f5 = oneMinus * oneMinus; f5 *= f5 * oneMinus;
+		float F0 = 0.04;	// dielectric default
+		float fresnel = F0 + (1.0 - F0) * f5;
+
+		float3 R = reflect(-V, N);
+		float3 reflectionColor = texCUBE(iblReflectionCube, R).rgb;
+		// Surface-specular and the user-set strength gate the contribution.
+		color.rgb += reflectionColor * fresnel * surfSpecular * iblReflParams.x;
+	}
 #endif
 
 #ifdef TEX

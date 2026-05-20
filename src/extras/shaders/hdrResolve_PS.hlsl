@@ -60,6 +60,16 @@ float4 ssrIblSky     : register(c22);
 float4 ssrIblHorizon : register(c23);
 float4 ssrIblGround  : register(c24);
 
+// Volumetric spotlights — up to 4 brightest active scene point/spot
+// lights, accumulated into the existing volumetric ray-march as
+// additional in-scatter sources. Each light:
+//   pos.xyz = world position
+//   pos.w   = radius² (distance falloff cutoff)
+//   col.rgb = HDR colour
+//   col.a   = intensity multiplier (0 = disabled slot)
+float4 volSpotPos[4] : register(c25);
+float4 volSpotCol[4] : register(c29);
+
 float3 ACES(float3 x)
 {
 	return saturate((x*(2.51*x + 0.03)) / (x*(2.43*x + 0.59) + 0.14));
@@ -141,6 +151,25 @@ float4 main(in float2 uv : TEXCOORD0) : COLOR0
 			// Lights scale included in volColor.xyz so we don't need to
 			// multiply by sun colour again.
 			float3 inScat = volColor.xyz * phase * density * stepLen;
+
+			// Volumetric spotlights — for each active scene light, add
+			// an isotropic in-scatter contribution proportional to
+			// density × inverse-square distance × radius-cutoff. Cheap
+			// (~16 ALU per active light per step) and the light's own
+			// intensity gates contribution to nothing when its slot is
+			// disabled.
+			[unroll]
+			for(int li = 0; li < 4; li++){
+				float3 toLight = volSpotPos[li].xyz - wp;
+				float d2 = dot(toLight, toLight) + 1e-3;
+				float radius2 = volSpotPos[li].w;
+				float falloff = saturate(1.0 - d2 / max(radius2, 1.0));
+				falloff *= falloff;	// quadratic falloff for plausibility
+				float3 lightContrib = volSpotCol[li].rgb * volSpotCol[li].a
+				                    * falloff * density * stepLen
+				                    * (1.0 / max(d2 * 0.05, 1.0));
+				inScat += lightContrib;
+			}
 
 			scatter += inScat * trans;
 			trans *= exp(-segOpt);

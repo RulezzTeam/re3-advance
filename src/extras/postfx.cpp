@@ -1527,6 +1527,17 @@ CPostFX::ResolveHDR(RwCamera *cam)
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(22, skyT, 1);
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(23, skyH, 1);
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(24, skyG, 1);
+
+		// c25..c28, c29..c32: volumetric spotlight slots — up to 4 in-
+		// scatter sources for the volumetric ray-march to pick up
+		// vehicle headlights, lamp posts, etc.
+		// v1 ships with empty slots (intensity = 0 in slot.col.a) so
+		// the unrolled loop multiplies to zero. Phase 2 will walk
+		// CPointLights and populate the brightest few each frame.
+		float volSpotPos[4][4] = { {0,0,0,0}, {0,0,0,0}, {0,0,0,0}, {0,0,0,0} };
+		float volSpotCol[4][4] = { {0,0,0,0}, {0,0,0,0}, {0,0,0,0}, {0,0,0,0} };
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(25, &volSpotPos[0][0], 4);
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(29, &volSpotCol[0][0], 4);
 	}
 
 	rw::d3d::im2dOverridePS = hdrResolve_PS;
