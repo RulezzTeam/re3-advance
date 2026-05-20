@@ -23,6 +23,7 @@ extern RwRGBAReal DirectionalLightColourForFrame;
 
 void *CIBL::captureCube;
 void *CIBL::irradianceCube;
+void *CIBL::brdfLut;	// 256×256 F16_RGBA RwRaster — baked once at Open
 bool CIBL::Enabled = false;	// opt-in; gradient IBL stays the default
 int CIBL::FrameCounter = 0;
 float CIBL::ReflStrength = 1.0f;
@@ -64,6 +65,12 @@ CIBL::IrradianceSizeAfterChange(int8 before, int8 after)
 static void *iblSkyToCube_PS;
 static void *iblConvolve_PS;
 static void *cubePass_VS;
+// Split-sum BRDF LUT bake PS — Stage 12 P1. Runs once at Open to
+// populate CIBL::brdfLut.
+static void *brdfLut_PS;
+// Latches the first successful bake so a subsequent Update doesn't
+// keep re-baking the same content. Reset to false in Close.
+static bool sBrdfLutBaked = false;
 static IDirect3DVertexDeclaration9 *cubeQuadDecl;
 
 // NDC-space fullscreen quad — bypasses librw's im2d entirely. Direct
@@ -172,12 +179,31 @@ CIBL::Open(RwCamera *cam)
 		#include "shaders/obj/cubePass_VS.inc"
 		cubePass_VS = rw::d3d::createVertexShader(cubePass_VS_cso);
 	}
+	if(brdfLut_PS == nullptr){
+		#include "shaders/obj/brdfLut_PS.inc"
+		brdfLut_PS = rw::d3d::createPixelShader(brdfLut_PS_cso);
+	}
 	if(iblSkyToCube_PS == nullptr || iblConvolve_PS == nullptr || cubePass_VS == nullptr){
 		rwLogf(rw::RW_LOG_ERROR, "CIBL::Open — shader creation failed, disabling");
 		Close();
 		Enabled = false;
 		return;
 	}
+
+	// Allocate the BRDF LUT raster (256×256 F16_RGBA — the .b/.a channels
+	// stay zero; we'd use a 2-channel format if librw exposed one, but
+	// F16_RGBA is the only float texture format on the librw side and the
+	// extra 4 bytes × 65536 pixels = 256 KB of "wasted" VRAM is trivial).
+	// brdfLut_PS bake is deferred until the first CIBL::Update — same as
+	// the cube faces — so engine-level state (BeginUpdate, viewport, etc)
+	// is in a known-good condition when we run the direct-D3D9 dispatch.
+	if(brdfLut == nil){
+		int32 lutFmt = (int32)rw::Raster::CAMERATEXTURE | (int32)rw::Raster::F16_RGBA;
+		brdfLut = RwRasterCreate(256, 256, 0, lutFmt);
+		if(brdfLut == nil)
+			rwLogf(rw::RW_LOG_WARN, "CIBL::Open — brdfLut allocation failed; split-sum path will fall back to analytic Fresnel");
+	}
+	sBrdfLutBaked = false;
 
 	// Build the vertex declaration up front so the first Update doesn't
 	// have to. Failure here is non-fatal — renderCubeFace also retries.
@@ -214,6 +240,10 @@ CIBL::Close(void)
 	rw::d3d::unregisterVidmemCube((IDirect3DCubeTexture9**)&irradianceCube);
 	if(captureCube){ rw::d3d::destroyCubeTexture(captureCube); captureCube = nil; }
 	if(irradianceCube){ rw::d3d::destroyCubeTexture(irradianceCube); irradianceCube = nil; }
+	// BRDF LUT — RwRasterDestroy is safe even on nil. Bake-latch reset
+	// so the next Open starts from a clean slate.
+	if(brdfLut){ RwRasterDestroy((RwRaster*)brdfLut); brdfLut = nil; }
+	sBrdfLutBaked = false;
 	// Shaders stay loaded — they have no per-scene state and re-loading
 	// them on every game-state transition would just churn.
 	// cubeQuadDecl stays alive too; D3D9 vertex declarations are tiny
@@ -395,6 +425,123 @@ renderCubeFace(void *dstCube, int face, float size, void *ps,
 	if(savedDS)   savedDS->Release();
 	dstSurf->Release();
 }
+
+// Bake the split-sum BRDF LUT into CIBL::brdfLut. Mirrors the
+// renderCubeFace state-save/restore pattern but writes to a 2D RwRaster
+// instead of a cube face. Called once from CIBL::Update on the first
+// frame after Open — the LUT is shader-math-only so a single bake is
+// correct for the entire session.
+void
+CIBL::BakeBrdfLut(void)
+{
+#ifdef RW_D3D9
+	if(brdfLut == nil || brdfLut_PS == nullptr || cubePass_VS == nullptr){
+		rwLogf(rw::RW_LOG_ERROR, "CIBL::BakeBrdfLut — prerequisites missing");
+		return;
+	}
+	if(!ensureCubeQuadDecl()){
+		rwLogf(rw::RW_LOG_ERROR, "CIBL::BakeBrdfLut — cubeQuadDecl creation failed");
+		return;
+	}
+
+	// Get the underlying D3D9 surface from the librw raster. Same
+	// pattern as BindRasterToSampler — natras->texture is the
+	// IDirect3DTexture9, GetSurfaceLevel(0) gives the mip-0 surface
+	// we render into.
+	rw::Raster *raster = (rw::Raster*)brdfLut;
+	if(raster->parent) raster = raster->parent;
+	rw::d3d::D3dRaster *natras = GETD3DRASTEREXT(raster);
+	if(natras == nullptr || natras->texture == nullptr){
+		rwLogf(rw::RW_LOG_ERROR, "CIBL::BakeBrdfLut — no natras texture");
+		return;
+	}
+	IDirect3DTexture9 *tex = (IDirect3DTexture9*)natras->texture;
+	IDirect3DSurface9 *dstSurf = nullptr;
+	if(FAILED(tex->GetSurfaceLevel(0, &dstSurf)) || dstSurf == nullptr){
+		rwLogf(rw::RW_LOG_ERROR, "CIBL::BakeBrdfLut — GetSurfaceLevel(0) failed");
+		return;
+	}
+
+	IDirect3DDevice9 *dev = rw::d3d::d3ddevice;
+
+	// Save the same set of device state as renderCubeFace.
+	IDirect3DSurface9           *savedRT   = nullptr;
+	IDirect3DSurface9           *savedDS   = nullptr;
+	IDirect3DVertexShader9      *savedVS   = nullptr;
+	IDirect3DPixelShader9       *savedPS   = nullptr;
+	IDirect3DVertexDeclaration9 *savedDecl = nullptr;
+	D3DVIEWPORT9                 savedVp   = {};
+	DWORD savedZEnable      = 0;
+	DWORD savedZWriteEnable = 0;
+	DWORD savedAlphaBlend   = 0;
+	DWORD savedCullMode     = D3DCULL_CCW;
+	DWORD savedColorWrite   = 0x0F;
+
+	dev->GetRenderTarget(0, &savedRT);
+	dev->GetDepthStencilSurface(&savedDS);
+	dev->GetVertexShader(&savedVS);
+	dev->GetPixelShader(&savedPS);
+	dev->GetVertexDeclaration(&savedDecl);
+	dev->GetViewport(&savedVp);
+	dev->GetRenderState(D3DRS_ZENABLE,          &savedZEnable);
+	dev->GetRenderState(D3DRS_ZWRITEENABLE,     &savedZWriteEnable);
+	dev->GetRenderState(D3DRS_ALPHABLENDENABLE, &savedAlphaBlend);
+	dev->GetRenderState(D3DRS_CULLMODE,         &savedCullMode);
+	dev->GetRenderState(D3DRS_COLORWRITEENABLE, &savedColorWrite);
+
+	bool ok = true;
+	if(FAILED(dev->SetRenderTarget(0, dstSurf))){
+		rwLogf(rw::RW_LOG_ERROR, "CIBL::BakeBrdfLut — SetRenderTarget failed");
+		ok = false;
+	}
+	if(ok) dev->SetDepthStencilSurface(nullptr);
+
+	if(ok){
+		D3DVIEWPORT9 vp = {};
+		vp.X = 0; vp.Y = 0; vp.Width = 256; vp.Height = 256;
+		vp.MinZ = 0.0f; vp.MaxZ = 1.0f;
+		dev->SetViewport(&vp);
+		dev->SetRenderState(D3DRS_ZENABLE,          FALSE);
+		dev->SetRenderState(D3DRS_ZWRITEENABLE,     FALSE);
+		dev->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+		dev->SetRenderState(D3DRS_CULLMODE,         D3DCULL_NONE);
+		dev->SetRenderState(D3DRS_COLORWRITEENABLE, 0x0F);
+
+		dev->SetVertexShader((IDirect3DVertexShader9*)cubePass_VS);
+		dev->SetPixelShader((IDirect3DPixelShader9*)brdfLut_PS);
+		dev->SetVertexDeclaration(cubeQuadDecl);
+
+		HRESULT dhr = dev->DrawIndexedPrimitiveUP(D3DPT_TRIANGLELIST,
+		    0, 4, 2,
+		    kCubeQuadIdx, D3DFMT_INDEX16,
+		    kCubeQuadVerts, sizeof(CubeQuadVert));
+		if(FAILED(dhr))
+			rwLogf(rw::RW_LOG_ERROR, "CIBL::BakeBrdfLut — DrawIndexedPrimitiveUP hr=0x%08lX",
+			    (unsigned long)dhr);
+		else
+			rwLogf(rw::RW_LOG_INFO, "CIBL::BakeBrdfLut — 256² split-sum LUT baked");
+	}
+
+	dev->SetVertexShader(savedVS);
+	dev->SetPixelShader(savedPS);
+	dev->SetVertexDeclaration(savedDecl);
+	dev->SetViewport(&savedVp);
+	dev->SetDepthStencilSurface(savedDS);
+	dev->SetRenderTarget(0, savedRT);
+	dev->SetRenderState(D3DRS_ZENABLE,          savedZEnable);
+	dev->SetRenderState(D3DRS_ZWRITEENABLE,     savedZWriteEnable);
+	dev->SetRenderState(D3DRS_ALPHABLENDENABLE, savedAlphaBlend);
+	dev->SetRenderState(D3DRS_CULLMODE,         savedCullMode);
+	dev->SetRenderState(D3DRS_COLORWRITEENABLE, savedColorWrite);
+
+	if(savedVS)   savedVS->Release();
+	if(savedPS)   savedPS->Release();
+	if(savedDecl) savedDecl->Release();
+	if(savedRT)   savedRT->Release();
+	if(savedDS)   savedDS->Release();
+	dstSurf->Release();
+#endif
+}
 #endif
 
 void
@@ -413,6 +560,15 @@ CIBL::Update(RwCamera *cam)
 	// more frame.
 	if(rw::engine == nullptr || rw::d3d::d3ddevice == nullptr)
 		return;
+
+	// Bake the BRDF LUT on the very first Update — exactly once, then
+	// the latch suppresses further rebakes. The LUT only depends on
+	// shader math (no scene state), so a single bake is correct for
+	// the entire session.
+	if(!sBrdfLutBaked && brdfLut && brdfLut_PS){
+		BakeBrdfLut();
+		sBrdfLutBaked = true;
+	}
 
 	FrameCounter++;
 	if(FrameCounter < REFRESH_PERIOD)
@@ -509,7 +665,29 @@ CIBL::BindReceiver(void)
 	// (default 1.0, capped by surfSpecular per material).
 	if(Enabled && captureCube)
 		rw::d3d::bindCubeToSampler(8, captureCube);
-	float reflParams[4] = { Enabled ? ReflStrength : 0.0f, 0, 0, 0 };
+	// Bind the split-sum BRDF LUT on s11. Only after the bake latch is
+	// set; pre-bake the texture contains undefined RT noise that would
+	// add visible artefacts to the spec term. The reflParams.y flag tells
+	// the receiver whether to use the split-sum path or the legacy
+	// analytic Fresnel.
+	if(Enabled && brdfLut != nil && sBrdfLutBaked){
+		rw::Raster *raster = (rw::Raster*)brdfLut;
+		if(raster->parent) raster = raster->parent;
+		rw::d3d::D3dRaster *natras = GETD3DRASTEREXT(raster);
+		if(natras && natras->texture){
+			rw::d3d::d3ddevice->SetTexture(11, (IDirect3DTexture9*)natras->texture);
+			rw::d3d::d3ddevice->SetSamplerState(11, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
+			rw::d3d::d3ddevice->SetSamplerState(11, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+			rw::d3d::d3ddevice->SetSamplerState(11, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+			rw::d3d::d3ddevice->SetSamplerState(11, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+			rw::d3d::d3ddevice->SetSamplerState(11, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+		}
+	}
+	// iblReflParams.y = split-sum enable flag (0 = legacy analytic
+	// Fresnel, 1 = use LUT). Receiver gates the path on this so a
+	// failed bake (LUT raster nil, shader missing) falls back cleanly.
+	float lutFlag = (Enabled && brdfLut != nil && sBrdfLutBaked) ? 1.0f : 0.0f;
+	float reflParams[4] = { Enabled ? ReflStrength : 0.0f, lutFlag, 0, 0 };
 	rw::d3d::d3ddevice->SetPixelShaderConstantF(64, reflParams, 1);
 #endif
 }
@@ -520,6 +698,7 @@ CIBL::UnbindReceiver(void)
 #ifdef RW_D3D9
 	rw::d3d::bindCubeToSampler(7, nil);
 	rw::d3d::bindCubeToSampler(8, nil);
+	rw::d3d::d3ddevice->SetTexture(11, nil);
 	// Force reflection strength to 0 so non-pp passes don't accidentally
 	// pull from the (now-unbound) sampler.
 	float zero[4] = { 0, 0, 0, 0 };

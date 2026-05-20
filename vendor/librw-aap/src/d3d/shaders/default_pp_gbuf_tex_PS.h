@@ -20,6 +20,7 @@
 //   int4 firstLight;
 //   float4 foamParams;
 //   float4 fogColor;
+//   sampler2D iblBrdfLut;
 //   float4 iblGround;
 //   float4 iblHorizon;
 //   samplerCUBE iblIrradianceCube;
@@ -86,6 +87,7 @@
 //   iblIrradianceCube s7       1
 //   iblReflectionCube s8       1
 //   spotShadowTex     s9       1
+//   iblBrdfLut        s11      1
 //
 
     ps_3_0
@@ -98,50 +100,51 @@
     def c7, 6.28318548, -3.14159274, -0.800000012, 0.600000024
     def c8, -0.850000024, 6.65999985, 0.699999988, 0.0399999991
     def c9, 1.29999995, 1.10000002, 0.899999976, 0.00100000005
-    def c10, -4, -5, -6, -7
-    def c11, 2, -1, 1, -0
-    def c14, -0, -1, -2, -3
-    def c15, -8, -40, -9, -41
-    def c43, -10, -42, -11, -43
-    def c69, -14, -46, -15, -47
-    def c74, -18, -50, -19, -51
-    def c76, -20, -52, -21, -53
-    def c77, -22, -54, -23, -55
-    def c78, 0, -24, -56, -32
-    def c79, -28, -29, -60, -61
-    def c80, -30, -31, -62, -63
-    def c81, -12, -44, -13, -45
+    def c10, 2, -1, 1, -0
+    def c11, -4, -5, -6, -7
+    def c14, -8, -40, -9, -41
+    def c15, -7, -39, -10, -42
+    def c43, -11, -43, -14, -46
+    def c69, -12, -44, -13, -45
+    def c74, -15, -47, -18, -50
+    def c76, -16, -48, -17, -49
+    def c77, -20, -52, -21, -53
+    def c78, -23, -55, -25, -57
+    def c79, 0, -24, -56, -32
+    def c80, -26, -58, -27, -59
+    def c81, -30, -31, -62, -63
     def c82, -9.99999997e-007, 1000, 0.0500000007, -0.0721347556
     def c83, 0.300000012, 0.180000007, -0.219999999, 0.419999987
     def c84, 0.400000006, 0.600000024, 3.32999992, 0
-    def c85, 0.100000001, 0.0500000007, 0.959999979, 0.0399999991
-    def c86, 0, -0, -9.99999975e-005, 10000
-    def c87, 2.75, 2.25, 2.5, 0
-    def c88, -2, -34, -3, -35
-    def c89, -4, -36, -5, -37
-    def c90, -6, -38, -7, -39
-    def c91, -16, -48, -17, -49
-    def c92, -1, -33, -25, -57
-    def c93, -26, -58, -27, -59
+    def c85, 0.100000001, 0.0500000007, -0.800000012, 1
+    def c86, -0, -1, -2, -3
+    def c87, 0, -0, -9.99999975e-005, 10000
+    def c88, 2.75, 2.25, 2.5, 0
+    def c89, -28, -29, -60, -61
+    def c90, -1, -33, -2, -34
+    def c91, -4, -36, -5, -37
+    def c92, -3, -35, -6, -38
+    def c93, -19, -51, -22, -54
     def c94, 0.238732412, 0.318309873, 0.270563424, 0.5
     def c95, 1.10000002, 1.55999994, 2, 0
-    def c96, -0.624180019, -0.184210002, 0.214870006, -0.215869993
-    def c97, -0.271840006, -0.412180007, 0.0572099984, 0.812340021
-    def c98, -0.846130013, 0.558170021, 0.613740027, 0.818239987
-    def c99, -0.509119987, 0.214780003, 0.374179989, 0.557309985
-    def c165, 0.698530018, -0.612469971, -0.0628099963, -0.271539986
-    def c166, -0.623179972, -0.517430007, 0.832910001, -0.284150004
-    def c167, -0.102480002, 0.0531699993, 0.278430015, -0.745209992
-    def c168, 0.134269997, 0.628740013, -0.398710012, 0.831420004
-    def c169, 0.182669997, -0.184119999, 0.45122999, 0.0573100001
-    def c170, -0.308519989, -0.591229975, -0.710420012, 0.360179991
-    def c171, -0.135670006, 0.341280013, 0.612829983, 0.437119991
-    def c172, 0.0412300006, -0.512839973, 0.798269987, 0.103419997
-    def c173, -0.923449993, -0.320179999, -0.421240002, -0.109180003
-    def c174, 0.313340008, 0.925769985, -0.557810009, 0.657280028
-    def c175, -0.202539995, -0.86342001, 0.518419981, -0.406639993
-    def c176, 0.945580006, 0.769949973, -0.815439999, 0.186869994
-    def c177, 0.5, 1, 0.25, -1
+    def c96, 0.959999979, 0.0399999991, 0, 0
+    def c97, -0.624180019, -0.184210002, 0.214870006, -0.215869993
+    def c98, -0.271840006, -0.412180007, 0.0572099984, 0.812340021
+    def c99, -0.846130013, 0.558170021, 0.613740027, 0.818239987
+    def c165, -0.509119987, 0.214780003, 0.374179989, 0.557309985
+    def c166, 0.698530018, -0.612469971, -0.0628099963, -0.271539986
+    def c167, -0.623179972, -0.517430007, 0.832910001, -0.284150004
+    def c168, -0.102480002, 0.0531699993, 0.278430015, -0.745209992
+    def c169, 0.134269997, 0.628740013, -0.398710012, 0.831420004
+    def c170, 0.182669997, -0.184119999, 0.45122999, 0.0573100001
+    def c171, -0.308519989, -0.591229975, -0.710420012, 0.360179991
+    def c172, -0.135670006, 0.341280013, 0.612829983, 0.437119991
+    def c173, 0.0412300006, -0.512839973, 0.798269987, 0.103419997
+    def c174, -0.923449993, -0.320179999, -0.421240002, -0.109180003
+    def c175, 0.313340008, 0.925769985, -0.557810009, 0.657280028
+    def c176, -0.202539995, -0.86342001, 0.518419981, -0.406639993
+    def c177, 0.945580006, 0.769949973, -0.815439999, 0.186869994
+    def c178, 0.5, 1, 0.25, -1
     defi i0, 255, 0, 0, 0
     defi i1, 32, 0, 0, 0
     dcl_texcoord v0.xyz
@@ -156,6 +159,7 @@
     dcl_cube s7
     dcl_cube s8
     dcl_2d s9
+    dcl_2d s11
     dp3 r0.x, v2, v2
     rsq r0.x, r0.x
     mul r0.yzw, r0.x, v2.xxyz
@@ -164,15 +168,15 @@
     rsq r1.x, r1.x
     rcp r1.x, r1.x
     add r1.yzw, r1.x, -c60.xxyz
-    cmp r2.xy, r1.zwzw, c11, c11.zwzw
-    cmp r1.zw, r1.xyyz, r2.xyxy, c86.xyxy
-    cmp r1.w, r1.y, r1.w, c11.w
-    mad r2, v3.xyzx, -c11.yyyw, -c11.wwwy
+    cmp r2.xy, r1.zwzw, c10, c10.zwzw
+    cmp r1.zw, r1.xyyz, r2.xyxy, c87.xyxy
+    cmp r1.w, r1.y, r1.w, c10.w
+    mad r2, v3.xyzx, -c10.yyyw, -c10.wwwy
     dp4 r3.x, r2, c48
     dp4 r3.y, r2, c49
     dp4 r3.z, r2, c50
     dp4 r3.w, r2, c51
-    add r4.xy, r1.z, -c11.zxzw
+    add r4.xy, r1.z, -c10.zxzw
     dp4 r5.x, r2, c52
     dp4 r5.y, r2, c53
     dp4 r5.z, r2, c54
@@ -183,28 +187,28 @@
     dp4 r6.w, r2, c59
     cmp r2, -r4_abs.x, r5, r6
     cmp r2, r1.y, r2, r3
-    add r1.z, r2.w, c86.z
+    add r1.z, r2.w, c87.z
     rcp r2.w, r2.w
-    cmp r1.z, r1.z, r2.w, c86.w
+    cmp r1.z, r1.z, r2.w, c87.w
     mul r2.xy, r1.z, r2
     mad r3.xy, r2, c2.x, c2.x
     mad r1.z, r2.z, r1.z, -c61.z
-    add r3.z, -r3.y, c11.z
-    cmp r2.xy, r3.xzzw, -c11.w, -c11.y
-    dp2add r2.x, r2, r2, -c11.w
-    add r2.yz, -r3.xxzw, c11.z
-    cmp r2.yz, r2, -c11.w, -c11.y
-    dp2add r2.y, r2.yzzw, r2.yzzw, -c11.w
-    cmp r2.xy, -r2, -c11.w, -c11.y
+    add r3.z, -r3.y, c10.z
+    cmp r2.xy, r3.xzzw, -c10.w, -c10.y
+    dp2add r2.x, r2, r2, -c10.w
+    add r2.yz, -r3.xxzw, c10.z
+    cmp r2.yz, r2, -c10.w, -c10.y
+    dp2add r2.y, r2.yzzw, r2.yzzw, -c10.w
+    cmp r2.xy, -r2, -c10.w, -c10.y
     add r2.x, r2.y, r2.x
-    cmp r2.x, -r2.x, -c11.w, -c11.y
-    add r2.y, -r1.z, c11.z
-    cmp r2.y, r2.y, -c11.w, -c11.y
+    cmp r2.x, -r2.x, -c10.w, -c10.y
+    add r2.y, -r1.z, c10.z
+    cmp r2.y, r2.y, -c10.w, -c10.y
     add r2.x, r2.y, r2.x
-    cmp r2.x, -r2.x, -c11.w, -c11.y
-    cmp r2.y, r1.z, -c11.w, -c11.y
+    cmp r2.x, -r2.x, -c10.w, -c10.y
+    cmp r2.y, r1.z, -c10.w, -c10.y
     add r2.x, r2.y, r2.x
-    mov r2.yzw, c11
+    mov r2.yzw, c10
     max r3.y, c62.y, r2.z
     mul r7, r3.y, c61.xyxy
     texld r8, r3.xzzw, s4
@@ -219,8 +223,8 @@
     rcp r3.y, r3.y
     mad r3.y, r3.w, r3.y, c2.z
     mul_sat r3.y, r3.y, c2.w
-    cmp r2.z, -r2.z, c11.z, r3.y
-    mad r8, r7.zwzw, c176, r3.xzxz
+    cmp r2.z, -r2.z, c10.z, r3.y
+    mad r8, r7.zwzw, c177, r3.xzxz
     texld r9, r8, s4
     texld r10, r8, s5
     texld r11, r8, s6
@@ -233,7 +237,24 @@
     cmp r3.w, -r4_abs.x, r10.x, r8.x
     cmp r3.w, r1.y, r3.w, r9.x
     add r3.w, -r1.z, r3.w
-    cmp r3.yw, r3, -c11.y, -c11.w
+    cmp r3.yw, r3, -c10.y, -c10.w
+    add r3.y, r3.w, r3.y
+    mad r8, r7.zwzw, c176, r3.xzxz
+    texld r9, r8, s4
+    texld r10, r8, s5
+    texld r11, r8, s6
+    cmp r3.w, -r4_abs.x, r10.x, r11.x
+    cmp r3.w, r1.y, r3.w, r9.x
+    add r3.w, -r1.z, r3.w
+    cmp r3.w, r3.w, -c10.y, -c10.w
+    add r3.y, r3.w, r3.y
+    texld r9, r8.zwzw, s4
+    texld r10, r8.zwzw, s5
+    texld r8, r8.zwzw, s6
+    cmp r3.w, -r4_abs.x, r10.x, r8.x
+    cmp r3.w, r1.y, r3.w, r9.x
+    add r3.w, -r1.z, r3.w
+    cmp r3.w, r3.w, -c10.y, -c10.w
     add r3.y, r3.w, r3.y
     mad r8, r7.zwzw, c175, r3.xzxz
     texld r9, r8, s4
@@ -242,24 +263,7 @@
     cmp r3.w, -r4_abs.x, r10.x, r11.x
     cmp r3.w, r1.y, r3.w, r9.x
     add r3.w, -r1.z, r3.w
-    cmp r3.w, r3.w, -c11.y, -c11.w
-    add r3.y, r3.w, r3.y
-    texld r9, r8.zwzw, s4
-    texld r10, r8.zwzw, s5
-    texld r8, r8.zwzw, s6
-    cmp r3.w, -r4_abs.x, r10.x, r8.x
-    cmp r3.w, r1.y, r3.w, r9.x
-    add r3.w, -r1.z, r3.w
-    cmp r3.w, r3.w, -c11.y, -c11.w
-    add r3.y, r3.w, r3.y
-    mad r8, r7.zwzw, c174, r3.xzxz
-    texld r9, r8, s4
-    texld r10, r8, s5
-    texld r11, r8, s6
-    cmp r3.w, -r4_abs.x, r10.x, r11.x
-    cmp r3.w, r1.y, r3.w, r9.x
-    add r3.w, -r1.z, r3.w
-    cmp r3.w, r3.w, -c11.y, -c11.w
+    cmp r3.w, r3.w, -c10.y, -c10.w
     add r3.w, r3.w, r3.y
     texld r9, r8.zwzw, s4
     texld r10, r8.zwzw, s5
@@ -267,7 +271,24 @@
     cmp r4.z, -r4_abs.x, r10.x, r8.x
     cmp r4.z, r1.y, r4.z, r9.x
     add r4.z, -r1.z, r4.z
-    cmp r4.z, r4.z, -c11.y, -c11.w
+    cmp r4.z, r4.z, -c10.y, -c10.w
+    add r3.w, r3.w, r4.z
+    mad r8, r7.zwzw, c174, r3.xzxz
+    texld r9, r8, s4
+    texld r10, r8, s5
+    texld r11, r8, s6
+    cmp r4.z, -r4_abs.x, r10.x, r11.x
+    cmp r4.z, r1.y, r4.z, r9.x
+    add r4.z, -r1.z, r4.z
+    cmp r4.z, r4.z, -c10.y, -c10.w
+    add r3.w, r3.w, r4.z
+    texld r9, r8.zwzw, s4
+    texld r10, r8.zwzw, s5
+    texld r8, r8.zwzw, s6
+    cmp r4.z, -r4_abs.x, r10.x, r8.x
+    cmp r4.z, r1.y, r4.z, r9.x
+    add r4.z, -r1.z, r4.z
+    cmp r4.z, r4.z, -c10.y, -c10.w
     add r3.w, r3.w, r4.z
     mad r8, r7.zwzw, c173, r3.xzxz
     texld r9, r8, s4
@@ -276,7 +297,7 @@
     cmp r4.z, -r4_abs.x, r10.x, r11.x
     cmp r4.z, r1.y, r4.z, r9.x
     add r4.z, -r1.z, r4.z
-    cmp r4.z, r4.z, -c11.y, -c11.w
+    cmp r4.z, r4.z, -c10.y, -c10.w
     add r3.w, r3.w, r4.z
     texld r9, r8.zwzw, s4
     texld r10, r8.zwzw, s5
@@ -284,7 +305,7 @@
     cmp r4.z, -r4_abs.x, r10.x, r8.x
     cmp r4.z, r1.y, r4.z, r9.x
     add r4.z, -r1.z, r4.z
-    cmp r4.z, r4.z, -c11.y, -c11.w
+    cmp r4.z, r4.z, -c10.y, -c10.w
     add r3.w, r3.w, r4.z
     mad r8, r7.zwzw, c172, r3.xzxz
     texld r9, r8, s4
@@ -293,7 +314,7 @@
     cmp r4.z, -r4_abs.x, r10.x, r11.x
     cmp r4.z, r1.y, r4.z, r9.x
     add r4.z, -r1.z, r4.z
-    cmp r4.z, r4.z, -c11.y, -c11.w
+    cmp r4.z, r4.z, -c10.y, -c10.w
     add r3.w, r3.w, r4.z
     texld r9, r8.zwzw, s4
     texld r10, r8.zwzw, s5
@@ -301,7 +322,7 @@
     cmp r4.z, -r4_abs.x, r10.x, r8.x
     cmp r4.z, r1.y, r4.z, r9.x
     add r4.z, -r1.z, r4.z
-    cmp r4.z, r4.z, -c11.y, -c11.w
+    cmp r4.z, r4.z, -c10.y, -c10.w
     add r3.w, r3.w, r4.z
     mad r8, r7.zwzw, c171, r3.xzxz
     texld r9, r8, s4
@@ -310,7 +331,7 @@
     cmp r4.z, -r4_abs.x, r10.x, r11.x
     cmp r4.z, r1.y, r4.z, r9.x
     add r4.z, -r1.z, r4.z
-    cmp r4.z, r4.z, -c11.y, -c11.w
+    cmp r4.z, r4.z, -c10.y, -c10.w
     add r3.w, r3.w, r4.z
     texld r9, r8.zwzw, s4
     texld r10, r8.zwzw, s5
@@ -318,7 +339,7 @@
     cmp r4.z, -r4_abs.x, r10.x, r8.x
     cmp r4.z, r1.y, r4.z, r9.x
     add r4.z, -r1.z, r4.z
-    cmp r4.z, r4.z, -c11.y, -c11.w
+    cmp r4.z, r4.z, -c10.y, -c10.w
     add r3.w, r3.w, r4.z
     mad r8, r7.zwzw, c170, r3.xzxz
     texld r9, r8, s4
@@ -327,7 +348,7 @@
     cmp r4.z, -r4_abs.x, r10.x, r11.x
     cmp r4.z, r1.y, r4.z, r9.x
     add r4.z, -r1.z, r4.z
-    cmp r4.z, r4.z, -c11.y, -c11.w
+    cmp r4.z, r4.z, -c10.y, -c10.w
     add r3.w, r3.w, r4.z
     texld r9, r8.zwzw, s4
     texld r10, r8.zwzw, s5
@@ -335,7 +356,7 @@
     cmp r4.z, -r4_abs.x, r10.x, r8.x
     cmp r4.z, r1.y, r4.z, r9.x
     add r4.z, -r1.z, r4.z
-    cmp r4.z, r4.z, -c11.y, -c11.w
+    cmp r4.z, r4.z, -c10.y, -c10.w
     add r3.w, r3.w, r4.z
     mad r8, r7.zwzw, c169, r3.xzxz
     texld r9, r8, s4
@@ -344,24 +365,7 @@
     cmp r4.z, -r4_abs.x, r10.x, r11.x
     cmp r4.z, r1.y, r4.z, r9.x
     add r4.z, -r1.z, r4.z
-    cmp r4.z, r4.z, -c11.y, -c11.w
-    add r3.w, r3.w, r4.z
-    texld r9, r8.zwzw, s4
-    texld r10, r8.zwzw, s5
-    texld r8, r8.zwzw, s6
-    cmp r4.z, -r4_abs.x, r10.x, r8.x
-    cmp r4.z, r1.y, r4.z, r9.x
-    add r4.z, -r1.z, r4.z
-    cmp r4.z, r4.z, -c11.y, -c11.w
-    add r3.w, r3.w, r4.z
-    mad r8, r7.zwzw, c168, r3.xzxz
-    texld r9, r8, s4
-    texld r10, r8, s5
-    texld r11, r8, s6
-    cmp r4.z, -r4_abs.x, r10.x, r11.x
-    cmp r4.z, r1.y, r4.z, r9.x
-    add r4.z, -r1.z, r4.z
-    cmp r4.z, r4.z, -c11.y, -c11.w
+    cmp r4.z, r4.z, -c10.y, -c10.w
     add r4.z, r3.w, r4.z
     texld r9, r8.zwzw, s4
     texld r10, r8.zwzw, s5
@@ -369,7 +373,24 @@
     cmp r4.w, -r4_abs.x, r10.x, r8.x
     cmp r4.w, r1.y, r4.w, r9.x
     add r4.w, -r1.z, r4.w
-    cmp r4.w, r4.w, -c11.y, -c11.w
+    cmp r4.w, r4.w, -c10.y, -c10.w
+    add r4.z, r4.w, r4.z
+    mad r8, r7.zwzw, c168, r3.xzxz
+    texld r9, r8, s4
+    texld r10, r8, s5
+    texld r11, r8, s6
+    cmp r4.w, -r4_abs.x, r10.x, r11.x
+    cmp r4.w, r1.y, r4.w, r9.x
+    add r4.w, -r1.z, r4.w
+    cmp r4.w, r4.w, -c10.y, -c10.w
+    add r4.z, r4.w, r4.z
+    texld r9, r8.zwzw, s4
+    texld r10, r8.zwzw, s5
+    texld r8, r8.zwzw, s6
+    cmp r4.w, -r4_abs.x, r10.x, r8.x
+    cmp r4.w, r1.y, r4.w, r9.x
+    add r4.w, -r1.z, r4.w
+    cmp r4.w, r4.w, -c10.y, -c10.w
     add r4.z, r4.w, r4.z
     mad r8, r7.zwzw, c167, r3.xzxz
     texld r9, r8, s4
@@ -378,7 +399,7 @@
     cmp r4.w, -r4_abs.x, r10.x, r11.x
     cmp r4.w, r1.y, r4.w, r9.x
     add r4.w, -r1.z, r4.w
-    cmp r4.w, r4.w, -c11.y, -c11.w
+    cmp r4.w, r4.w, -c10.y, -c10.w
     add r4.z, r4.w, r4.z
     texld r9, r8.zwzw, s4
     texld r10, r8.zwzw, s5
@@ -386,7 +407,7 @@
     cmp r4.w, -r4_abs.x, r10.x, r8.x
     cmp r4.w, r1.y, r4.w, r9.x
     add r4.w, -r1.z, r4.w
-    cmp r4.w, r4.w, -c11.y, -c11.w
+    cmp r4.w, r4.w, -c10.y, -c10.w
     add r4.z, r4.w, r4.z
     mad r8, r7.zwzw, c166, r3.xzxz
     texld r9, r8, s4
@@ -395,7 +416,7 @@
     cmp r4.w, -r4_abs.x, r10.x, r11.x
     cmp r4.w, r1.y, r4.w, r9.x
     add r4.w, -r1.z, r4.w
-    cmp r4.w, r4.w, -c11.y, -c11.w
+    cmp r4.w, r4.w, -c10.y, -c10.w
     add r4.z, r4.w, r4.z
     texld r9, r8.zwzw, s4
     texld r10, r8.zwzw, s5
@@ -403,7 +424,7 @@
     cmp r4.w, -r4_abs.x, r10.x, r8.x
     cmp r4.w, r1.y, r4.w, r9.x
     add r4.w, -r1.z, r4.w
-    cmp r4.w, r4.w, -c11.y, -c11.w
+    cmp r4.w, r4.w, -c10.y, -c10.w
     add r4.z, r4.w, r4.z
     mad r8, r7.zwzw, c165, r3.xzxz
     texld r9, r8, s4
@@ -412,7 +433,7 @@
     cmp r4.w, -r4_abs.x, r10.x, r11.x
     cmp r4.w, r1.y, r4.w, r9.x
     add r4.w, -r1.z, r4.w
-    cmp r4.w, r4.w, -c11.y, -c11.w
+    cmp r4.w, r4.w, -c10.y, -c10.w
     add r4.z, r4.w, r4.z
     texld r9, r8.zwzw, s4
     texld r10, r8.zwzw, s5
@@ -420,7 +441,7 @@
     cmp r4.w, -r4_abs.x, r10.x, r8.x
     cmp r4.w, r1.y, r4.w, r9.x
     add r4.w, -r1.z, r4.w
-    cmp r4.w, r4.w, -c11.y, -c11.w
+    cmp r4.w, r4.w, -c10.y, -c10.w
     add r4.z, r4.w, r4.z
     mad r8, r7.zwzw, c99, r3.xzxz
     texld r9, r8, s4
@@ -429,7 +450,7 @@
     cmp r4.w, -r4_abs.x, r10.x, r11.x
     cmp r4.w, r1.y, r4.w, r9.x
     add r4.w, -r1.z, r4.w
-    cmp r4.w, r4.w, -c11.y, -c11.w
+    cmp r4.w, r4.w, -c10.y, -c10.w
     add r4.z, r4.w, r4.z
     texld r9, r8.zwzw, s4
     texld r10, r8.zwzw, s5
@@ -437,7 +458,7 @@
     cmp r4.w, -r4_abs.x, r10.x, r8.x
     cmp r4.w, r1.y, r4.w, r9.x
     add r4.w, -r1.z, r4.w
-    cmp r4.w, r4.w, -c11.y, -c11.w
+    cmp r4.w, r4.w, -c10.y, -c10.w
     add r4.z, r4.w, r4.z
     mad r8, r7.zwzw, c98, r3.xzxz
     texld r9, r8, s4
@@ -446,7 +467,7 @@
     cmp r4.w, -r4_abs.x, r10.x, r11.x
     cmp r4.w, r1.y, r4.w, r9.x
     add r4.w, -r1.z, r4.w
-    cmp r4.w, r4.w, -c11.y, -c11.w
+    cmp r4.w, r4.w, -c10.y, -c10.w
     add r4.z, r4.w, r4.z
     texld r9, r8.zwzw, s4
     texld r10, r8.zwzw, s5
@@ -454,33 +475,16 @@
     cmp r4.w, -r4_abs.x, r10.x, r8.x
     cmp r4.w, r1.y, r4.w, r9.x
     add r4.w, -r1.z, r4.w
-    cmp r4.w, r4.w, -c11.y, -c11.w
+    cmp r4.w, r4.w, -c10.y, -c10.w
     add r4.z, r4.w, r4.z
-    mad r8, r7.zwzw, c97, r3.xzxz
-    texld r9, r8, s4
-    texld r10, r8, s5
-    texld r11, r8, s6
-    cmp r4.w, -r4_abs.x, r10.x, r11.x
-    cmp r4.w, r1.y, r4.w, r9.x
-    add r4.w, -r1.z, r4.w
-    cmp r4.w, r4.w, -c11.y, -c11.w
-    add r4.z, r4.w, r4.z
-    texld r9, r8.zwzw, s4
-    texld r10, r8.zwzw, s5
-    texld r8, r8.zwzw, s6
-    cmp r4.w, -r4_abs.x, r10.x, r8.x
-    cmp r4.w, r1.y, r4.w, r9.x
-    add r4.w, -r1.z, r4.w
-    cmp r4.w, r4.w, -c11.y, -c11.w
-    add r4.z, r4.w, r4.z
-    mad r8, r7, c96, r3.xzxz
+    mad r8, r7, c97, r3.xzxz
     texld r9, r8, s4
     texld r10, r8, s5
     texld r11, r8, s6
     cmp r3.x, -r4_abs.x, r10.x, r11.x
     cmp r3.x, r1.y, r3.x, r9.x
     add r3.x, -r1.z, r3.x
-    cmp r3.x, r3.x, -c11.y, -c11.w
+    cmp r3.x, r3.x, -c10.y, -c10.w
     add r3.x, r3.x, r4.z
     texld r9, r8.zwzw, s4
     texld r10, r8.zwzw, s5
@@ -488,7 +492,7 @@
     cmp r3.z, -r4_abs.x, r10.x, r8.x
     cmp r3.z, r1.y, r3.z, r9.x
     add r1.z, -r1.z, r3.z
-    cmp r1.z, r1.z, -c11.y, -c11.w
+    cmp r1.z, r1.z, -c10.y, -c10.w
     add r1.z, r1.z, r3.x
     mul r1.z, r1.z, c1.x
     mov r8.yzw, c1
@@ -497,7 +501,7 @@
     cmp r3.x, r8.z, r3.y, r3.x
     cmp r1.z, r8.y, r3.x, r1.z
     cmp r1.z, r8.x, r1.z, r2.z
-    cmp r1.z, -r2.x, r1.z, c11.z
+    cmp r1.z, -r2.x, r1.z, c10.z
     cmp r2.x, -r4_abs.x, c60.y, c60.z
     cmp r2.x, r1.y, r2.x, c60.x
     add r2.x, r2.x, -c61.w
@@ -505,27 +509,27 @@
     rcp r2.x, c61.w
     mul_sat r1.x, r1.x, r2.x
     cmp r3, r1.y, r6, r5
-    add r2.x, r3.w, c86.z
+    add r2.x, r3.w, c87.z
     rcp r2.z, r3.w
-    cmp r2.x, r2.x, r2.z, c86.w
+    cmp r2.x, r2.x, r2.z, c87.w
     mul r3.xy, r2.x, r3
     mad r5.xy, r3, c2.x, c2.x
     mad r2.x, r3.z, r2.x, -c61.z
-    add r5.z, -r5.y, c11.z
-    cmp r3.xy, r5.xzzw, -c11.w, -c11.y
-    dp2add r2.z, r3, r3, -c11.w
-    cmp r2.z, -r2.z, -c11.w, -c11.y
-    add r3.xy, -r5.xzzw, c11.z
-    cmp r3.xy, r3, -c11.w, -c11.y
-    dp2add r3.x, r3, r3, -c11.w
-    cmp r3.x, -r3.x, -c11.w, -c11.y
+    add r5.z, -r5.y, c10.z
+    cmp r3.xy, r5.xzzw, -c10.w, -c10.y
+    dp2add r2.z, r3, r3, -c10.w
+    cmp r2.z, -r2.z, -c10.w, -c10.y
+    add r3.xy, -r5.xzzw, c10.z
+    cmp r3.xy, r3, -c10.w, -c10.y
+    dp2add r3.x, r3, r3, -c10.w
+    cmp r3.x, -r3.x, -c10.w, -c10.y
     add r2.z, r2.z, r3.x
-    cmp r2.z, -r2.z, -c11.w, -c11.y
-    add r3.x, -r2.x, c11.z
-    cmp r3.x, r3.x, -c11.w, -c11.y
+    cmp r2.z, -r2.z, -c10.w, -c10.y
+    add r3.x, -r2.x, c10.z
+    cmp r3.x, r3.x, -c10.w, -c10.y
     add r2.z, r2.z, r3.x
-    cmp r2.z, -r2.z, -c11.w, -c11.y
-    cmp r3.x, r2.x, -c11.w, -c11.y
+    cmp r2.z, -r2.z, -c10.w, -c10.y
+    cmp r3.x, r2.x, -c10.w, -c10.y
     add r2.z, r2.z, r3.x
     texld r3, r5.xzzw, s5
     texld r6, r5.xzzw, s6
@@ -537,8 +541,8 @@
     rcp r3.y, r3.y
     mad r3.y, r4.x, r3.y, c2.z
     mul_sat r3.y, r3.y, c2.w
-    cmp r3.x, -r3.x, c11.z, r3.y
-    mad r6, r7.zwzw, c176, r5.xzxz
+    cmp r3.x, -r3.x, c10.z, r3.y
+    mad r6, r7.zwzw, c177, r5.xzxz
     texld r9, r6, s5
     texld r10, r6, s6
     cmp r3.y, r1.y, r10.x, r9.x
@@ -547,202 +551,202 @@
     texld r6, r6.zwzw, s6
     cmp r3.z, r1.y, r6.x, r9.x
     add r3.z, -r2.x, r3.z
-    cmp r3.yz, r3, -c11.y, -c11.w
+    cmp r3.yz, r3, -c10.y, -c10.w
+    add r3.y, r3.z, r3.y
+    mad r6, r7.zwzw, c176, r5.xzxz
+    texld r9, r6, s5
+    texld r10, r6, s6
+    cmp r3.z, r1.y, r10.x, r9.x
+    add r3.z, -r2.x, r3.z
+    cmp r3.z, r3.z, -c10.y, -c10.w
+    add r3.y, r3.z, r3.y
+    texld r9, r6.zwzw, s5
+    texld r6, r6.zwzw, s6
+    cmp r3.z, r1.y, r6.x, r9.x
+    add r3.z, -r2.x, r3.z
+    cmp r3.z, r3.z, -c10.y, -c10.w
     add r3.y, r3.z, r3.y
     mad r6, r7.zwzw, c175, r5.xzxz
     texld r9, r6, s5
     texld r10, r6, s6
     cmp r3.z, r1.y, r10.x, r9.x
     add r3.z, -r2.x, r3.z
-    cmp r3.z, r3.z, -c11.y, -c11.w
-    add r3.y, r3.z, r3.y
-    texld r9, r6.zwzw, s5
-    texld r6, r6.zwzw, s6
-    cmp r3.z, r1.y, r6.x, r9.x
-    add r3.z, -r2.x, r3.z
-    cmp r3.z, r3.z, -c11.y, -c11.w
-    add r3.y, r3.z, r3.y
-    mad r6, r7.zwzw, c174, r5.xzxz
-    texld r9, r6, s5
-    texld r10, r6, s6
-    cmp r3.z, r1.y, r10.x, r9.x
-    add r3.z, -r2.x, r3.z
-    cmp r3.z, r3.z, -c11.y, -c11.w
+    cmp r3.z, r3.z, -c10.y, -c10.w
     add r3.z, r3.z, r3.y
     texld r9, r6.zwzw, s5
     texld r6, r6.zwzw, s6
     cmp r3.w, r1.y, r6.x, r9.x
     add r3.w, -r2.x, r3.w
-    cmp r3.w, r3.w, -c11.y, -c11.w
+    cmp r3.w, r3.w, -c10.y, -c10.w
+    add r3.z, r3.w, r3.z
+    mad r6, r7.zwzw, c174, r5.xzxz
+    texld r9, r6, s5
+    texld r10, r6, s6
+    cmp r3.w, r1.y, r10.x, r9.x
+    add r3.w, -r2.x, r3.w
+    cmp r3.w, r3.w, -c10.y, -c10.w
+    add r3.z, r3.w, r3.z
+    texld r9, r6.zwzw, s5
+    texld r6, r6.zwzw, s6
+    cmp r3.w, r1.y, r6.x, r9.x
+    add r3.w, -r2.x, r3.w
+    cmp r3.w, r3.w, -c10.y, -c10.w
     add r3.z, r3.w, r3.z
     mad r6, r7.zwzw, c173, r5.xzxz
     texld r9, r6, s5
     texld r10, r6, s6
     cmp r3.w, r1.y, r10.x, r9.x
     add r3.w, -r2.x, r3.w
-    cmp r3.w, r3.w, -c11.y, -c11.w
+    cmp r3.w, r3.w, -c10.y, -c10.w
     add r3.z, r3.w, r3.z
     texld r9, r6.zwzw, s5
     texld r6, r6.zwzw, s6
     cmp r3.w, r1.y, r6.x, r9.x
     add r3.w, -r2.x, r3.w
-    cmp r3.w, r3.w, -c11.y, -c11.w
+    cmp r3.w, r3.w, -c10.y, -c10.w
     add r3.z, r3.w, r3.z
     mad r6, r7.zwzw, c172, r5.xzxz
     texld r9, r6, s5
     texld r10, r6, s6
     cmp r3.w, r1.y, r10.x, r9.x
     add r3.w, -r2.x, r3.w
-    cmp r3.w, r3.w, -c11.y, -c11.w
+    cmp r3.w, r3.w, -c10.y, -c10.w
     add r3.z, r3.w, r3.z
     texld r9, r6.zwzw, s5
     texld r6, r6.zwzw, s6
     cmp r3.w, r1.y, r6.x, r9.x
     add r3.w, -r2.x, r3.w
-    cmp r3.w, r3.w, -c11.y, -c11.w
+    cmp r3.w, r3.w, -c10.y, -c10.w
     add r3.z, r3.w, r3.z
     mad r6, r7.zwzw, c171, r5.xzxz
     texld r9, r6, s5
     texld r10, r6, s6
     cmp r3.w, r1.y, r10.x, r9.x
     add r3.w, -r2.x, r3.w
-    cmp r3.w, r3.w, -c11.y, -c11.w
+    cmp r3.w, r3.w, -c10.y, -c10.w
     add r3.z, r3.w, r3.z
     texld r9, r6.zwzw, s5
     texld r6, r6.zwzw, s6
     cmp r3.w, r1.y, r6.x, r9.x
     add r3.w, -r2.x, r3.w
-    cmp r3.w, r3.w, -c11.y, -c11.w
+    cmp r3.w, r3.w, -c10.y, -c10.w
     add r3.z, r3.w, r3.z
     mad r6, r7.zwzw, c170, r5.xzxz
     texld r9, r6, s5
     texld r10, r6, s6
     cmp r3.w, r1.y, r10.x, r9.x
     add r3.w, -r2.x, r3.w
-    cmp r3.w, r3.w, -c11.y, -c11.w
+    cmp r3.w, r3.w, -c10.y, -c10.w
     add r3.z, r3.w, r3.z
     texld r9, r6.zwzw, s5
     texld r6, r6.zwzw, s6
     cmp r3.w, r1.y, r6.x, r9.x
     add r3.w, -r2.x, r3.w
-    cmp r3.w, r3.w, -c11.y, -c11.w
+    cmp r3.w, r3.w, -c10.y, -c10.w
     add r3.z, r3.w, r3.z
     mad r6, r7.zwzw, c169, r5.xzxz
     texld r9, r6, s5
     texld r10, r6, s6
     cmp r3.w, r1.y, r10.x, r9.x
     add r3.w, -r2.x, r3.w
-    cmp r3.w, r3.w, -c11.y, -c11.w
-    add r3.z, r3.w, r3.z
-    texld r9, r6.zwzw, s5
-    texld r6, r6.zwzw, s6
-    cmp r3.w, r1.y, r6.x, r9.x
-    add r3.w, -r2.x, r3.w
-    cmp r3.w, r3.w, -c11.y, -c11.w
-    add r3.z, r3.w, r3.z
-    mad r6, r7.zwzw, c168, r5.xzxz
-    texld r9, r6, s5
-    texld r10, r6, s6
-    cmp r3.w, r1.y, r10.x, r9.x
-    add r3.w, -r2.x, r3.w
-    cmp r3.w, r3.w, -c11.y, -c11.w
+    cmp r3.w, r3.w, -c10.y, -c10.w
     add r3.w, r3.w, r3.z
     texld r9, r6.zwzw, s5
     texld r6, r6.zwzw, s6
     cmp r4.x, r1.y, r6.x, r9.x
     add r4.x, -r2.x, r4.x
-    cmp r4.x, r4.x, -c11.y, -c11.w
+    cmp r4.x, r4.x, -c10.y, -c10.w
+    add r3.w, r3.w, r4.x
+    mad r6, r7.zwzw, c168, r5.xzxz
+    texld r9, r6, s5
+    texld r10, r6, s6
+    cmp r4.x, r1.y, r10.x, r9.x
+    add r4.x, -r2.x, r4.x
+    cmp r4.x, r4.x, -c10.y, -c10.w
+    add r3.w, r3.w, r4.x
+    texld r9, r6.zwzw, s5
+    texld r6, r6.zwzw, s6
+    cmp r4.x, r1.y, r6.x, r9.x
+    add r4.x, -r2.x, r4.x
+    cmp r4.x, r4.x, -c10.y, -c10.w
     add r3.w, r3.w, r4.x
     mad r6, r7.zwzw, c167, r5.xzxz
     texld r9, r6, s5
     texld r10, r6, s6
     cmp r4.x, r1.y, r10.x, r9.x
     add r4.x, -r2.x, r4.x
-    cmp r4.x, r4.x, -c11.y, -c11.w
+    cmp r4.x, r4.x, -c10.y, -c10.w
     add r3.w, r3.w, r4.x
     texld r9, r6.zwzw, s5
     texld r6, r6.zwzw, s6
     cmp r4.x, r1.y, r6.x, r9.x
     add r4.x, -r2.x, r4.x
-    cmp r4.x, r4.x, -c11.y, -c11.w
+    cmp r4.x, r4.x, -c10.y, -c10.w
     add r3.w, r3.w, r4.x
     mad r6, r7.zwzw, c166, r5.xzxz
     texld r9, r6, s5
     texld r10, r6, s6
     cmp r4.x, r1.y, r10.x, r9.x
     add r4.x, -r2.x, r4.x
-    cmp r4.x, r4.x, -c11.y, -c11.w
+    cmp r4.x, r4.x, -c10.y, -c10.w
     add r3.w, r3.w, r4.x
     texld r9, r6.zwzw, s5
     texld r6, r6.zwzw, s6
     cmp r4.x, r1.y, r6.x, r9.x
     add r4.x, -r2.x, r4.x
-    cmp r4.x, r4.x, -c11.y, -c11.w
+    cmp r4.x, r4.x, -c10.y, -c10.w
     add r3.w, r3.w, r4.x
     mad r6, r7.zwzw, c165, r5.xzxz
     texld r9, r6, s5
     texld r10, r6, s6
     cmp r4.x, r1.y, r10.x, r9.x
     add r4.x, -r2.x, r4.x
-    cmp r4.x, r4.x, -c11.y, -c11.w
+    cmp r4.x, r4.x, -c10.y, -c10.w
     add r3.w, r3.w, r4.x
     texld r9, r6.zwzw, s5
     texld r6, r6.zwzw, s6
     cmp r4.x, r1.y, r6.x, r9.x
     add r4.x, -r2.x, r4.x
-    cmp r4.x, r4.x, -c11.y, -c11.w
+    cmp r4.x, r4.x, -c10.y, -c10.w
     add r3.w, r3.w, r4.x
     mad r6, r7.zwzw, c99, r5.xzxz
     texld r9, r6, s5
     texld r10, r6, s6
     cmp r4.x, r1.y, r10.x, r9.x
     add r4.x, -r2.x, r4.x
-    cmp r4.x, r4.x, -c11.y, -c11.w
+    cmp r4.x, r4.x, -c10.y, -c10.w
     add r3.w, r3.w, r4.x
     texld r9, r6.zwzw, s5
     texld r6, r6.zwzw, s6
     cmp r4.x, r1.y, r6.x, r9.x
     add r4.x, -r2.x, r4.x
-    cmp r4.x, r4.x, -c11.y, -c11.w
+    cmp r4.x, r4.x, -c10.y, -c10.w
     add r3.w, r3.w, r4.x
     mad r6, r7.zwzw, c98, r5.xzxz
     texld r9, r6, s5
     texld r10, r6, s6
     cmp r4.x, r1.y, r10.x, r9.x
     add r4.x, -r2.x, r4.x
-    cmp r4.x, r4.x, -c11.y, -c11.w
+    cmp r4.x, r4.x, -c10.y, -c10.w
     add r3.w, r3.w, r4.x
     texld r9, r6.zwzw, s5
     texld r6, r6.zwzw, s6
     cmp r4.x, r1.y, r6.x, r9.x
     add r4.x, -r2.x, r4.x
-    cmp r4.x, r4.x, -c11.y, -c11.w
+    cmp r4.x, r4.x, -c10.y, -c10.w
     add r3.w, r3.w, r4.x
-    mad r6, r7.zwzw, c97, r5.xzxz
-    texld r9, r6, s5
-    texld r10, r6, s6
-    cmp r4.x, r1.y, r10.x, r9.x
-    add r4.x, -r2.x, r4.x
-    cmp r4.x, r4.x, -c11.y, -c11.w
-    add r3.w, r3.w, r4.x
-    texld r9, r6.zwzw, s5
-    texld r6, r6.zwzw, s6
-    cmp r4.x, r1.y, r6.x, r9.x
-    add r4.x, -r2.x, r4.x
-    cmp r4.x, r4.x, -c11.y, -c11.w
-    add r3.w, r3.w, r4.x
-    mad r5, r7, c96, r5.xzxz
+    mad r5, r7, c97, r5.xzxz
     texld r6, r5, s5
     texld r7, r5, s6
     cmp r4.x, r1.y, r7.x, r6.x
     add r4.x, -r2.x, r4.x
-    cmp r4.x, r4.x, -c11.y, -c11.w
+    cmp r4.x, r4.x, -c10.y, -c10.w
     add r3.w, r3.w, r4.x
     texld r6, r5.zwzw, s5
     texld r5, r5.zwzw, s6
     cmp r1.y, r1.y, r5.x, r6.x
     add r1.y, -r2.x, r1.y
-    cmp r1.y, r1.y, -c11.y, -c11.w
+    cmp r1.y, r1.y, -c10.y, -c10.w
     add r1.y, r1.y, r3.w
     mul r1.y, r1.y, c1.x
     mul r2.x, r3.z, c3.x
@@ -750,16 +754,16 @@
     cmp r2.x, r8.z, r3.y, r2.x
     cmp r1.y, r8.y, r2.x, r1.y
     cmp r1.y, r8.x, r1.y, r3.x
-    cmp r1.y, -r2.z, r1.y, c11.z
+    cmp r1.y, -r2.z, r1.y, c10.z
     lrp r2.x, r1.x, r1.y, r1.z
-    cmp r1.y, r4.y, c11.w, c11.y
-    cmp r1.x, -r1.x, -c11.w, r1.y
+    cmp r1.y, r4.y, c10.w, c10.y
+    cmp r1.x, -r1.x, -c10.w, r1.y
     cmp r1.x, r1.x, r1.z, r2.x
     cmp r1.x, -c61.w, r1.z, r1.x
     mov_sat r1.y, c60.w
-    add r1.x, r1.x, c11.y
-    mad r1.x, r1.y, r1.x, c11.z
-    cmp r1.x, r1.w, r1.x, c11.z
+    add r1.x, r1.x, c10.y
+    mad r1.x, r1.y, r1.x, c10.z
+    cmp r1.x, r1.w, r1.x, c10.z
     mov_sat r1.y, r0.w
     mov_sat r1.z, c63.x
     mul r1.y, r1.z, r1.y
@@ -798,7 +802,7 @@
       mad r2.z, c65.y, r2.z, -r1.z
       mul r4.xyz, c65.z, v3.yxyw
       mov r5.x, c65.x
-      mul r5.xyz, r5.x, c87
+      mul r5.xyz, r5.x, c88
       mad r3.z, v3.x, c65.z, r5.z
       mad r3.z, r3.z, c4.y, c4.z
       frc r3.z, r3.z
@@ -815,7 +819,7 @@
       mad r5.y, r7.x, c8.z, r6.x
       mul r3.xz, r3.x, r5.xyyw
       mul r3.xz, r3, c8.w
-      cmp r3.xz, r2.z, r3, -c11.w
+      cmp r3.xz, r2.z, r3, -c10.w
       mad r4.xy, v2, r0.x, r3.xzzw
       mov r4.z, r0.w
       nrm r5.xyz, r4
@@ -825,17 +829,17 @@
     endif
     frc r4.xyz, c41
     add r5.xyz, -r4, c41
-    cmp r4.xyz, -r4, -c11.w, -c11.y
+    cmp r4.xyz, -r4, -c10.w, -c10.y
     cmp r4.xyz, c41, -r2.w, r4
     add r4.xyz, r4, r5
-    mov r5.xyz, -c11.w
-    mov r0.x, -c11.w
+    mov r5.xyz, -c10.w
+    mov r0.x, -c10.w
     rep i0
       mov r2.x, r4.x
       break_ge r0.x, r2.x
       add r2.x, r0.x, c16.x
-      add r6, r2.x, c14
-      add r7, r2.x, c10
+      add r6, r2.x, c86
+      add r7, r2.x, c11
       cmp r8.xyz, -r6_abs.x, c17, -r2.w
       cmp r9.xyz, -r6_abs.x, c19, -r2.w
       cmp r8.xyz, -r6_abs.y, c20, r8
@@ -853,11 +857,11 @@
       cmp r7.xyz, -r7_abs.w, c38, r8
       cmp r6.xyz, -r7_abs.w, c40, r6
       dp3 r2.x, r3.xzww, -r6
-      max r4.w, r2.x, -c11.w
+      max r4.w, r2.x, -c10.w
       mul r6.xyz, r7, r4.w
       mul r6.xyz, r1.w, r6
       mad r5.xyz, r6, r1.x, r5
-      add r0.x, r0.x, c11.z
+      add r0.x, r0.x, c10.z
     endrep
     mov r6.x, c17.w
     mov r6.yzw, c18.xxyz
@@ -876,15 +880,15 @@
     mov r13.x, c38.w
     mov r13.yzw, c39.xxyz
     mov r14.xyz, r5
-    mov r0.x, -c11.w
+    mov r0.x, -c10.w
     rep i0
       mov r2.x, r4.y
       break_ge r0.x, r2.x
       add r2.x, r0.x, c16.y
-      add r15, r2.x, c14
-      add r16, r2.x, c10
+      add r15, r2.x, c86
+      add r16, r2.x, c11
       cmp r17.xyz, -r15_abs.x, c17, -r2.w
-      cmp r18, -r15_abs.x, r6, -c11.w
+      cmp r18, -r15_abs.x, r6, -c10.w
       cmp r17.xyz, -r15_abs.y, c20, r17
       cmp r18, -r15_abs.y, r7, r18
       cmp r17.xyz, -r15_abs.z, c23, r17
@@ -904,24 +908,24 @@
       rsq r2.x, r2.x
       rcp r2.z, r2.x
       rcp r4.w, r16.x
-      mad r2.z, r2.z, -r4.w, c11.z
-      max r4.w, r2.z, -c11.w
+      mad r2.z, r2.z, -r4.w, c10.z
+      max r4.w, r2.z, -c10.w
       mul r16.xyz, r2.x, r16.yzww
       dp3 r2.x, r3.xzww, -r16
-      max r5.w, r2.x, -c11.w
+      max r5.w, r2.x, -c10.w
       mul r15.xyz, r15, r5.w
       mul r15.xyz, r4.w, r15
       mad r14.xyz, r15, r1.w, r14
-      add r0.x, r0.x, c11.z
+      add r0.x, r0.x, c10.z
     endrep
     mov r5.xyz, r14
-    mov r0.x, -c11.w
+    mov r0.x, -c10.w
     rep i0
       mov r2.x, r4.z
       break_ge r0.x, r2.x
       add r2.x, r0.x, c16.z
-      add r6, r2.x, c14
-      add r7, r2.x, c10
+      add r6, r2.x, c86
+      add r7, r2.x, c11
       cmp r8, -r6_abs.x, c17, -r2.w
       cmp r9, -r6_abs.x, c18, -r2.w
       cmp r10, -r6_abs.x, c19, -r2.w
@@ -951,28 +955,28 @@
       rsq r2.x, r2.x
       rcp r2.z, r2.x
       rcp r4.y, r8.w
-      mad r2.z, r2.z, -r4.y, c11.z
-      max r4.y, r2.z, -c11.w
+      mad r2.z, r2.z, -r4.y, c10.z
+      max r4.y, r2.z, -c10.w
       mul r7.xyz, r2.x, r7
       dp3 r2.x, r3.xzww, -r7
-      max r4.w, r2.x, -c11.w
+      max r4.w, r2.x, -c10.w
       dp3 r2.x, r7, r6
       add r2.x, r9.w, r2.x
-      add r2.z, r9.w, c11.z
+      add r2.z, r9.w, c10.z
       rcp r2.z, r2.z
       mul r2.x, r2.z, r2.x
-      cmp r2.z, r2.x, r4.w, -c11.w
+      cmp r2.z, r2.x, r4.w, -c10.w
       max r4.w, r2.x, r6.w
       mul r2.x, r2.z, r4.w
       mul r6.xyz, r8, r2.x
       mul r6.xyz, r4.y, r6
       mad r5.xyz, r6, r1.w, r5
-      add r0.x, r0.x, c11.z
+      add r0.x, r0.x, c10.z
     endrep
-    mad r0.x, r1.y, -c177.x, c177.y
+    mad r0.x, r1.y, -c178.x, c178.y
     frc r1.w, c100.x
     add r2.x, -r1.w, c100.x
-    cmp r1.w, -r1.w, -c11.w, -c11.y
+    cmp r1.w, -r1.w, -c10.w, -c10.y
     cmp r1.w, c100.x, -r2.w, r1.w
     add r1.w, r1.w, r2.x
     mov r4.w, c9.w
@@ -981,109 +985,109 @@
     mad r6, c70, v3.x, r6
     mad r6, c72, v3.z, r6
     add r6, r6, c73
-    add r2.z, -r6.w, -c86.z
+    add r2.z, -r6.w, -c87.z
     rcp r4.y, r6.w
     mul r4.zw, r4.y, r6.xyxy
     mul r7.x, r4.z, c2.x
     mad r8.xy, r4.zwzw, c2.x, c2.x
     mad r4.y, r6.z, r4.y, -c75.z
-    add r8.z, -r8.y, c11.z
-    cmp r6.xy, r8.xzzw, -c11.w, -c11.y
-    dp2add r4.z, r6, r6, -c11.w
-    cmp r4.z, -r4.z, -c11.w, -c11.y
-    add r6.xy, -r8.xzzw, c11.z
-    cmp r6.xy, r6, -c11.w, -c11.y
-    dp2add r5.w, r6, r6, -c11.w
-    cmp r5.w, -r5.w, -c11.w, -c11.y
+    add r8.z, -r8.y, c10.z
+    cmp r6.xy, r8.xzzw, -c10.w, -c10.y
+    dp2add r4.z, r6, r6, -c10.w
+    cmp r4.z, -r4.z, -c10.w, -c10.y
+    add r6.xy, -r8.xzzw, c10.z
+    cmp r6.xy, r6, -c10.w, -c10.y
+    dp2add r5.w, r6, r6, -c10.w
+    cmp r5.w, -r5.w, -c10.w, -c10.y
     add r4.z, r4.z, r5.w
-    cmp r4.z, -r4.z, -c11.w, -c11.y
-    add r5.w, -r4.y, c11.z
-    cmp r5.w, r5.w, -c11.w, -c11.y
+    cmp r4.z, -r4.z, -c10.w, -c10.y
+    add r5.w, -r4.y, c10.z
+    cmp r5.w, r5.w, -c10.w, -c10.y
     add r4.z, r4.z, r5.w
-    cmp r4.z, -r4.z, -c11.w, -c11.y
-    cmp r5.w, r4.y, -c11.w, -c11.y
+    cmp r4.z, -r4.z, -c10.w, -c10.y
+    cmp r5.w, r4.y, -c10.w, -c10.y
     add r4.z, r4.z, r5.w
     mov r6.x, c2.x
     max r5.w, c75.w, r6.x
     mul r9.x, r5.w, c75.y
     mov r8.w, -r8.y
-    mov r9.y, c11.z
+    mov r9.y, c10.z
     add r6.yz, r8.xxww, r9.xxyw
     texld r10, r6.yzzw, s9
     add r5.w, -r4.y, r10.x
-    cmp r5.w, r5.w, -c11.y, -c11.w
+    cmp r5.w, r5.w, -c10.y, -c10.w
     mov r9.z, -r9.x
     add r6.yz, r8.xxww, r9.xzyw
     texld r8, r6.yzzw, s9
     add r6.y, -r4.y, r8.x
-    cmp r6.y, r6.y, -c11.y, -c11.w
+    cmp r6.y, r6.y, -c10.y, -c10.w
     add r5.w, r5.w, r6.y
     mad r7.z, r4.w, -c2.x, c2.x
     mov r9.w, c2.x
     add r6.yz, r7.xxzw, r9.xwxw
     texld r8, r6.yzzw, s9
     add r4.w, -r4.y, r8.x
-    cmp r4.w, r4.w, -c11.y, -c11.w
+    cmp r4.w, r4.w, -c10.y, -c10.w
     add r4.w, r4.w, r5.w
-    mad r6.yz, r9.xwxw, c11.xzyw, r7.xxzw
+    mad r6.yz, r9.xwxw, c10.xzyw, r7.xxzw
     texld r7, r6.yzzw, s9
     add r4.y, -r4.y, r7.x
-    cmp r4.y, r4.y, -c11.y, -c11.w
+    cmp r4.y, r4.y, -c10.y, -c10.w
     add r4.y, r4.y, r4.w
     mov_sat r4.w, c75.x
-    mad r4.y, r4.y, c177.z, c177.w
-    mad r4.y, r4.w, r4.y, c11.z
-    cmp r4.y, -r4.z, r4.y, c11.z
-    cmp r2.z, r2.z, c11.z, r4.y
-    cmp r2.x, r2.x, c11.z, r2.z
-    mov r4.yzw, -c11.w
-    mov r2.z, -c11.w
+    mad r4.y, r4.y, c178.z, c178.w
+    mad r4.y, r4.w, r4.y, c10.z
+    cmp r4.y, -r4.z, r4.y, c10.z
+    cmp r2.z, r2.z, c10.z, r4.y
+    cmp r2.x, r2.x, c10.z, r2.z
+    mov r4.yzw, -c10.w
+    mov r2.z, -c10.w
     rep i1
       mov r5.w, r1.w
       break_ge r2.z, r5.w
       add r5.w, r2.z, r2.z
-      add r7, r5.w, c89
-      add r8, r5.w, c15
-      add r9, r5.w, c81
-      add r10, r5.w, c91
-      add r11, r5.w, c76
-      add r12, r5.w, c93
-      add r13, r5.w, c79
-      add r14, r5.w, c80
-      add r6.yzw, r5.w, c78
-      add r16, r5.w, c88
-      add r17, r5.w, c90
+      add r7, r5.w, c91
+      add r8, r5.w, c14
+      add r9, r5.w, c69
+      add r10, r5.w, c76
+      add r11, r5.w, c77
+      add r12, r5.w, c80
+      add r13, r5.w, c89
+      add r14, r5.w, c81
+      add r6.yzw, r5.w, c79
+      add r15, r5.w, c90
+      add r16, r5.w, c92
+      add r17, r5.w, c15
       add r18, r5.w, c43
-      add r19, r5.w, c69
-      add r20, r5.w, c74
-      add r21, r5.w, c77
-      add r15, r5.w, c92
+      add r19, r5.w, c74
+      add r20, r5.w, c93
+      add r21, r5.w, c78
       cmp r22, -r5_abs.w, c101, -r2.w
       cmp r22, -r15_abs.x, c102, r22
-      cmp r22, -r16_abs.x, c103, r22
-      cmp r22, -r16_abs.z, c104, r22
+      cmp r22, -r15_abs.z, c103, r22
+      cmp r22, -r16_abs.x, c104, r22
       cmp r22, -r7_abs.x, c105, r22
       cmp r22, -r7_abs.z, c106, r22
-      cmp r22, -r17_abs.x, c107, r22
-      cmp r22, -r17_abs.z, c108, r22
+      cmp r22, -r16_abs.z, c107, r22
+      cmp r22, -r17_abs.x, c108, r22
       cmp r22, -r8_abs.x, c109, r22
       cmp r22, -r8_abs.z, c110, r22
-      cmp r22, -r18_abs.x, c111, r22
-      cmp r22, -r18_abs.z, c112, r22
+      cmp r22, -r17_abs.z, c111, r22
+      cmp r22, -r18_abs.x, c112, r22
       cmp r22, -r9_abs.x, c113, r22
       cmp r22, -r9_abs.z, c114, r22
-      cmp r22, -r19_abs.x, c115, r22
-      cmp r22, -r19_abs.z, c116, r22
+      cmp r22, -r18_abs.z, c115, r22
+      cmp r22, -r19_abs.x, c116, r22
       cmp r22, -r10_abs.x, c117, r22
       cmp r22, -r10_abs.z, c118, r22
-      cmp r22, -r20_abs.x, c119, r22
-      cmp r22, -r20_abs.z, c120, r22
+      cmp r22, -r19_abs.z, c119, r22
+      cmp r22, -r20_abs.x, c120, r22
       cmp r22, -r11_abs.x, c121, r22
       cmp r22, -r11_abs.z, c122, r22
-      cmp r22, -r21_abs.x, c123, r22
-      cmp r22, -r21_abs.z, c124, r22
+      cmp r22, -r20_abs.z, c123, r22
+      cmp r22, -r21_abs.x, c124, r22
       cmp r22, -r6_abs.y, c125, r22
-      cmp r22, -r15_abs.z, c126, r22
+      cmp r22, -r21_abs.z, c126, r22
       cmp r22, -r12_abs.x, c127, r22
       cmp r22, -r12_abs.z, c128, r22
       cmp r22, -r13_abs.x, c129, r22
@@ -1092,63 +1096,63 @@
       cmp r22, -r14_abs.y, c132, r22
       cmp r22, -r6_abs.w, c133, r22
       cmp r22, -r15_abs.y, c134, r22
-      cmp r22, -r16_abs.y, c135, r22
-      cmp r22, -r16_abs.w, c136, r22
+      cmp r22, -r15_abs.w, c135, r22
+      cmp r22, -r16_abs.y, c136, r22
       cmp r22, -r7_abs.y, c137, r22
       cmp r22, -r7_abs.w, c138, r22
-      cmp r22, -r17_abs.y, c139, r22
-      cmp r22, -r17_abs.w, c140, r22
+      cmp r22, -r16_abs.w, c139, r22
+      cmp r22, -r17_abs.y, c140, r22
       cmp r22, -r8_abs.y, c141, r22
       cmp r22, -r8_abs.w, c142, r22
-      cmp r22, -r18_abs.y, c143, r22
-      cmp r22, -r18_abs.w, c144, r22
+      cmp r22, -r17_abs.w, c143, r22
+      cmp r22, -r18_abs.y, c144, r22
       cmp r22, -r9_abs.y, c145, r22
       cmp r22, -r9_abs.w, c146, r22
-      cmp r22, -r19_abs.y, c147, r22
-      cmp r22, -r19_abs.w, c148, r22
+      cmp r22, -r18_abs.w, c147, r22
+      cmp r22, -r19_abs.y, c148, r22
       cmp r22, -r10_abs.y, c149, r22
       cmp r22, -r10_abs.w, c150, r22
-      cmp r22, -r20_abs.y, c151, r22
-      cmp r22, -r20_abs.w, c152, r22
+      cmp r22, -r19_abs.w, c151, r22
+      cmp r22, -r20_abs.y, c152, r22
       cmp r22, -r11_abs.y, c153, r22
       cmp r22, -r11_abs.w, c154, r22
-      cmp r22, -r21_abs.y, c155, r22
-      cmp r22, -r21_abs.w, c156, r22
+      cmp r22, -r20_abs.w, c155, r22
+      cmp r22, -r21_abs.y, c156, r22
       cmp r22, -r6_abs.z, c157, r22
-      cmp r22, -r15_abs.w, c158, r22
+      cmp r22, -r21_abs.w, c158, r22
       cmp r22, -r12_abs.y, c159, r22
       cmp r22, -r12_abs.w, c160, r22
       cmp r22, -r13_abs.z, c161, r22
       cmp r22, -r13_abs.w, c162, r22
       cmp r22, -r14_abs.z, c163, r22
       cmp r14, -r14_abs.w, c164, r22
-      add r22.xyz, r5.w, c80
+      add r22.xyz, r5.w, c81
       cmp r23, -r5_abs.w, c102, -r2.w
       cmp r23, -r15_abs.x, c103, r23
-      cmp r23, -r16_abs.x, c104, r23
-      cmp r23, -r16_abs.z, c105, r23
+      cmp r23, -r15_abs.z, c104, r23
+      cmp r23, -r16_abs.x, c105, r23
       cmp r23, -r7_abs.x, c106, r23
       cmp r23, -r7_abs.z, c107, r23
-      cmp r23, -r17_abs.x, c108, r23
-      cmp r23, -r17_abs.z, c109, r23
+      cmp r23, -r16_abs.z, c108, r23
+      cmp r23, -r17_abs.x, c109, r23
       cmp r23, -r8_abs.x, c110, r23
       cmp r23, -r8_abs.z, c111, r23
-      cmp r23, -r18_abs.x, c112, r23
-      cmp r23, -r18_abs.z, c113, r23
+      cmp r23, -r17_abs.z, c112, r23
+      cmp r23, -r18_abs.x, c113, r23
       cmp r23, -r9_abs.x, c114, r23
       cmp r23, -r9_abs.z, c115, r23
-      cmp r23, -r19_abs.x, c116, r23
-      cmp r23, -r19_abs.z, c117, r23
+      cmp r23, -r18_abs.z, c116, r23
+      cmp r23, -r19_abs.x, c117, r23
       cmp r23, -r10_abs.x, c118, r23
       cmp r23, -r10_abs.z, c119, r23
-      cmp r23, -r20_abs.x, c120, r23
-      cmp r23, -r20_abs.z, c121, r23
+      cmp r23, -r19_abs.z, c120, r23
+      cmp r23, -r20_abs.x, c121, r23
       cmp r23, -r11_abs.x, c122, r23
       cmp r23, -r11_abs.z, c123, r23
-      cmp r23, -r21_abs.x, c124, r23
-      cmp r23, -r21_abs.z, c125, r23
+      cmp r23, -r20_abs.z, c124, r23
+      cmp r23, -r21_abs.x, c125, r23
       cmp r23, -r6_abs.y, c126, r23
-      cmp r23, -r15_abs.z, c127, r23
+      cmp r23, -r21_abs.z, c127, r23
       cmp r23, -r12_abs.x, c128, r23
       cmp r23, -r12_abs.z, c129, r23
       cmp r23, -r13_abs.x, c130, r23
@@ -1157,30 +1161,30 @@
       cmp r23, -r22_abs.y, c133, r23
       cmp r23, -r6_abs.w, c134, r23
       cmp r23, -r15_abs.y, c135, r23
-      cmp r23, -r16_abs.y, c136, r23
-      cmp r16, -r16_abs.w, c137, r23
-      cmp r16, -r7_abs.y, c138, r16
-      cmp r7, -r7_abs.w, c139, r16
-      cmp r7, -r17_abs.y, c140, r7
-      cmp r7, -r17_abs.w, c141, r7
+      cmp r15, -r15_abs.w, c136, r23
+      cmp r15, -r16_abs.y, c137, r15
+      cmp r15, -r7_abs.y, c138, r15
+      cmp r7, -r7_abs.w, c139, r15
+      cmp r7, -r16_abs.w, c140, r7
+      cmp r7, -r17_abs.y, c141, r7
       cmp r7, -r8_abs.y, c142, r7
       cmp r7, -r8_abs.w, c143, r7
-      cmp r7, -r18_abs.y, c144, r7
-      cmp r7, -r18_abs.w, c145, r7
+      cmp r7, -r17_abs.w, c144, r7
+      cmp r7, -r18_abs.y, c145, r7
       cmp r7, -r9_abs.y, c146, r7
       cmp r7, -r9_abs.w, c147, r7
-      cmp r7, -r19_abs.y, c148, r7
-      cmp r7, -r19_abs.w, c149, r7
+      cmp r7, -r18_abs.w, c148, r7
+      cmp r7, -r19_abs.y, c149, r7
       cmp r7, -r10_abs.y, c150, r7
       cmp r7, -r10_abs.w, c151, r7
-      cmp r7, -r20_abs.y, c152, r7
-      cmp r7, -r20_abs.w, c153, r7
+      cmp r7, -r19_abs.w, c152, r7
+      cmp r7, -r20_abs.y, c153, r7
       cmp r7, -r11_abs.y, c154, r7
       cmp r7, -r11_abs.w, c155, r7
-      cmp r7, -r21_abs.y, c156, r7
-      cmp r7, -r21_abs.w, c157, r7
+      cmp r7, -r20_abs.w, c156, r7
+      cmp r7, -r21_abs.y, c157, r7
       cmp r7, -r6_abs.z, c158, r7
-      cmp r7, -r15_abs.w, c159, r7
+      cmp r7, -r21_abs.w, c159, r7
       cmp r7, -r12_abs.y, c160, r7
       cmp r7, -r12_abs.w, c161, r7
       cmp r7, -r13_abs.z, c162, r7
@@ -1189,7 +1193,7 @@
       add r6.yzw, r14.xxyz, -v3.xxyz
       dp3 r5.w, r6.yzww, r6.yzww
       mad r8.x, r14.w, r14.w, -r5.w
-      add r8.y, r2.z, c11.z
+      add r8.y, r2.z, c10.z
       cmp r8.z, r8.x, r2.z, r8.y
       add r8.w, r5.w, c82.x
       rsq r5.w, r5.w
@@ -1198,9 +1202,9 @@
       mul r6.yzw, r5.w, r6
       dp3_sat r5.w, r3.xzww, r6.yzww
       rcp r6.y, r14.w
-      mad r6.y, r8.w, -r6.y, c11.z
+      mad r6.y, r8.w, -r6.y, c10.z
       mul r6.y, r6.y, r6.y
-      cmp r6.z, -r8.z, r2.x, c11.z
+      cmp r6.z, -r8.z, r2.x, c10.z
       mul r7.xyz, r7.w, r7
       mul r7.xyz, r5.w, r7
       mul r7.xyz, r6.y, r7
@@ -1213,8 +1217,8 @@
       add r0.x, c67.z, -v3.z
       add r1.w, -r0.x, c82.z
       add r2.x, -r3.w, -c5.y
-      cmp r2.x, r2.x, -c11.w, -c11.y
-      cmp r1.w, r1.w, -c11.w, r2.x
+      cmp r2.x, r2.x, -c10.w, -c10.y
+      cmp r1.w, r1.w, -c10.w, r2.x
       if_ne r1.w, -r1.w
         mov r2.x, c67.x
         mul r5, r2.x, c83
@@ -1242,7 +1246,7 @@
     endif
     if_lt r1.z, c68.y
       add r0.x, -c67.z, v3.z
-      add_sat r1.z, -r0.x, c11.z
+      add_sat r1.z, -r0.x, c10.z
       add_sat r0.x, r0.x, c4.w
       mul r0.x, r0.x, r1.z
       mul r0.x, r0.x, c1.y
@@ -1264,34 +1268,34 @@
       mul r1.z, r1.z, r2.x
       mul r1.z, r1.w, r1.z
       mul r1.z, r1.z, c68.y
-      mad r5.xyz, r1.z, -c14.w, r4.yzww
+      mad r5.xyz, r1.z, -c86.w, r4.yzww
       cmp r4.yzw, r0.x, r4, r5.xxyz
     endif
     add r0.x, -r3.y, c9.w
-    cmp r0.x, r0.x, -c11.w, -c11.y
+    cmp r0.x, r0.x, -c10.w, -c10.y
     add r1.z, -r1.y, c82.z
-    cmp r1.z, r1.z, -c11.w, -c11.y
+    cmp r1.z, r1.z, -c10.w, -c10.y
     add r0.x, r0.x, r1.z
-    if_lt -r0.x, -c11.w
+    if_lt -r0.x, -c10.w
       mad r0.x, r3.y, c63.z, -r3.y
       mad r0.x, r1.y, r0.x, c13.y
       add r1.z, r2.y, c63.w
-      mad r1.y, r1.y, r1.z, c11.z
-      cmp r1.y, r1.z, r1.y, c11.z
+      mad r1.y, r1.y, r1.z, c10.z
+      cmp r1.y, r1.z, r1.y, c10.z
       add r2.xyz, c42, -v3
       dp3 r1.z, r2, r2
       rsq r1.z, r1.z
       mov r1.w, c42.w
-      max r3.y, r1.w, -c15.x
+      max r3.y, r1.w, -c14.x
       mul r1.y, r1.y, r3.y
-      mov r5.xyz, -c11.w
-      mov r1.w, -c11.w
+      mov r5.xyz, -c10.w
+      mov r1.w, -c10.w
       rep i0
         mov r3.y, r4.x
         break_ge r1.w, r3.y
         add r3.y, r1.w, c16.x
-        add r7, r3.y, c14
-        add r8, r3.y, c10
+        add r7, r3.y, c86
+        add r8, r3.y, c11
         cmp r6.yzw, -r7_abs.x, c17.xxyz, -r2.w
         cmp r9.xyz, -r7_abs.x, c19, -r2.w
         cmp r6.yzw, -r7_abs.y, c20.xxyz, r6
@@ -1314,18 +1318,18 @@
         pow r5.w, r3.y, r1.y
         mul r6.yzw, r6, r5.w
         mad r5.xyz, r6.yzww, r0.x, r5
-        add r1.w, r1.w, c11.z
+        add r1.w, r1.w, c10.z
       endrep
       mul r1.xyz, r1.x, r5
     else
-      mov r1.xyz, -c11.w
+      mov r1.xyz, -c10.w
     endif
     mov_sat r0.x, r3.w
     mov_sat r1.w, -r3.w
     add r2.x, -r6.x, c47.z
     max r2.y, c47.y, r6.x
     pow_sat r4.x, r3_abs.w, r2.y
-    add r2.y, -r4.x, c11.z
+    add r2.y, -r4.x, c10.z
     mul r5.xyz, r1.w, c46
     mad r5.xyz, r0.x, c44, r5
     mad r2.yzw, r2.y, c45.xxyz, r5.xxyz
@@ -1335,22 +1339,29 @@
     mad r2.xyz, r2, c13.z, r4.yzww
     add r2.xyz, r2, v1
     mul r4.xyz, r2, c12
-    cmp r2.xyz, r2, r4, -c11.w
+    cmp r2.xyz, r2, r4, -c10.w
     add r1.xyz, r1, r2
     mul r0.x, c12.w, v1.w
     add r2.xyz, c42, -v3
     nrm r4.xyz, r2
-    dp3_sat r1.w, r3.xzww, r4
-    add r1.w, -r1.w, c11.z
-    mul r2.x, r1.w, r1.w
-    mul r2.x, r2.x, r2.x
-    mul r1.w, r1.w, r2.x
-    mad r1.w, r1.w, c85.z, c85.w
-    dp3 r2.x, -r4, r3.xzww
-    add r2.x, r2.x, r2.x
-    mad r2.xyz, r3.xzww, -r2.x, -r4
-    texld r2, r2, s8
-    mul r2.xyz, r1.w, r2
+    dp3_sat r2.x, r3.xzww, r4
+    dp3 r1.w, -r4, r3.xzww
+    add r1.w, r1.w, r1.w
+    mad r3.xyz, r3.xzww, -r1.w, -r4
+    texld r3, r3, s8
+    add r1.w, r6.x, -c64.y
+    mov_sat r2.z, c13.y
+    mad r2.y, r2.z, c85.z, c85.w
+    texld r4, r2, s11
+    mad r2.y, r4.x, c8.w, r4.y
+    mul r2.yzw, r2.y, r3.xxyz
+    add r2.x, -r2.x, c10.z
+    mul r3.w, r2.x, r2.x
+    mul r3.w, r3.w, r3.w
+    mul r2.x, r2.x, r3.w
+    mad r2.x, r2.x, c96.x, c96.y
+    mul r3.xyz, r2.x, r3
+    cmp r2.xyz, r1.w, r3, r2.yzww
     mul r2.xyz, r2, c13.y
     mad r1.xyz, r2, c64.x, r1
     texld r2, v0, s0
@@ -1361,183 +1372,191 @@
     mov_sat oC1.w, v4.x
     mov oC0.w, r0.x
 
-// approximately 1356 instruction slots used (172 texture, 1184 arithmetic)
+// approximately 1363 instruction slots used (173 texture, 1190 arithmetic)
 #endif
 
 const BYTE g_ps30_main[] =
 {
       0,   3, 255, 255, 254, 255, 
-    104,   1,  67,  84,  65,  66, 
-     28,   0,   0,   0, 113,   5, 
+    116,   1,  67,  84,  65,  66, 
+     28,   0,   0,   0, 161,   5, 
       0,   0,   0,   3, 255, 255, 
-     34,   0,   0,   0,  28,   0, 
+     35,   0,   0,   0,  28,   0, 
       0,   0,   0,   1,   0,   0, 
-    106,   5,   0,   0, 196,   2, 
+    154,   5,   0,   0, 216,   2, 
       0,   0,   2,   0,  67,   0, 
-      1,   0,  14,   1, 212,   2, 
+      1,   0,  14,   1, 232,   2, 
       0,   0,   0,   0,   0,   0, 
-    228,   2,   0,   0,   2,   0, 
+    248,   2,   0,   0,   2,   0, 
      48,   0,   4,   0, 194,   0, 
-    248,   2,   0,   0,   0,   0, 
-      0,   0,   8,   3,   0,   0, 
+     12,   3,   0,   0,   0,   0, 
+      0,   0,  28,   3,   0,   0, 
       2,   0,  52,   0,   4,   0, 
-    210,   0, 248,   2,   0,   0, 
-      0,   0,   0,   0,  26,   3, 
+    210,   0,  12,   3,   0,   0, 
+      0,   0,   0,   0,  46,   3, 
       0,   0,   2,   0,  56,   0, 
-      4,   0, 226,   0, 248,   2, 
+      4,   0, 226,   0,  12,   3, 
       0,   0,   0,   0,   0,   0, 
-     44,   3,   0,   0,   2,   0, 
+     64,   3,   0,   0,   2,   0, 
      60,   0,   1,   0, 242,   0, 
-    212,   2,   0,   0,   0,   0, 
-      0,   0,  54,   3,   0,   0, 
+    232,   2,   0,   0,   0,   0, 
+      0,   0,  74,   3,   0,   0, 
       3,   0,   4,   0,   1,   0, 
-     18,   0,  64,   3,   0,   0, 
-      0,   0,   0,   0,  80,   3, 
+     18,   0,  84,   3,   0,   0, 
+      0,   0,   0,   0, 100,   3, 
       0,   0,   3,   0,   5,   0, 
-      1,   0,  22,   0,  88,   3, 
+      1,   0,  22,   0, 108,   3, 
       0,   0,   0,   0,   0,   0, 
-    104,   3,   0,   0,   3,   0, 
+    124,   3,   0,   0,   3,   0, 
       6,   0,   1,   0,  26,   0, 
-    112,   3,   0,   0,   0,   0, 
-      0,   0, 128,   3,   0,   0, 
+    132,   3,   0,   0,   0,   0, 
+      0,   0, 148,   3,   0,   0, 
       2,   0,  61,   0,   1,   0, 
-    246,   0, 212,   2,   0,   0, 
-      0,   0,   0,   0, 138,   3, 
+    246,   0, 232,   2,   0,   0, 
+      0,   0,   0,   0, 158,   3, 
       0,   0,   2,   0,  62,   0, 
-      1,   0, 250,   0, 212,   2, 
+      1,   0, 250,   0, 232,   2, 
       0,   0,   0,   0,   0,   0, 
-    149,   3,   0,   0,   2,   0, 
+    169,   3,   0,   0,   2,   0, 
     100,   0,   1,   0, 146,   1, 
-    212,   2,   0,   0,   0,   0, 
-      0,   0, 163,   3,   0,   0, 
+    232,   2,   0,   0,   0,   0, 
+      0,   0, 183,   3,   0,   0, 
       2,   0, 101,   0,  64,   0, 
-    150,   1, 176,   3,   0,   0, 
-      0,   0,   0,   0, 192,   3, 
+    150,   1, 196,   3,   0,   0, 
+      0,   0,   0,   0, 212,   3, 
       0,   0,   2,   0,  42,   0, 
-      1,   0, 170,   0, 212,   2, 
+      1,   0, 170,   0, 232,   2, 
       0,   0,   0,   0,   0,   0, 
-    201,   3,   0,   0,   2,   0, 
+    221,   3,   0,   0,   2,   0, 
      16,   0,   1,   0,  66,   0, 
-    212,   3,   0,   0,   0,   0, 
-      0,   0, 228,   3,   0,   0, 
+    232,   3,   0,   0,   0,   0, 
+      0,   0, 248,   3,   0,   0, 
       2,   0,  68,   0,   1,   0, 
-     18,   1, 212,   2,   0,   0, 
-      0,   0,   0,   0, 239,   3, 
+     18,   1, 232,   2,   0,   0, 
+      0,   0,   0,   0,   3,   4, 
       0,   0,   2,   0,   0,   0, 
-      1,   0,   2,   0, 212,   2, 
+      1,   0,   2,   0, 232,   2, 
       0,   0,   0,   0,   0,   0, 
-    248,   3,   0,   0,   2,   0, 
-     46,   0,   1,   0, 186,   0, 
-    212,   2,   0,   0,   0,   0, 
-      0,   0,   2,   4,   0,   0, 
-      2,   0,  45,   0,   1,   0, 
-    182,   0, 212,   2,   0,   0, 
-      0,   0,   0,   0,  13,   4, 
-      0,   0,   3,   0,   7,   0, 
-      1,   0,  30,   0,  32,   4, 
+     12,   4,   0,   0,   3,   0, 
+     11,   0,   1,   0,  46,   0, 
+     24,   4,   0,   0,   0,   0, 
+      0,   0,  40,   4,   0,   0, 
+      2,   0,  46,   0,   1,   0, 
+    186,   0, 232,   2,   0,   0, 
+      0,   0,   0,   0,  50,   4, 
+      0,   0,   2,   0,  45,   0, 
+      1,   0, 182,   0, 232,   2, 
       0,   0,   0,   0,   0,   0, 
-     48,   4,   0,   0,   2,   0, 
-     47,   0,   1,   0, 190,   0, 
-    212,   2,   0,   0,   0,   0, 
-      0,   0,  58,   4,   0,   0, 
-      2,   0,  64,   0,   1,   0, 
-      2,   1, 212,   2,   0,   0, 
-      0,   0,   0,   0,  72,   4, 
-      0,   0,   3,   0,   8,   0, 
-      1,   0,  34,   0,  92,   4, 
+     61,   4,   0,   0,   3,   0, 
+      7,   0,   1,   0,  30,   0, 
+     80,   4,   0,   0,   0,   0, 
+      0,   0,  96,   4,   0,   0, 
+      2,   0,  47,   0,   1,   0, 
+    190,   0, 232,   2,   0,   0, 
+      0,   0,   0,   0, 106,   4, 
+      0,   0,   2,   0,  64,   0, 
+      1,   0,   2,   1, 232,   2, 
       0,   0,   0,   0,   0,   0, 
-    108,   4,   0,   0,   2,   0, 
-     44,   0,   1,   0, 178,   0, 
-    212,   2,   0,   0,   0,   0, 
-      0,   0, 115,   4,   0,   0, 
-      2,   0,  17,   0,  24,   0, 
-     70,   0, 188,   4,   0,   0, 
-      0,   0,   0,   0, 204,   4, 
-      0,   0,   2,   0,  12,   0, 
-      1,   0,  50,   0, 212,   2, 
+    120,   4,   0,   0,   3,   0, 
+      8,   0,   1,   0,  34,   0, 
+    140,   4,   0,   0,   0,   0, 
+      0,   0, 156,   4,   0,   0, 
+      2,   0,  44,   0,   1,   0, 
+    178,   0, 232,   2,   0,   0, 
+      0,   0,   0,   0, 163,   4, 
+      0,   0,   2,   0,  17,   0, 
+     24,   0,  70,   0, 236,   4, 
       0,   0,   0,   0,   0,   0, 
-    211,   4,   0,   0,   2,   0, 
-     41,   0,   1,   0, 166,   0, 
-    212,   2,   0,   0,   0,   0, 
-      0,   0, 223,   4,   0,   0, 
-      2,   0,  66,   0,   1,   0, 
-     10,   1, 212,   2,   0,   0, 
-      0,   0,   0,   0, 237,   4, 
-      0,   0,   2,   0,  65,   0, 
-      1,   0,   6,   1, 212,   2, 
+    252,   4,   0,   0,   2,   0, 
+     12,   0,   1,   0,  50,   0, 
+    232,   2,   0,   0,   0,   0, 
+      0,   0,   3,   5,   0,   0, 
+      2,   0,  41,   0,   1,   0, 
+    166,   0, 232,   2,   0,   0, 
+      0,   0,   0,   0,  15,   5, 
+      0,   0,   2,   0,  66,   0, 
+      1,   0,  10,   1, 232,   2, 
       0,   0,   0,   0,   0,   0, 
-    255,   4,   0,   0,   2,   0, 
-     70,   0,   4,   0,  26,   1, 
-    248,   2,   0,   0,   0,   0, 
-      0,   0,  13,   5,   0,   0, 
-      3,   0,   9,   0,   1,   0, 
-     38,   0,  28,   5,   0,   0, 
-      0,   0,   0,   0,  44,   5, 
-      0,   0,   2,   0,  75,   0, 
-      1,   0,  46,   1, 212,   2, 
+     29,   5,   0,   0,   2,   0, 
+     65,   0,   1,   0,   6,   1, 
+    232,   2,   0,   0,   0,   0, 
+      0,   0,  47,   5,   0,   0, 
+      2,   0,  70,   0,   4,   0, 
+     26,   1,  12,   3,   0,   0, 
+      0,   0,   0,   0,  61,   5, 
+      0,   0,   3,   0,   9,   0, 
+      1,   0,  38,   0,  76,   5, 
       0,   0,   0,   0,   0,   0, 
-     59,   5,   0,   0,   2,   0, 
-     13,   0,   1,   0,  54,   0, 
-    212,   2,   0,   0,   0,   0, 
-      0,   0,  69,   5,   0,   0, 
-      3,   0,   0,   0,   1,   0, 
-      2,   0,  76,   5,   0,   0, 
-      0,   0,   0,   0,  92,   5, 
-      0,   0,   2,   0,  63,   0, 
-      1,   0, 254,   0, 212,   2, 
+     92,   5,   0,   0,   2,   0, 
+     75,   0,   1,   0,  46,   1, 
+    232,   2,   0,   0,   0,   0, 
+      0,   0, 107,   5,   0,   0, 
+      2,   0,  13,   0,   1,   0, 
+     54,   0, 232,   2,   0,   0, 
+      0,   0,   0,   0, 117,   5, 
+      0,   0,   3,   0,   0,   0, 
+      1,   0,   2,   0, 124,   5, 
       0,   0,   0,   0,   0,   0, 
-     99,  97, 117, 115, 116, 105, 
-     99, 115,  80,  97, 114,  97, 
-    109, 115,   0, 171,   1,   0, 
-      3,   0,   1,   0,   4,   0, 
-      1,   0,   0,   0,   0,   0, 
-      0,   0,  99, 115, 109,  76, 
-    105, 103, 104, 116,  86, 105, 
-    101, 119,  80, 114, 111, 106, 
-     48,   0, 171, 171,   3,   0, 
-      3,   0,   4,   0,   4,   0, 
-      1,   0,   0,   0,   0,   0, 
-      0,   0,  99, 115, 109,  76, 
-    105, 103, 104, 116,  86, 105, 
-    101, 119,  80, 114, 111, 106, 
-     49,   0,  99, 115, 109,  76, 
-    105, 103, 104, 116,  86, 105, 
-    101, 119,  80, 114, 111, 106, 
-     50,   0,  99, 115, 109,  80, 
-     97, 114,  97, 109, 115,   0, 
-     99, 115, 109,  84, 101, 120, 
-     48,   0, 171, 171,   4,   0, 
-     12,   0,   1,   0,   1,   0, 
-      1,   0,   0,   0,   0,   0, 
-      0,   0,  99, 115, 109,  84, 
-    101, 120,  49,   0,   4,   0, 
-     12,   0,   1,   0,   1,   0, 
-      1,   0,   0,   0,   0,   0, 
-      0,   0,  99, 115, 109,  84, 
-    101, 120,  50,   0,   4,   0, 
-     12,   0,   1,   0,   1,   0, 
-      1,   0,   0,   0,   0,   0, 
-      0,   0,  99, 115, 109,  84, 
-    117, 110, 105, 110, 103,   0, 
-     99, 115, 109,  84, 117, 110, 
-    105, 110, 103,  50,   0, 100, 
-    121, 110,  76, 105, 103, 104, 
-    116,  67, 111, 117, 110, 116, 
+    140,   5,   0,   0,   2,   0, 
+     63,   0,   1,   0, 254,   0, 
+    232,   2,   0,   0,   0,   0, 
+      0,   0,  99,  97, 117, 115, 
+    116, 105,  99, 115,  80,  97, 
+    114,  97, 109, 115,   0, 171, 
+      1,   0,   3,   0,   1,   0, 
+      4,   0,   1,   0,   0,   0, 
+      0,   0,   0,   0,  99, 115, 
+    109,  76, 105, 103, 104, 116, 
+     86, 105, 101, 119,  80, 114, 
+    111, 106,  48,   0, 171, 171, 
+      3,   0,   3,   0,   4,   0, 
+      4,   0,   1,   0,   0,   0, 
+      0,   0,   0,   0,  99, 115, 
+    109,  76, 105, 103, 104, 116, 
+     86, 105, 101, 119,  80, 114, 
+    111, 106,  49,   0,  99, 115, 
+    109,  76, 105, 103, 104, 116, 
+     86, 105, 101, 119,  80, 114, 
+    111, 106,  50,   0,  99, 115, 
+    109,  80,  97, 114,  97, 109, 
+    115,   0,  99, 115, 109,  84, 
+    101, 120,  48,   0, 171, 171, 
+      4,   0,  12,   0,   1,   0, 
+      1,   0,   1,   0,   0,   0, 
+      0,   0,   0,   0,  99, 115, 
+    109,  84, 101, 120,  49,   0, 
+      4,   0,  12,   0,   1,   0, 
+      1,   0,   1,   0,   0,   0, 
+      0,   0,   0,   0,  99, 115, 
+    109,  84, 101, 120,  50,   0, 
+      4,   0,  12,   0,   1,   0, 
+      1,   0,   1,   0,   0,   0, 
+      0,   0,   0,   0,  99, 115, 
+    109,  84, 117, 110, 105, 110, 
+    103,   0,  99, 115, 109,  84, 
+    117, 110, 105, 110, 103,  50, 
       0, 100, 121, 110,  76, 105, 
-    103, 104, 116,  68,  97, 116, 
-     97,   0,   1,   0,   3,   0, 
-      1,   0,   4,   0,  64,   0, 
-      0,   0,   0,   0,   0,   0, 
-    101, 121, 101,  80, 111, 115, 
-     80,  83,   0, 102, 105, 114, 
-    115, 116,  76, 105, 103, 104, 
-    116,   0,   1,   0,   2,   0, 
-      1,   0,   4,   0,   1,   0, 
-      0,   0,   0,   0,   0,   0, 
-    102, 111,  97, 109,  80,  97, 
-    114,  97, 109, 115,   0, 102, 
-    111, 103,  67, 111, 108, 111, 
-    114,   0, 105,  98, 108,  71, 
+    103, 104, 116,  67, 111, 117, 
+    110, 116,   0, 100, 121, 110, 
+     76, 105, 103, 104, 116,  68, 
+     97, 116,  97,   0,   1,   0, 
+      3,   0,   1,   0,   4,   0, 
+     64,   0,   0,   0,   0,   0, 
+      0,   0, 101, 121, 101,  80, 
+    111, 115,  80,  83,   0, 102, 
+    105, 114, 115, 116,  76, 105, 
+    103, 104, 116,   0,   1,   0, 
+      2,   0,   1,   0,   4,   0, 
+      1,   0,   0,   0,   0,   0, 
+      0,   0, 102, 111,  97, 109, 
+     80,  97, 114,  97, 109, 115, 
+      0, 102, 111, 103,  67, 111, 
+    108, 111, 114,   0, 105,  98, 
+    108,  66, 114, 100, 102,  76, 
+    117, 116,   0, 171,   4,   0, 
+     12,   0,   1,   0,   1,   0, 
+      1,   0,   0,   0,   0,   0, 
+      0,   0, 105,  98, 108,  71, 
     114, 111, 117, 110, 100,   0, 
     105,  98, 108,  72, 111, 114, 
     105, 122, 111, 110,   0, 105, 
@@ -1566,13 +1585,13 @@ const BYTE g_ps30_main[] =
     115, 105, 116, 105, 111, 110, 
       0, 100, 105, 114, 101,  99, 
     116, 105, 111, 110,   0, 171, 
-    122,   4,   0,   0, 128,   4, 
-      0,   0, 144,   4,   0,   0, 
-    128,   4,   0,   0, 153,   4, 
-      0,   0, 128,   4,   0,   0, 
+    170,   4,   0,   0, 176,   4, 
+      0,   0, 192,   4,   0,   0, 
+    176,   4,   0,   0, 201,   4, 
+      0,   0, 176,   4,   0,   0, 
       5,   0,   0,   0,   1,   0, 
      12,   0,   8,   0,   3,   0, 
-    164,   4,   0,   0, 109,  97, 
+    212,   4,   0,   0, 109,  97, 
     116,  67, 111, 108,   0, 110, 
     117, 109,  76, 105, 103, 104, 
     116, 115,  80,  83,   0, 112, 
@@ -1645,57 +1664,57 @@ const BYTE g_ps30_main[] =
     102, 102, 102,  63, 111,  18, 
     131,  58,  81,   0,   0,   5, 
      10,   0,  15, 160,   0,   0, 
-    128, 192,   0,   0, 160, 192, 
-      0,   0, 192, 192,   0,   0, 
-    224, 192,  81,   0,   0,   5, 
-     11,   0,  15, 160,   0,   0, 
       0,  64,   0,   0, 128, 191, 
       0,   0, 128,  63,   0,   0, 
       0, 128,  81,   0,   0,   5, 
+     11,   0,  15, 160,   0,   0, 
+    128, 192,   0,   0, 160, 192, 
+      0,   0, 192, 192,   0,   0, 
+    224, 192,  81,   0,   0,   5, 
      14,   0,  15, 160,   0,   0, 
-      0, 128,   0,   0, 128, 191, 
-      0,   0,   0, 192,   0,   0, 
-     64, 192,  81,   0,   0,   5, 
-     15,   0,  15, 160,   0,   0, 
       0, 193,   0,   0,  32, 194, 
       0,   0,  16, 193,   0,   0, 
      36, 194,  81,   0,   0,   5, 
+     15,   0,  15, 160,   0,   0, 
+    224, 192,   0,   0,  28, 194, 
+      0,   0,  32, 193,   0,   0, 
+     40, 194,  81,   0,   0,   5, 
      43,   0,  15, 160,   0,   0, 
-     32, 193,   0,   0,  40, 194, 
-      0,   0,  48, 193,   0,   0, 
-     44, 194,  81,   0,   0,   5, 
+     48, 193,   0,   0,  44, 194, 
+      0,   0,  96, 193,   0,   0, 
+     56, 194,  81,   0,   0,   5, 
      69,   0,  15, 160,   0,   0, 
-     96, 193,   0,   0,  56, 194, 
-      0,   0, 112, 193,   0,   0, 
-     60, 194,  81,   0,   0,   5, 
-     74,   0,  15, 160,   0,   0, 
-    144, 193,   0,   0,  72, 194, 
-      0,   0, 152, 193,   0,   0, 
-     76, 194,  81,   0,   0,   5, 
-     76,   0,  15, 160,   0,   0, 
-    160, 193,   0,   0,  80, 194, 
-      0,   0, 168, 193,   0,   0, 
-     84, 194,  81,   0,   0,   5, 
-     77,   0,  15, 160,   0,   0, 
-    176, 193,   0,   0,  88, 194, 
-      0,   0, 184, 193,   0,   0, 
-     92, 194,  81,   0,   0,   5, 
-     78,   0,  15, 160,   0,   0, 
-      0,   0,   0,   0, 192, 193, 
-      0,   0,  96, 194,   0,   0, 
-      0, 194,  81,   0,   0,   5, 
-     79,   0,  15, 160,   0,   0, 
-    224, 193,   0,   0, 232, 193, 
-      0,   0, 112, 194,   0,   0, 
-    116, 194,  81,   0,   0,   5, 
-     80,   0,  15, 160,   0,   0, 
-    240, 193,   0,   0, 248, 193, 
-      0,   0, 120, 194,   0,   0, 
-    124, 194,  81,   0,   0,   5, 
-     81,   0,  15, 160,   0,   0, 
      64, 193,   0,   0,  48, 194, 
       0,   0,  80, 193,   0,   0, 
      52, 194,  81,   0,   0,   5, 
+     74,   0,  15, 160,   0,   0, 
+    112, 193,   0,   0,  60, 194, 
+      0,   0, 144, 193,   0,   0, 
+     72, 194,  81,   0,   0,   5, 
+     76,   0,  15, 160,   0,   0, 
+    128, 193,   0,   0,  64, 194, 
+      0,   0, 136, 193,   0,   0, 
+     68, 194,  81,   0,   0,   5, 
+     77,   0,  15, 160,   0,   0, 
+    160, 193,   0,   0,  80, 194, 
+      0,   0, 168, 193,   0,   0, 
+     84, 194,  81,   0,   0,   5, 
+     78,   0,  15, 160,   0,   0, 
+    184, 193,   0,   0,  92, 194, 
+      0,   0, 200, 193,   0,   0, 
+    100, 194,  81,   0,   0,   5, 
+     79,   0,  15, 160,   0,   0, 
+      0,   0,   0,   0, 192, 193, 
+      0,   0,  96, 194,   0,   0, 
+      0, 194,  81,   0,   0,   5, 
+     80,   0,  15, 160,   0,   0, 
+    208, 193,   0,   0, 104, 194, 
+      0,   0, 216, 193,   0,   0, 
+    108, 194,  81,   0,   0,   5, 
+     81,   0,  15, 160,   0,   0, 
+    240, 193,   0,   0, 248, 193, 
+      0,   0, 120, 194,   0,   0, 
+    124, 194,  81,   0,   0,   5, 
      82,   0,  15, 160, 189,  55, 
     134, 181,   0,   0, 122,  68, 
     205, 204,  76,  61,  99, 187, 
@@ -1710,40 +1729,40 @@ const BYTE g_ps30_main[] =
       0,   0,  81,   0,   0,   5, 
      85,   0,  15, 160, 205, 204, 
     204,  61, 205, 204,  76,  61, 
-    143, 194, 117,  63,  10, 215, 
-     35,  61,  81,   0,   0,   5, 
+    205, 204,  76, 191,   0,   0, 
+    128,  63,  81,   0,   0,   5, 
      86,   0,  15, 160,   0,   0, 
+      0, 128,   0,   0, 128, 191, 
+      0,   0,   0, 192,   0,   0, 
+     64, 192,  81,   0,   0,   5, 
+     87,   0,  15, 160,   0,   0, 
       0,   0,   0,   0,   0, 128, 
      23, 183, 209, 184,   0,  64, 
      28,  70,  81,   0,   0,   5, 
-     87,   0,  15, 160,   0,   0, 
+     88,   0,  15, 160,   0,   0, 
      48,  64,   0,   0,  16,  64, 
       0,   0,  32,  64,   0,   0, 
       0,   0,  81,   0,   0,   5, 
-     88,   0,  15, 160,   0,   0, 
-      0, 192,   0,   0,   8, 194, 
-      0,   0,  64, 192,   0,   0, 
-     12, 194,  81,   0,   0,   5, 
      89,   0,  15, 160,   0,   0, 
+    224, 193,   0,   0, 232, 193, 
+      0,   0, 112, 194,   0,   0, 
+    116, 194,  81,   0,   0,   5, 
+     90,   0,  15, 160,   0,   0, 
+    128, 191,   0,   0,   4, 194, 
+      0,   0,   0, 192,   0,   0, 
+      8, 194,  81,   0,   0,   5, 
+     91,   0,  15, 160,   0,   0, 
     128, 192,   0,   0,  16, 194, 
       0,   0, 160, 192,   0,   0, 
      20, 194,  81,   0,   0,   5, 
-     90,   0,  15, 160,   0,   0, 
-    192, 192,   0,   0,  24, 194, 
-      0,   0, 224, 192,   0,   0, 
-     28, 194,  81,   0,   0,   5, 
-     91,   0,  15, 160,   0,   0, 
-    128, 193,   0,   0,  64, 194, 
-      0,   0, 136, 193,   0,   0, 
-     68, 194,  81,   0,   0,   5, 
      92,   0,  15, 160,   0,   0, 
-    128, 191,   0,   0,   4, 194, 
-      0,   0, 200, 193,   0,   0, 
-    100, 194,  81,   0,   0,   5, 
+     64, 192,   0,   0,  12, 194, 
+      0,   0, 192, 192,   0,   0, 
+     24, 194,  81,   0,   0,   5, 
      93,   0,  15, 160,   0,   0, 
-    208, 193,   0,   0, 104, 194, 
-      0,   0, 216, 193,   0,   0, 
-    108, 194,  81,   0,   0,   5, 
+    152, 193,   0,   0,  76, 194, 
+      0,   0, 176, 193,   0,   0, 
+     88, 194,  81,   0,   0,   5, 
      94,   0,  15, 160,  69, 118, 
     116,  62, 131, 249, 162,  62, 
      74, 135, 138,  62,   0,   0, 
@@ -1752,71 +1771,75 @@ const BYTE g_ps30_main[] =
     140,  63,  20, 174, 199,  63, 
       0,   0,   0,  64,   0,   0, 
       0,   0,  81,   0,   0,   5, 
-     96,   0,  15, 160,  67, 202, 
+     96,   0,  15, 160, 143, 194, 
+    117,  63,  10, 215,  35,  61, 
+      0,   0,   0,   0,   0,   0, 
+      0,   0,  81,   0,   0,   5, 
+     97,   0,  15, 160,  67, 202, 
      31, 191, 140, 161,  60, 190, 
     226,   6,  92,  62,   6,  13, 
      93, 190,  81,   0,   0,   5, 
-     97,   0,  15, 160, 157,  46, 
+     98,   0,  15, 160, 157,  46, 
     139, 190,  66,   9, 211, 190, 
       8,  85, 106,  61, 132, 245, 
      79,  63,  81,   0,   0,   5, 
-     98,   0,  15, 160, 250, 155, 
+     99,   0,  15, 160, 250, 155, 
      88, 191,  59, 228,  14,  63, 
      17,  30,  29,  63,  45, 120, 
      81,  63,  81,   0,   0,   5, 
-     99,   0,  15, 160, 176,  85, 
+    165,   0,  15, 160, 176,  85, 
       2, 191,  74, 239,  91,  62, 
     133, 148, 191,  62, 222, 171, 
      14,  63,  81,   0,   0,   5, 
-    165,   0,  15, 160, 221, 210, 
+    166,   0,  15, 160, 221, 210, 
      50,  63, 213, 202,  28, 191, 
     135, 162, 128, 189,  74,   7, 
     139, 190,  81,   0,   0,   5, 
-    166,   0,  15, 160, 185, 136, 
+    167,   0,  15, 160, 185, 136, 
      31, 191,  75, 118,   4, 191, 
     151,  57,  85,  63,  28, 124, 
     145, 190,  81,   0,   0,   5, 
-    167,   0,  15, 160,   9, 225, 
+    168,   0,  15, 160,   9, 225, 
     209, 189, 201, 200,  89,  61, 
      97, 142, 142,  62,  21, 198, 
      62, 191,  81,   0,   0,   5, 
-    168,   0,  15, 160,  19, 126, 
+    169,   0,  15, 160,  19, 126, 
       9,  62,  27, 245,  32,  63, 
     184,  35, 204, 190, 241, 215, 
      84,  63,  81,   0,   0,   5, 
-    169,   0,  15, 160, 216,  13, 
+    170,   0,  15, 160, 216,  13, 
      59,  62, 244, 137,  60, 190, 
     158,   7, 231,  62, 228, 189, 
     106,  61,  81,   0,   0,   5, 
-    170,   0,  15, 160,  85, 246, 
+    171,   0,  15, 160,  85, 246, 
     157, 190, 217,  90,  23, 191, 
      22, 222,  53, 191, 131, 105, 
     184,  62,  81,   0,   0,   5, 
-    171,   0,  15, 160,  20, 237, 
+    172,   0,  15, 160,  20, 237, 
      10, 190,  65, 188, 174,  62, 
     109, 226,  28,  63,  49, 206, 
     223,  62,  81,   0,   0,   5, 
-    172,   0,  15, 160, 202, 224, 
+    173,   0,  15, 160, 202, 224, 
      40,  61, 123,  73,   3, 191, 
     108,  91,  76,  63, 221, 205, 
     211,  61,  81,   0,   0,   5, 
-    173,   0,  15, 160,  56, 103, 
+    174,   0,  15, 160,  56, 103, 
     108, 191, 162, 238, 163, 190, 
     197, 172, 215, 190, 196, 153, 
     223, 189,  81,   0,   0,   5, 
-    174,   0,  15, 160,  26, 110, 
+    175,   0,  15, 160,  26, 110, 
     160,  62,  67, 255, 108,  63, 
     163, 204,  14, 191, 129,  67, 
      40,  63,  81,   0,   0,   5, 
-    175,   0,  15, 160, 165, 102, 
+    176,   0,  15, 160, 165, 102, 
      79, 190,  24,   9,  93, 191, 
      44, 183,   4,  63,  30,  51, 
     208, 190,  81,   0,   0,   5, 
-    176,   0,  15, 160, 136,  17, 
+    177,   0,  15, 160, 136,  17, 
     114,  63, 113,  27,  69,  63, 
     173, 192,  80, 191, 217,  90, 
      63,  62,  81,   0,   0,   5, 
-    177,   0,  15, 160,   0,   0, 
+    178,   0,  15, 160,   0,   0, 
       0,  63,   0,   0, 128,  63, 
       0,   0, 128,  62,   0,   0, 
     128, 191,  48,   0,   0,   5, 
@@ -1851,6 +1874,8 @@ const BYTE g_ps30_main[] =
       0,   0,   0, 152,   8,   8, 
      15, 160,  31,   0,   0,   2, 
       0,   0,   0, 144,   9,   8, 
+     15, 160,  31,   0,   0,   2, 
+      0,   0,   0, 144,  11,   8, 
      15, 160,   8,   0,   0,   3, 
       0,   0,   1, 128,   2,   0, 
     228, 144,   2,   0, 228, 144, 
@@ -1872,18 +1897,18 @@ const BYTE g_ps30_main[] =
      14, 128,   1,   0,   0, 128, 
      60,   0, 144, 161,  88,   0, 
       0,   4,   2,   0,   3, 128, 
-      1,   0, 238, 128,  11,   0, 
-    228, 160,  11,   0, 238, 160, 
+      1,   0, 238, 128,  10,   0, 
+    228, 160,  10,   0, 238, 160, 
      88,   0,   0,   4,   1,   0, 
      12, 128,   1,   0, 148, 128, 
-      2,   0,  68, 128,  86,   0, 
+      2,   0,  68, 128,  87,   0, 
      68, 160,  88,   0,   0,   4, 
       1,   0,   8, 128,   1,   0, 
      85, 128,   1,   0, 255, 128, 
-     11,   0, 255, 160,   4,   0, 
+     10,   0, 255, 160,   4,   0, 
       0,   4,   2,   0,  15, 128, 
-      3,   0,  36, 144,  11,   0, 
-    213, 161,  11,   0, 127, 161, 
+      3,   0,  36, 144,  10,   0, 
+    213, 161,  10,   0, 127, 161, 
       9,   0,   0,   3,   3,   0, 
       1, 128,   2,   0, 228, 128, 
      48,   0, 228, 160,   9,   0, 
@@ -1896,7 +1921,7 @@ const BYTE g_ps30_main[] =
       8, 128,   2,   0, 228, 128, 
      51,   0, 228, 160,   2,   0, 
       0,   3,   4,   0,   3, 128, 
-      1,   0, 170, 128,  11,   0, 
+      1,   0, 170, 128,  10,   0, 
     226, 161,   9,   0,   0,   3, 
       5,   0,   1, 128,   2,   0, 
     228, 128,  52,   0, 228, 160, 
@@ -1927,12 +1952,12 @@ const BYTE g_ps30_main[] =
       2,   0, 228, 128,   3,   0, 
     228, 128,   2,   0,   0,   3, 
       1,   0,   4, 128,   2,   0, 
-    255, 128,  86,   0, 170, 160, 
+    255, 128,  87,   0, 170, 160, 
       6,   0,   0,   2,   2,   0, 
       8, 128,   2,   0, 255, 128, 
      88,   0,   0,   4,   1,   0, 
       4, 128,   1,   0, 170, 128, 
-      2,   0, 255, 128,  86,   0, 
+      2,   0, 255, 128,  87,   0, 
     255, 160,   5,   0,   0,   3, 
       2,   0,   3, 128,   1,   0, 
     170, 128,   2,   0, 228, 128, 
@@ -1944,53 +1969,53 @@ const BYTE g_ps30_main[] =
     170, 128,   1,   0, 170, 128, 
      61,   0, 170, 161,   2,   0, 
       0,   3,   3,   0,   4, 128, 
-      3,   0,  85, 129,  11,   0, 
+      3,   0,  85, 129,  10,   0, 
     170, 160,  88,   0,   0,   4, 
       2,   0,   3, 128,   3,   0, 
-    232, 128,  11,   0, 255, 161, 
-     11,   0,  85, 161,  90,   0, 
+    232, 128,  10,   0, 255, 161, 
+     10,   0,  85, 161,  90,   0, 
       0,   4,   2,   0,   1, 128, 
       2,   0, 228, 128,   2,   0, 
-    228, 128,  11,   0, 255, 161, 
+    228, 128,  10,   0, 255, 161, 
       2,   0,   0,   3,   2,   0, 
       6, 128,   3,   0, 224, 129, 
-     11,   0, 170, 160,  88,   0, 
+     10,   0, 170, 160,  88,   0, 
       0,   4,   2,   0,   6, 128, 
-      2,   0, 228, 128,  11,   0, 
-    255, 161,  11,   0,  85, 161, 
+      2,   0, 228, 128,  10,   0, 
+    255, 161,  10,   0,  85, 161, 
      90,   0,   0,   4,   2,   0, 
       2, 128,   2,   0, 233, 128, 
-      2,   0, 233, 128,  11,   0, 
+      2,   0, 233, 128,  10,   0, 
     255, 161,  88,   0,   0,   4, 
       2,   0,   3, 128,   2,   0, 
-    228, 129,  11,   0, 255, 161, 
-     11,   0,  85, 161,   2,   0, 
+    228, 129,  10,   0, 255, 161, 
+     10,   0,  85, 161,   2,   0, 
       0,   3,   2,   0,   1, 128, 
       2,   0,  85, 128,   2,   0, 
       0, 128,  88,   0,   0,   4, 
       2,   0,   1, 128,   2,   0, 
-      0, 129,  11,   0, 255, 161, 
-     11,   0,  85, 161,   2,   0, 
+      0, 129,  10,   0, 255, 161, 
+     10,   0,  85, 161,   2,   0, 
       0,   3,   2,   0,   2, 128, 
-      1,   0, 170, 129,  11,   0, 
+      1,   0, 170, 129,  10,   0, 
     170, 160,  88,   0,   0,   4, 
       2,   0,   2, 128,   2,   0, 
-     85, 128,  11,   0, 255, 161, 
-     11,   0,  85, 161,   2,   0, 
+     85, 128,  10,   0, 255, 161, 
+     10,   0,  85, 161,   2,   0, 
       0,   3,   2,   0,   1, 128, 
       2,   0,  85, 128,   2,   0, 
       0, 128,  88,   0,   0,   4, 
       2,   0,   1, 128,   2,   0, 
-      0, 129,  11,   0, 255, 161, 
-     11,   0,  85, 161,  88,   0, 
+      0, 129,  10,   0, 255, 161, 
+     10,   0,  85, 161,  88,   0, 
       0,   4,   2,   0,   2, 128, 
-      1,   0, 170, 128,  11,   0, 
-    255, 161,  11,   0,  85, 161, 
+      1,   0, 170, 128,  10,   0, 
+    255, 161,  10,   0,  85, 161, 
       2,   0,   0,   3,   2,   0, 
       1, 128,   2,   0,  85, 128, 
       2,   0,   0, 128,   1,   0, 
       0,   2,   2,   0,  14, 128, 
-     11,   0, 228, 160,  11,   0, 
+     10,   0, 228, 160,  11,   0, 
       0,   3,   3,   0,   2, 128, 
      62,   0,  85, 160,   2,   0, 
     170, 128,   5,   0,   0,   3, 
@@ -2032,11 +2057,11 @@ const BYTE g_ps30_main[] =
      18, 128,   3,   0,  85, 128, 
       2,   0, 255, 160,  88,   0, 
       0,   4,   2,   0,   4, 128, 
-      2,   0, 170, 129,  11,   0, 
+      2,   0, 170, 129,  10,   0, 
     170, 160,   3,   0,  85, 128, 
       4,   0,   0,   4,   8,   0, 
      15, 128,   7,   0, 238, 128, 
-    176,   0, 228, 160,   3,   0, 
+    177,   0, 228, 160,   3,   0, 
     136, 128,  66,   0,   0,   3, 
       9,   0,  15, 128,   8,   0, 
     228, 128,   4,   8, 228, 160, 
@@ -2074,7 +2099,57 @@ const BYTE g_ps30_main[] =
     170, 129,   3,   0, 255, 128, 
      88,   0,   0,   4,   3,   0, 
      10, 128,   3,   0, 228, 128, 
-     11,   0,  85, 161,  11,   0, 
+     10,   0,  85, 161,  10,   0, 
+    255, 161,   2,   0,   0,   3, 
+      3,   0,   2, 128,   3,   0, 
+    255, 128,   3,   0,  85, 128, 
+      4,   0,   0,   4,   8,   0, 
+     15, 128,   7,   0, 238, 128, 
+    176,   0, 228, 160,   3,   0, 
+    136, 128,  66,   0,   0,   3, 
+      9,   0,  15, 128,   8,   0, 
+    228, 128,   4,   8, 228, 160, 
+     66,   0,   0,   3,  10,   0, 
+     15, 128,   8,   0, 228, 128, 
+      5,   8, 228, 160,  66,   0, 
+      0,   3,  11,   0,  15, 128, 
+      8,   0, 228, 128,   6,   8, 
+    228, 160,  88,   0,   0,   4, 
+      3,   0,   8, 128,   4,   0, 
+      0, 140,  10,   0,   0, 128, 
+     11,   0,   0, 128,  88,   0, 
+      0,   4,   3,   0,   8, 128, 
+      1,   0,  85, 128,   3,   0, 
+    255, 128,   9,   0,   0, 128, 
+      2,   0,   0,   3,   3,   0, 
+      8, 128,   1,   0, 170, 129, 
+      3,   0, 255, 128,  88,   0, 
+      0,   4,   3,   0,   8, 128, 
+      3,   0, 255, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
+      2,   0,   0,   3,   3,   0, 
+      2, 128,   3,   0, 255, 128, 
+      3,   0,  85, 128,  66,   0, 
+      0,   3,   9,   0,  15, 128, 
+      8,   0, 238, 128,   4,   8, 
+    228, 160,  66,   0,   0,   3, 
+     10,   0,  15, 128,   8,   0, 
+    238, 128,   5,   8, 228, 160, 
+     66,   0,   0,   3,   8,   0, 
+     15, 128,   8,   0, 238, 128, 
+      6,   8, 228, 160,  88,   0, 
+      0,   4,   3,   0,   8, 128, 
+      4,   0,   0, 140,  10,   0, 
+      0, 128,   8,   0,   0, 128, 
+     88,   0,   0,   4,   3,   0, 
+      8, 128,   1,   0,  85, 128, 
+      3,   0, 255, 128,   9,   0, 
+      0, 128,   2,   0,   0,   3, 
+      3,   0,   8, 128,   1,   0, 
+    170, 129,   3,   0, 255, 128, 
+     88,   0,   0,   4,   3,   0, 
+      8, 128,   3,   0, 255, 128, 
+     10,   0,  85, 161,  10,   0, 
     255, 161,   2,   0,   0,   3, 
       3,   0,   2, 128,   3,   0, 
     255, 128,   3,   0,  85, 128, 
@@ -2100,58 +2175,8 @@ const BYTE g_ps30_main[] =
       8, 128,   1,   0, 170, 129, 
       3,   0, 255, 128,  88,   0, 
       0,   4,   3,   0,   8, 128, 
-      3,   0, 255, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
-      2,   0,   0,   3,   3,   0, 
-      2, 128,   3,   0, 255, 128, 
-      3,   0,  85, 128,  66,   0, 
-      0,   3,   9,   0,  15, 128, 
-      8,   0, 238, 128,   4,   8, 
-    228, 160,  66,   0,   0,   3, 
-     10,   0,  15, 128,   8,   0, 
-    238, 128,   5,   8, 228, 160, 
-     66,   0,   0,   3,   8,   0, 
-     15, 128,   8,   0, 238, 128, 
-      6,   8, 228, 160,  88,   0, 
-      0,   4,   3,   0,   8, 128, 
-      4,   0,   0, 140,  10,   0, 
-      0, 128,   8,   0,   0, 128, 
-     88,   0,   0,   4,   3,   0, 
-      8, 128,   1,   0,  85, 128, 
-      3,   0, 255, 128,   9,   0, 
-      0, 128,   2,   0,   0,   3, 
-      3,   0,   8, 128,   1,   0, 
-    170, 129,   3,   0, 255, 128, 
-     88,   0,   0,   4,   3,   0, 
-      8, 128,   3,   0, 255, 128, 
-     11,   0,  85, 161,  11,   0, 
-    255, 161,   2,   0,   0,   3, 
-      3,   0,   2, 128,   3,   0, 
-    255, 128,   3,   0,  85, 128, 
-      4,   0,   0,   4,   8,   0, 
-     15, 128,   7,   0, 238, 128, 
-    174,   0, 228, 160,   3,   0, 
-    136, 128,  66,   0,   0,   3, 
-      9,   0,  15, 128,   8,   0, 
-    228, 128,   4,   8, 228, 160, 
-     66,   0,   0,   3,  10,   0, 
-     15, 128,   8,   0, 228, 128, 
-      5,   8, 228, 160,  66,   0, 
-      0,   3,  11,   0,  15, 128, 
-      8,   0, 228, 128,   6,   8, 
-    228, 160,  88,   0,   0,   4, 
-      3,   0,   8, 128,   4,   0, 
-      0, 140,  10,   0,   0, 128, 
-     11,   0,   0, 128,  88,   0, 
-      0,   4,   3,   0,   8, 128, 
-      1,   0,  85, 128,   3,   0, 
-    255, 128,   9,   0,   0, 128, 
-      2,   0,   0,   3,   3,   0, 
-      8, 128,   1,   0, 170, 129, 
-      3,   0, 255, 128,  88,   0, 
-      0,   4,   3,   0,   8, 128, 
-      3,   0, 255, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
+      3,   0, 255, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
       2,   0,   0,   3,   3,   0, 
       8, 128,   3,   0, 255, 128, 
       3,   0,  85, 128,  66,   0, 
@@ -2174,7 +2199,57 @@ const BYTE g_ps30_main[] =
     170, 129,   4,   0, 170, 128, 
      88,   0,   0,   4,   4,   0, 
       4, 128,   4,   0, 170, 128, 
-     11,   0,  85, 161,  11,   0, 
+     10,   0,  85, 161,  10,   0, 
+    255, 161,   2,   0,   0,   3, 
+      3,   0,   8, 128,   3,   0, 
+    255, 128,   4,   0, 170, 128, 
+      4,   0,   0,   4,   8,   0, 
+     15, 128,   7,   0, 238, 128, 
+    174,   0, 228, 160,   3,   0, 
+    136, 128,  66,   0,   0,   3, 
+      9,   0,  15, 128,   8,   0, 
+    228, 128,   4,   8, 228, 160, 
+     66,   0,   0,   3,  10,   0, 
+     15, 128,   8,   0, 228, 128, 
+      5,   8, 228, 160,  66,   0, 
+      0,   3,  11,   0,  15, 128, 
+      8,   0, 228, 128,   6,   8, 
+    228, 160,  88,   0,   0,   4, 
+      4,   0,   4, 128,   4,   0, 
+      0, 140,  10,   0,   0, 128, 
+     11,   0,   0, 128,  88,   0, 
+      0,   4,   4,   0,   4, 128, 
+      1,   0,  85, 128,   4,   0, 
+    170, 128,   9,   0,   0, 128, 
+      2,   0,   0,   3,   4,   0, 
+      4, 128,   1,   0, 170, 129, 
+      4,   0, 170, 128,  88,   0, 
+      0,   4,   4,   0,   4, 128, 
+      4,   0, 170, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
+      2,   0,   0,   3,   3,   0, 
+      8, 128,   3,   0, 255, 128, 
+      4,   0, 170, 128,  66,   0, 
+      0,   3,   9,   0,  15, 128, 
+      8,   0, 238, 128,   4,   8, 
+    228, 160,  66,   0,   0,   3, 
+     10,   0,  15, 128,   8,   0, 
+    238, 128,   5,   8, 228, 160, 
+     66,   0,   0,   3,   8,   0, 
+     15, 128,   8,   0, 238, 128, 
+      6,   8, 228, 160,  88,   0, 
+      0,   4,   4,   0,   4, 128, 
+      4,   0,   0, 140,  10,   0, 
+      0, 128,   8,   0,   0, 128, 
+     88,   0,   0,   4,   4,   0, 
+      4, 128,   1,   0,  85, 128, 
+      4,   0, 170, 128,   9,   0, 
+      0, 128,   2,   0,   0,   3, 
+      4,   0,   4, 128,   1,   0, 
+    170, 129,   4,   0, 170, 128, 
+     88,   0,   0,   4,   4,   0, 
+      4, 128,   4,   0, 170, 128, 
+     10,   0,  85, 161,  10,   0, 
     255, 161,   2,   0,   0,   3, 
       3,   0,   8, 128,   3,   0, 
     255, 128,   4,   0, 170, 128, 
@@ -2200,8 +2275,8 @@ const BYTE g_ps30_main[] =
       4, 128,   1,   0, 170, 129, 
       4,   0, 170, 128,  88,   0, 
       0,   4,   4,   0,   4, 128, 
-      4,   0, 170, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
+      4,   0, 170, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
       2,   0,   0,   3,   3,   0, 
       8, 128,   3,   0, 255, 128, 
       4,   0, 170, 128,  66,   0, 
@@ -2224,7 +2299,7 @@ const BYTE g_ps30_main[] =
     170, 129,   4,   0, 170, 128, 
      88,   0,   0,   4,   4,   0, 
       4, 128,   4,   0, 170, 128, 
-     11,   0,  85, 161,  11,   0, 
+     10,   0,  85, 161,  10,   0, 
     255, 161,   2,   0,   0,   3, 
       3,   0,   8, 128,   3,   0, 
     255, 128,   4,   0, 170, 128, 
@@ -2250,8 +2325,8 @@ const BYTE g_ps30_main[] =
       4, 128,   1,   0, 170, 129, 
       4,   0, 170, 128,  88,   0, 
       0,   4,   4,   0,   4, 128, 
-      4,   0, 170, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
+      4,   0, 170, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
       2,   0,   0,   3,   3,   0, 
       8, 128,   3,   0, 255, 128, 
       4,   0, 170, 128,  66,   0, 
@@ -2274,7 +2349,7 @@ const BYTE g_ps30_main[] =
     170, 129,   4,   0, 170, 128, 
      88,   0,   0,   4,   4,   0, 
       4, 128,   4,   0, 170, 128, 
-     11,   0,  85, 161,  11,   0, 
+     10,   0,  85, 161,  10,   0, 
     255, 161,   2,   0,   0,   3, 
       3,   0,   8, 128,   3,   0, 
     255, 128,   4,   0, 170, 128, 
@@ -2300,8 +2375,8 @@ const BYTE g_ps30_main[] =
       4, 128,   1,   0, 170, 129, 
       4,   0, 170, 128,  88,   0, 
       0,   4,   4,   0,   4, 128, 
-      4,   0, 170, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
+      4,   0, 170, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
       2,   0,   0,   3,   3,   0, 
       8, 128,   3,   0, 255, 128, 
       4,   0, 170, 128,  66,   0, 
@@ -2324,7 +2399,7 @@ const BYTE g_ps30_main[] =
     170, 129,   4,   0, 170, 128, 
      88,   0,   0,   4,   4,   0, 
       4, 128,   4,   0, 170, 128, 
-     11,   0,  85, 161,  11,   0, 
+     10,   0,  85, 161,  10,   0, 
     255, 161,   2,   0,   0,   3, 
       3,   0,   8, 128,   3,   0, 
     255, 128,   4,   0, 170, 128, 
@@ -2350,8 +2425,8 @@ const BYTE g_ps30_main[] =
       4, 128,   1,   0, 170, 129, 
       4,   0, 170, 128,  88,   0, 
       0,   4,   4,   0,   4, 128, 
-      4,   0, 170, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
+      4,   0, 170, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
       2,   0,   0,   3,   3,   0, 
       8, 128,   3,   0, 255, 128, 
       4,   0, 170, 128,  66,   0, 
@@ -2374,7 +2449,7 @@ const BYTE g_ps30_main[] =
     170, 129,   4,   0, 170, 128, 
      88,   0,   0,   4,   4,   0, 
       4, 128,   4,   0, 170, 128, 
-     11,   0,  85, 161,  11,   0, 
+     10,   0,  85, 161,  10,   0, 
     255, 161,   2,   0,   0,   3, 
       3,   0,   8, 128,   3,   0, 
     255, 128,   4,   0, 170, 128, 
@@ -2400,58 +2475,8 @@ const BYTE g_ps30_main[] =
       4, 128,   1,   0, 170, 129, 
       4,   0, 170, 128,  88,   0, 
       0,   4,   4,   0,   4, 128, 
-      4,   0, 170, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
-      2,   0,   0,   3,   3,   0, 
-      8, 128,   3,   0, 255, 128, 
-      4,   0, 170, 128,  66,   0, 
-      0,   3,   9,   0,  15, 128, 
-      8,   0, 238, 128,   4,   8, 
-    228, 160,  66,   0,   0,   3, 
-     10,   0,  15, 128,   8,   0, 
-    238, 128,   5,   8, 228, 160, 
-     66,   0,   0,   3,   8,   0, 
-     15, 128,   8,   0, 238, 128, 
-      6,   8, 228, 160,  88,   0, 
-      0,   4,   4,   0,   4, 128, 
-      4,   0,   0, 140,  10,   0, 
-      0, 128,   8,   0,   0, 128, 
-     88,   0,   0,   4,   4,   0, 
-      4, 128,   1,   0,  85, 128, 
-      4,   0, 170, 128,   9,   0, 
-      0, 128,   2,   0,   0,   3, 
-      4,   0,   4, 128,   1,   0, 
-    170, 129,   4,   0, 170, 128, 
-     88,   0,   0,   4,   4,   0, 
-      4, 128,   4,   0, 170, 128, 
-     11,   0,  85, 161,  11,   0, 
-    255, 161,   2,   0,   0,   3, 
-      3,   0,   8, 128,   3,   0, 
-    255, 128,   4,   0, 170, 128, 
-      4,   0,   0,   4,   8,   0, 
-     15, 128,   7,   0, 238, 128, 
-    168,   0, 228, 160,   3,   0, 
-    136, 128,  66,   0,   0,   3, 
-      9,   0,  15, 128,   8,   0, 
-    228, 128,   4,   8, 228, 160, 
-     66,   0,   0,   3,  10,   0, 
-     15, 128,   8,   0, 228, 128, 
-      5,   8, 228, 160,  66,   0, 
-      0,   3,  11,   0,  15, 128, 
-      8,   0, 228, 128,   6,   8, 
-    228, 160,  88,   0,   0,   4, 
-      4,   0,   4, 128,   4,   0, 
-      0, 140,  10,   0,   0, 128, 
-     11,   0,   0, 128,  88,   0, 
-      0,   4,   4,   0,   4, 128, 
-      1,   0,  85, 128,   4,   0, 
-    170, 128,   9,   0,   0, 128, 
-      2,   0,   0,   3,   4,   0, 
-      4, 128,   1,   0, 170, 129, 
-      4,   0, 170, 128,  88,   0, 
-      0,   4,   4,   0,   4, 128, 
-      4,   0, 170, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
+      4,   0, 170, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
       2,   0,   0,   3,   4,   0, 
       4, 128,   3,   0, 255, 128, 
       4,   0, 170, 128,  66,   0, 
@@ -2474,7 +2499,57 @@ const BYTE g_ps30_main[] =
     170, 129,   4,   0, 255, 128, 
      88,   0,   0,   4,   4,   0, 
       8, 128,   4,   0, 255, 128, 
-     11,   0,  85, 161,  11,   0, 
+     10,   0,  85, 161,  10,   0, 
+    255, 161,   2,   0,   0,   3, 
+      4,   0,   4, 128,   4,   0, 
+    255, 128,   4,   0, 170, 128, 
+      4,   0,   0,   4,   8,   0, 
+     15, 128,   7,   0, 238, 128, 
+    168,   0, 228, 160,   3,   0, 
+    136, 128,  66,   0,   0,   3, 
+      9,   0,  15, 128,   8,   0, 
+    228, 128,   4,   8, 228, 160, 
+     66,   0,   0,   3,  10,   0, 
+     15, 128,   8,   0, 228, 128, 
+      5,   8, 228, 160,  66,   0, 
+      0,   3,  11,   0,  15, 128, 
+      8,   0, 228, 128,   6,   8, 
+    228, 160,  88,   0,   0,   4, 
+      4,   0,   8, 128,   4,   0, 
+      0, 140,  10,   0,   0, 128, 
+     11,   0,   0, 128,  88,   0, 
+      0,   4,   4,   0,   8, 128, 
+      1,   0,  85, 128,   4,   0, 
+    255, 128,   9,   0,   0, 128, 
+      2,   0,   0,   3,   4,   0, 
+      8, 128,   1,   0, 170, 129, 
+      4,   0, 255, 128,  88,   0, 
+      0,   4,   4,   0,   8, 128, 
+      4,   0, 255, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
+      2,   0,   0,   3,   4,   0, 
+      4, 128,   4,   0, 255, 128, 
+      4,   0, 170, 128,  66,   0, 
+      0,   3,   9,   0,  15, 128, 
+      8,   0, 238, 128,   4,   8, 
+    228, 160,  66,   0,   0,   3, 
+     10,   0,  15, 128,   8,   0, 
+    238, 128,   5,   8, 228, 160, 
+     66,   0,   0,   3,   8,   0, 
+     15, 128,   8,   0, 238, 128, 
+      6,   8, 228, 160,  88,   0, 
+      0,   4,   4,   0,   8, 128, 
+      4,   0,   0, 140,  10,   0, 
+      0, 128,   8,   0,   0, 128, 
+     88,   0,   0,   4,   4,   0, 
+      8, 128,   1,   0,  85, 128, 
+      4,   0, 255, 128,   9,   0, 
+      0, 128,   2,   0,   0,   3, 
+      4,   0,   8, 128,   1,   0, 
+    170, 129,   4,   0, 255, 128, 
+     88,   0,   0,   4,   4,   0, 
+      8, 128,   4,   0, 255, 128, 
+     10,   0,  85, 161,  10,   0, 
     255, 161,   2,   0,   0,   3, 
       4,   0,   4, 128,   4,   0, 
     255, 128,   4,   0, 170, 128, 
@@ -2500,8 +2575,8 @@ const BYTE g_ps30_main[] =
       8, 128,   1,   0, 170, 129, 
       4,   0, 255, 128,  88,   0, 
       0,   4,   4,   0,   8, 128, 
-      4,   0, 255, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
+      4,   0, 255, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
       2,   0,   0,   3,   4,   0, 
       4, 128,   4,   0, 255, 128, 
       4,   0, 170, 128,  66,   0, 
@@ -2524,7 +2599,7 @@ const BYTE g_ps30_main[] =
     170, 129,   4,   0, 255, 128, 
      88,   0,   0,   4,   4,   0, 
       8, 128,   4,   0, 255, 128, 
-     11,   0,  85, 161,  11,   0, 
+     10,   0,  85, 161,  10,   0, 
     255, 161,   2,   0,   0,   3, 
       4,   0,   4, 128,   4,   0, 
     255, 128,   4,   0, 170, 128, 
@@ -2550,8 +2625,8 @@ const BYTE g_ps30_main[] =
       8, 128,   1,   0, 170, 129, 
       4,   0, 255, 128,  88,   0, 
       0,   4,   4,   0,   8, 128, 
-      4,   0, 255, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
+      4,   0, 255, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
       2,   0,   0,   3,   4,   0, 
       4, 128,   4,   0, 255, 128, 
       4,   0, 170, 128,  66,   0, 
@@ -2574,7 +2649,7 @@ const BYTE g_ps30_main[] =
     170, 129,   4,   0, 255, 128, 
      88,   0,   0,   4,   4,   0, 
       8, 128,   4,   0, 255, 128, 
-     11,   0,  85, 161,  11,   0, 
+     10,   0,  85, 161,  10,   0, 
     255, 161,   2,   0,   0,   3, 
       4,   0,   4, 128,   4,   0, 
     255, 128,   4,   0, 170, 128, 
@@ -2600,8 +2675,8 @@ const BYTE g_ps30_main[] =
       8, 128,   1,   0, 170, 129, 
       4,   0, 255, 128,  88,   0, 
       0,   4,   4,   0,   8, 128, 
-      4,   0, 255, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
+      4,   0, 255, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
       2,   0,   0,   3,   4,   0, 
       4, 128,   4,   0, 255, 128, 
       4,   0, 170, 128,  66,   0, 
@@ -2624,7 +2699,7 @@ const BYTE g_ps30_main[] =
     170, 129,   4,   0, 255, 128, 
      88,   0,   0,   4,   4,   0, 
       8, 128,   4,   0, 255, 128, 
-     11,   0,  85, 161,  11,   0, 
+     10,   0,  85, 161,  10,   0, 
     255, 161,   2,   0,   0,   3, 
       4,   0,   4, 128,   4,   0, 
     255, 128,   4,   0, 170, 128, 
@@ -2650,8 +2725,8 @@ const BYTE g_ps30_main[] =
       8, 128,   1,   0, 170, 129, 
       4,   0, 255, 128,  88,   0, 
       0,   4,   4,   0,   8, 128, 
-      4,   0, 255, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
+      4,   0, 255, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
       2,   0,   0,   3,   4,   0, 
       4, 128,   4,   0, 255, 128, 
       4,   0, 170, 128,  66,   0, 
@@ -2674,7 +2749,7 @@ const BYTE g_ps30_main[] =
     170, 129,   4,   0, 255, 128, 
      88,   0,   0,   4,   4,   0, 
       8, 128,   4,   0, 255, 128, 
-     11,   0,  85, 161,  11,   0, 
+     10,   0,  85, 161,  10,   0, 
     255, 161,   2,   0,   0,   3, 
       4,   0,   4, 128,   4,   0, 
     255, 128,   4,   0, 170, 128, 
@@ -2700,8 +2775,8 @@ const BYTE g_ps30_main[] =
       8, 128,   1,   0, 170, 129, 
       4,   0, 255, 128,  88,   0, 
       0,   4,   4,   0,   8, 128, 
-      4,   0, 255, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
+      4,   0, 255, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
       2,   0,   0,   3,   4,   0, 
       4, 128,   4,   0, 255, 128, 
       4,   0, 170, 128,  66,   0, 
@@ -2724,63 +2799,13 @@ const BYTE g_ps30_main[] =
     170, 129,   4,   0, 255, 128, 
      88,   0,   0,   4,   4,   0, 
       8, 128,   4,   0, 255, 128, 
-     11,   0,  85, 161,  11,   0, 
-    255, 161,   2,   0,   0,   3, 
-      4,   0,   4, 128,   4,   0, 
-    255, 128,   4,   0, 170, 128, 
-      4,   0,   0,   4,   8,   0, 
-     15, 128,   7,   0, 238, 128, 
-     97,   0, 228, 160,   3,   0, 
-    136, 128,  66,   0,   0,   3, 
-      9,   0,  15, 128,   8,   0, 
-    228, 128,   4,   8, 228, 160, 
-     66,   0,   0,   3,  10,   0, 
-     15, 128,   8,   0, 228, 128, 
-      5,   8, 228, 160,  66,   0, 
-      0,   3,  11,   0,  15, 128, 
-      8,   0, 228, 128,   6,   8, 
-    228, 160,  88,   0,   0,   4, 
-      4,   0,   8, 128,   4,   0, 
-      0, 140,  10,   0,   0, 128, 
-     11,   0,   0, 128,  88,   0, 
-      0,   4,   4,   0,   8, 128, 
-      1,   0,  85, 128,   4,   0, 
-    255, 128,   9,   0,   0, 128, 
-      2,   0,   0,   3,   4,   0, 
-      8, 128,   1,   0, 170, 129, 
-      4,   0, 255, 128,  88,   0, 
-      0,   4,   4,   0,   8, 128, 
-      4,   0, 255, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
-      2,   0,   0,   3,   4,   0, 
-      4, 128,   4,   0, 255, 128, 
-      4,   0, 170, 128,  66,   0, 
-      0,   3,   9,   0,  15, 128, 
-      8,   0, 238, 128,   4,   8, 
-    228, 160,  66,   0,   0,   3, 
-     10,   0,  15, 128,   8,   0, 
-    238, 128,   5,   8, 228, 160, 
-     66,   0,   0,   3,   8,   0, 
-     15, 128,   8,   0, 238, 128, 
-      6,   8, 228, 160,  88,   0, 
-      0,   4,   4,   0,   8, 128, 
-      4,   0,   0, 140,  10,   0, 
-      0, 128,   8,   0,   0, 128, 
-     88,   0,   0,   4,   4,   0, 
-      8, 128,   1,   0,  85, 128, 
-      4,   0, 255, 128,   9,   0, 
-      0, 128,   2,   0,   0,   3, 
-      4,   0,   8, 128,   1,   0, 
-    170, 129,   4,   0, 255, 128, 
-     88,   0,   0,   4,   4,   0, 
-      8, 128,   4,   0, 255, 128, 
-     11,   0,  85, 161,  11,   0, 
+     10,   0,  85, 161,  10,   0, 
     255, 161,   2,   0,   0,   3, 
       4,   0,   4, 128,   4,   0, 
     255, 128,   4,   0, 170, 128, 
       4,   0,   0,   4,   8,   0, 
      15, 128,   7,   0, 228, 128, 
-     96,   0, 228, 160,   3,   0, 
+     97,   0, 228, 160,   3,   0, 
     136, 128,  66,   0,   0,   3, 
       9,   0,  15, 128,   8,   0, 
     228, 128,   4,   8, 228, 160, 
@@ -2800,8 +2825,8 @@ const BYTE g_ps30_main[] =
       1, 128,   1,   0, 170, 129, 
       3,   0,   0, 128,  88,   0, 
       0,   4,   3,   0,   1, 128, 
-      3,   0,   0, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
+      3,   0,   0, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
       2,   0,   0,   3,   3,   0, 
       1, 128,   3,   0,   0, 128, 
       4,   0, 170, 128,  66,   0, 
@@ -2824,7 +2849,7 @@ const BYTE g_ps30_main[] =
     170, 129,   3,   0, 170, 128, 
      88,   0,   0,   4,   1,   0, 
       4, 128,   1,   0, 170, 128, 
-     11,   0,  85, 161,  11,   0, 
+     10,   0,  85, 161,  10,   0, 
     255, 161,   2,   0,   0,   3, 
       1,   0,   4, 128,   1,   0, 
     170, 128,   3,   0,   0, 128, 
@@ -2850,7 +2875,7 @@ const BYTE g_ps30_main[] =
     170, 128,   2,   0, 170, 128, 
      88,   0,   0,   4,   1,   0, 
       4, 128,   2,   0,   0, 129, 
-      1,   0, 170, 128,  11,   0, 
+      1,   0, 170, 128,  10,   0, 
     170, 160,  88,   0,   0,   4, 
       2,   0,   1, 128,   4,   0, 
       0, 140,  60,   0,  85, 160, 
@@ -2873,12 +2898,12 @@ const BYTE g_ps30_main[] =
       6,   0, 228, 128,   5,   0, 
     228, 128,   2,   0,   0,   3, 
       2,   0,   1, 128,   3,   0, 
-    255, 128,  86,   0, 170, 160, 
+    255, 128,  87,   0, 170, 160, 
       6,   0,   0,   2,   2,   0, 
       4, 128,   3,   0, 255, 128, 
      88,   0,   0,   4,   2,   0, 
       1, 128,   2,   0,   0, 128, 
-      2,   0, 170, 128,  86,   0, 
+      2,   0, 170, 128,  87,   0, 
     255, 160,   5,   0,   0,   3, 
       3,   0,   3, 128,   2,   0, 
       0, 128,   3,   0, 228, 128, 
@@ -2890,51 +2915,51 @@ const BYTE g_ps30_main[] =
     170, 128,   2,   0,   0, 128, 
      61,   0, 170, 161,   2,   0, 
       0,   3,   5,   0,   4, 128, 
-      5,   0,  85, 129,  11,   0, 
+      5,   0,  85, 129,  10,   0, 
     170, 160,  88,   0,   0,   4, 
       3,   0,   3, 128,   5,   0, 
-    232, 128,  11,   0, 255, 161, 
-     11,   0,  85, 161,  90,   0, 
+    232, 128,  10,   0, 255, 161, 
+     10,   0,  85, 161,  90,   0, 
       0,   4,   2,   0,   4, 128, 
       3,   0, 228, 128,   3,   0, 
-    228, 128,  11,   0, 255, 161, 
+    228, 128,  10,   0, 255, 161, 
      88,   0,   0,   4,   2,   0, 
       4, 128,   2,   0, 170, 129, 
-     11,   0, 255, 161,  11,   0, 
+     10,   0, 255, 161,  10,   0, 
      85, 161,   2,   0,   0,   3, 
       3,   0,   3, 128,   5,   0, 
-    232, 129,  11,   0, 170, 160, 
+    232, 129,  10,   0, 170, 160, 
      88,   0,   0,   4,   3,   0, 
       3, 128,   3,   0, 228, 128, 
-     11,   0, 255, 161,  11,   0, 
+     10,   0, 255, 161,  10,   0, 
      85, 161,  90,   0,   0,   4, 
       3,   0,   1, 128,   3,   0, 
     228, 128,   3,   0, 228, 128, 
-     11,   0, 255, 161,  88,   0, 
+     10,   0, 255, 161,  88,   0, 
       0,   4,   3,   0,   1, 128, 
-      3,   0,   0, 129,  11,   0, 
-    255, 161,  11,   0,  85, 161, 
+      3,   0,   0, 129,  10,   0, 
+    255, 161,  10,   0,  85, 161, 
       2,   0,   0,   3,   2,   0, 
       4, 128,   2,   0, 170, 128, 
       3,   0,   0, 128,  88,   0, 
       0,   4,   2,   0,   4, 128, 
-      2,   0, 170, 129,  11,   0, 
-    255, 161,  11,   0,  85, 161, 
+      2,   0, 170, 129,  10,   0, 
+    255, 161,  10,   0,  85, 161, 
       2,   0,   0,   3,   3,   0, 
       1, 128,   2,   0,   0, 129, 
-     11,   0, 170, 160,  88,   0, 
+     10,   0, 170, 160,  88,   0, 
       0,   4,   3,   0,   1, 128, 
-      3,   0,   0, 128,  11,   0, 
-    255, 161,  11,   0,  85, 161, 
+      3,   0,   0, 128,  10,   0, 
+    255, 161,  10,   0,  85, 161, 
       2,   0,   0,   3,   2,   0, 
       4, 128,   2,   0, 170, 128, 
       3,   0,   0, 128,  88,   0, 
       0,   4,   2,   0,   4, 128, 
-      2,   0, 170, 129,  11,   0, 
-    255, 161,  11,   0,  85, 161, 
+      2,   0, 170, 129,  10,   0, 
+    255, 161,  10,   0,  85, 161, 
      88,   0,   0,   4,   3,   0, 
       1, 128,   2,   0,   0, 128, 
-     11,   0, 255, 161,  11,   0, 
+     10,   0, 255, 161,  10,   0, 
      85, 161,   2,   0,   0,   3, 
       2,   0,   4, 128,   2,   0, 
     170, 128,   3,   0,   0, 128, 
@@ -2968,11 +2993,11 @@ const BYTE g_ps30_main[] =
      18, 128,   3,   0,  85, 128, 
       2,   0, 255, 160,  88,   0, 
       0,   4,   3,   0,   1, 128, 
-      3,   0,   0, 129,  11,   0, 
+      3,   0,   0, 129,  10,   0, 
     170, 160,   3,   0,  85, 128, 
       4,   0,   0,   4,   6,   0, 
      15, 128,   7,   0, 238, 128, 
-    176,   0, 228, 160,   5,   0, 
+    177,   0, 228, 160,   5,   0, 
     136, 128,  66,   0,   0,   3, 
       9,   0,  15, 128,   6,   0, 
     228, 128,   5,   8, 228, 160, 
@@ -2998,7 +3023,45 @@ const BYTE g_ps30_main[] =
       0, 129,   3,   0, 170, 128, 
      88,   0,   0,   4,   3,   0, 
       6, 128,   3,   0, 228, 128, 
-     11,   0,  85, 161,  11,   0, 
+     10,   0,  85, 161,  10,   0, 
+    255, 161,   2,   0,   0,   3, 
+      3,   0,   2, 128,   3,   0, 
+    170, 128,   3,   0,  85, 128, 
+      4,   0,   0,   4,   6,   0, 
+     15, 128,   7,   0, 238, 128, 
+    176,   0, 228, 160,   5,   0, 
+    136, 128,  66,   0,   0,   3, 
+      9,   0,  15, 128,   6,   0, 
+    228, 128,   5,   8, 228, 160, 
+     66,   0,   0,   3,  10,   0, 
+     15, 128,   6,   0, 228, 128, 
+      6,   8, 228, 160,  88,   0, 
+      0,   4,   3,   0,   4, 128, 
+      1,   0,  85, 128,  10,   0, 
+      0, 128,   9,   0,   0, 128, 
+      2,   0,   0,   3,   3,   0, 
+      4, 128,   2,   0,   0, 129, 
+      3,   0, 170, 128,  88,   0, 
+      0,   4,   3,   0,   4, 128, 
+      3,   0, 170, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
+      2,   0,   0,   3,   3,   0, 
+      2, 128,   3,   0, 170, 128, 
+      3,   0,  85, 128,  66,   0, 
+      0,   3,   9,   0,  15, 128, 
+      6,   0, 238, 128,   5,   8, 
+    228, 160,  66,   0,   0,   3, 
+      6,   0,  15, 128,   6,   0, 
+    238, 128,   6,   8, 228, 160, 
+     88,   0,   0,   4,   3,   0, 
+      4, 128,   1,   0,  85, 128, 
+      6,   0,   0, 128,   9,   0, 
+      0, 128,   2,   0,   0,   3, 
+      3,   0,   4, 128,   2,   0, 
+      0, 129,   3,   0, 170, 128, 
+     88,   0,   0,   4,   3,   0, 
+      4, 128,   3,   0, 170, 128, 
+     10,   0,  85, 161,  10,   0, 
     255, 161,   2,   0,   0,   3, 
       3,   0,   2, 128,   3,   0, 
     170, 128,   3,   0,  85, 128, 
@@ -3018,46 +3081,8 @@ const BYTE g_ps30_main[] =
       4, 128,   2,   0,   0, 129, 
       3,   0, 170, 128,  88,   0, 
       0,   4,   3,   0,   4, 128, 
-      3,   0, 170, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
-      2,   0,   0,   3,   3,   0, 
-      2, 128,   3,   0, 170, 128, 
-      3,   0,  85, 128,  66,   0, 
-      0,   3,   9,   0,  15, 128, 
-      6,   0, 238, 128,   5,   8, 
-    228, 160,  66,   0,   0,   3, 
-      6,   0,  15, 128,   6,   0, 
-    238, 128,   6,   8, 228, 160, 
-     88,   0,   0,   4,   3,   0, 
-      4, 128,   1,   0,  85, 128, 
-      6,   0,   0, 128,   9,   0, 
-      0, 128,   2,   0,   0,   3, 
-      3,   0,   4, 128,   2,   0, 
-      0, 129,   3,   0, 170, 128, 
-     88,   0,   0,   4,   3,   0, 
-      4, 128,   3,   0, 170, 128, 
-     11,   0,  85, 161,  11,   0, 
-    255, 161,   2,   0,   0,   3, 
-      3,   0,   2, 128,   3,   0, 
-    170, 128,   3,   0,  85, 128, 
-      4,   0,   0,   4,   6,   0, 
-     15, 128,   7,   0, 238, 128, 
-    174,   0, 228, 160,   5,   0, 
-    136, 128,  66,   0,   0,   3, 
-      9,   0,  15, 128,   6,   0, 
-    228, 128,   5,   8, 228, 160, 
-     66,   0,   0,   3,  10,   0, 
-     15, 128,   6,   0, 228, 128, 
-      6,   8, 228, 160,  88,   0, 
-      0,   4,   3,   0,   4, 128, 
-      1,   0,  85, 128,  10,   0, 
-      0, 128,   9,   0,   0, 128, 
-      2,   0,   0,   3,   3,   0, 
-      4, 128,   2,   0,   0, 129, 
-      3,   0, 170, 128,  88,   0, 
-      0,   4,   3,   0,   4, 128, 
-      3,   0, 170, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
+      3,   0, 170, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
       2,   0,   0,   3,   3,   0, 
       4, 128,   3,   0, 170, 128, 
       3,   0,  85, 128,  66,   0, 
@@ -3074,7 +3099,45 @@ const BYTE g_ps30_main[] =
       0, 129,   3,   0, 255, 128, 
      88,   0,   0,   4,   3,   0, 
       8, 128,   3,   0, 255, 128, 
-     11,   0,  85, 161,  11,   0, 
+     10,   0,  85, 161,  10,   0, 
+    255, 161,   2,   0,   0,   3, 
+      3,   0,   4, 128,   3,   0, 
+    255, 128,   3,   0, 170, 128, 
+      4,   0,   0,   4,   6,   0, 
+     15, 128,   7,   0, 238, 128, 
+    174,   0, 228, 160,   5,   0, 
+    136, 128,  66,   0,   0,   3, 
+      9,   0,  15, 128,   6,   0, 
+    228, 128,   5,   8, 228, 160, 
+     66,   0,   0,   3,  10,   0, 
+     15, 128,   6,   0, 228, 128, 
+      6,   8, 228, 160,  88,   0, 
+      0,   4,   3,   0,   8, 128, 
+      1,   0,  85, 128,  10,   0, 
+      0, 128,   9,   0,   0, 128, 
+      2,   0,   0,   3,   3,   0, 
+      8, 128,   2,   0,   0, 129, 
+      3,   0, 255, 128,  88,   0, 
+      0,   4,   3,   0,   8, 128, 
+      3,   0, 255, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
+      2,   0,   0,   3,   3,   0, 
+      4, 128,   3,   0, 255, 128, 
+      3,   0, 170, 128,  66,   0, 
+      0,   3,   9,   0,  15, 128, 
+      6,   0, 238, 128,   5,   8, 
+    228, 160,  66,   0,   0,   3, 
+      6,   0,  15, 128,   6,   0, 
+    238, 128,   6,   8, 228, 160, 
+     88,   0,   0,   4,   3,   0, 
+      8, 128,   1,   0,  85, 128, 
+      6,   0,   0, 128,   9,   0, 
+      0, 128,   2,   0,   0,   3, 
+      3,   0,   8, 128,   2,   0, 
+      0, 129,   3,   0, 255, 128, 
+     88,   0,   0,   4,   3,   0, 
+      8, 128,   3,   0, 255, 128, 
+     10,   0,  85, 161,  10,   0, 
     255, 161,   2,   0,   0,   3, 
       3,   0,   4, 128,   3,   0, 
     255, 128,   3,   0, 170, 128, 
@@ -3094,8 +3157,8 @@ const BYTE g_ps30_main[] =
       8, 128,   2,   0,   0, 129, 
       3,   0, 255, 128,  88,   0, 
       0,   4,   3,   0,   8, 128, 
-      3,   0, 255, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
+      3,   0, 255, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
       2,   0,   0,   3,   3,   0, 
       4, 128,   3,   0, 255, 128, 
       3,   0, 170, 128,  66,   0, 
@@ -3112,7 +3175,7 @@ const BYTE g_ps30_main[] =
       0, 129,   3,   0, 255, 128, 
      88,   0,   0,   4,   3,   0, 
       8, 128,   3,   0, 255, 128, 
-     11,   0,  85, 161,  11,   0, 
+     10,   0,  85, 161,  10,   0, 
     255, 161,   2,   0,   0,   3, 
       3,   0,   4, 128,   3,   0, 
     255, 128,   3,   0, 170, 128, 
@@ -3132,8 +3195,8 @@ const BYTE g_ps30_main[] =
       8, 128,   2,   0,   0, 129, 
       3,   0, 255, 128,  88,   0, 
       0,   4,   3,   0,   8, 128, 
-      3,   0, 255, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
+      3,   0, 255, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
       2,   0,   0,   3,   3,   0, 
       4, 128,   3,   0, 255, 128, 
       3,   0, 170, 128,  66,   0, 
@@ -3150,7 +3213,7 @@ const BYTE g_ps30_main[] =
       0, 129,   3,   0, 255, 128, 
      88,   0,   0,   4,   3,   0, 
       8, 128,   3,   0, 255, 128, 
-     11,   0,  85, 161,  11,   0, 
+     10,   0,  85, 161,  10,   0, 
     255, 161,   2,   0,   0,   3, 
       3,   0,   4, 128,   3,   0, 
     255, 128,   3,   0, 170, 128, 
@@ -3170,8 +3233,8 @@ const BYTE g_ps30_main[] =
       8, 128,   2,   0,   0, 129, 
       3,   0, 255, 128,  88,   0, 
       0,   4,   3,   0,   8, 128, 
-      3,   0, 255, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
+      3,   0, 255, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
       2,   0,   0,   3,   3,   0, 
       4, 128,   3,   0, 255, 128, 
       3,   0, 170, 128,  66,   0, 
@@ -3188,7 +3251,7 @@ const BYTE g_ps30_main[] =
       0, 129,   3,   0, 255, 128, 
      88,   0,   0,   4,   3,   0, 
       8, 128,   3,   0, 255, 128, 
-     11,   0,  85, 161,  11,   0, 
+     10,   0,  85, 161,  10,   0, 
     255, 161,   2,   0,   0,   3, 
       3,   0,   4, 128,   3,   0, 
     255, 128,   3,   0, 170, 128, 
@@ -3208,8 +3271,8 @@ const BYTE g_ps30_main[] =
       8, 128,   2,   0,   0, 129, 
       3,   0, 255, 128,  88,   0, 
       0,   4,   3,   0,   8, 128, 
-      3,   0, 255, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
+      3,   0, 255, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
       2,   0,   0,   3,   3,   0, 
       4, 128,   3,   0, 255, 128, 
       3,   0, 170, 128,  66,   0, 
@@ -3226,7 +3289,7 @@ const BYTE g_ps30_main[] =
       0, 129,   3,   0, 255, 128, 
      88,   0,   0,   4,   3,   0, 
       8, 128,   3,   0, 255, 128, 
-     11,   0,  85, 161,  11,   0, 
+     10,   0,  85, 161,  10,   0, 
     255, 161,   2,   0,   0,   3, 
       3,   0,   4, 128,   3,   0, 
     255, 128,   3,   0, 170, 128, 
@@ -3246,46 +3309,8 @@ const BYTE g_ps30_main[] =
       8, 128,   2,   0,   0, 129, 
       3,   0, 255, 128,  88,   0, 
       0,   4,   3,   0,   8, 128, 
-      3,   0, 255, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
-      2,   0,   0,   3,   3,   0, 
-      4, 128,   3,   0, 255, 128, 
-      3,   0, 170, 128,  66,   0, 
-      0,   3,   9,   0,  15, 128, 
-      6,   0, 238, 128,   5,   8, 
-    228, 160,  66,   0,   0,   3, 
-      6,   0,  15, 128,   6,   0, 
-    238, 128,   6,   8, 228, 160, 
-     88,   0,   0,   4,   3,   0, 
-      8, 128,   1,   0,  85, 128, 
-      6,   0,   0, 128,   9,   0, 
-      0, 128,   2,   0,   0,   3, 
-      3,   0,   8, 128,   2,   0, 
-      0, 129,   3,   0, 255, 128, 
-     88,   0,   0,   4,   3,   0, 
-      8, 128,   3,   0, 255, 128, 
-     11,   0,  85, 161,  11,   0, 
-    255, 161,   2,   0,   0,   3, 
-      3,   0,   4, 128,   3,   0, 
-    255, 128,   3,   0, 170, 128, 
-      4,   0,   0,   4,   6,   0, 
-     15, 128,   7,   0, 238, 128, 
-    168,   0, 228, 160,   5,   0, 
-    136, 128,  66,   0,   0,   3, 
-      9,   0,  15, 128,   6,   0, 
-    228, 128,   5,   8, 228, 160, 
-     66,   0,   0,   3,  10,   0, 
-     15, 128,   6,   0, 228, 128, 
-      6,   8, 228, 160,  88,   0, 
-      0,   4,   3,   0,   8, 128, 
-      1,   0,  85, 128,  10,   0, 
-      0, 128,   9,   0,   0, 128, 
-      2,   0,   0,   3,   3,   0, 
-      8, 128,   2,   0,   0, 129, 
-      3,   0, 255, 128,  88,   0, 
-      0,   4,   3,   0,   8, 128, 
-      3,   0, 255, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
+      3,   0, 255, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
       2,   0,   0,   3,   3,   0, 
       8, 128,   3,   0, 255, 128, 
       3,   0, 170, 128,  66,   0, 
@@ -3302,7 +3327,45 @@ const BYTE g_ps30_main[] =
       0, 129,   4,   0,   0, 128, 
      88,   0,   0,   4,   4,   0, 
       1, 128,   4,   0,   0, 128, 
-     11,   0,  85, 161,  11,   0, 
+     10,   0,  85, 161,  10,   0, 
+    255, 161,   2,   0,   0,   3, 
+      3,   0,   8, 128,   3,   0, 
+    255, 128,   4,   0,   0, 128, 
+      4,   0,   0,   4,   6,   0, 
+     15, 128,   7,   0, 238, 128, 
+    168,   0, 228, 160,   5,   0, 
+    136, 128,  66,   0,   0,   3, 
+      9,   0,  15, 128,   6,   0, 
+    228, 128,   5,   8, 228, 160, 
+     66,   0,   0,   3,  10,   0, 
+     15, 128,   6,   0, 228, 128, 
+      6,   8, 228, 160,  88,   0, 
+      0,   4,   4,   0,   1, 128, 
+      1,   0,  85, 128,  10,   0, 
+      0, 128,   9,   0,   0, 128, 
+      2,   0,   0,   3,   4,   0, 
+      1, 128,   2,   0,   0, 129, 
+      4,   0,   0, 128,  88,   0, 
+      0,   4,   4,   0,   1, 128, 
+      4,   0,   0, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
+      2,   0,   0,   3,   3,   0, 
+      8, 128,   3,   0, 255, 128, 
+      4,   0,   0, 128,  66,   0, 
+      0,   3,   9,   0,  15, 128, 
+      6,   0, 238, 128,   5,   8, 
+    228, 160,  66,   0,   0,   3, 
+      6,   0,  15, 128,   6,   0, 
+    238, 128,   6,   8, 228, 160, 
+     88,   0,   0,   4,   4,   0, 
+      1, 128,   1,   0,  85, 128, 
+      6,   0,   0, 128,   9,   0, 
+      0, 128,   2,   0,   0,   3, 
+      4,   0,   1, 128,   2,   0, 
+      0, 129,   4,   0,   0, 128, 
+     88,   0,   0,   4,   4,   0, 
+      1, 128,   4,   0,   0, 128, 
+     10,   0,  85, 161,  10,   0, 
     255, 161,   2,   0,   0,   3, 
       3,   0,   8, 128,   3,   0, 
     255, 128,   4,   0,   0, 128, 
@@ -3322,8 +3385,8 @@ const BYTE g_ps30_main[] =
       1, 128,   2,   0,   0, 129, 
       4,   0,   0, 128,  88,   0, 
       0,   4,   4,   0,   1, 128, 
-      4,   0,   0, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
+      4,   0,   0, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
       2,   0,   0,   3,   3,   0, 
       8, 128,   3,   0, 255, 128, 
       4,   0,   0, 128,  66,   0, 
@@ -3340,7 +3403,7 @@ const BYTE g_ps30_main[] =
       0, 129,   4,   0,   0, 128, 
      88,   0,   0,   4,   4,   0, 
       1, 128,   4,   0,   0, 128, 
-     11,   0,  85, 161,  11,   0, 
+     10,   0,  85, 161,  10,   0, 
     255, 161,   2,   0,   0,   3, 
       3,   0,   8, 128,   3,   0, 
     255, 128,   4,   0,   0, 128, 
@@ -3360,8 +3423,8 @@ const BYTE g_ps30_main[] =
       1, 128,   2,   0,   0, 129, 
       4,   0,   0, 128,  88,   0, 
       0,   4,   4,   0,   1, 128, 
-      4,   0,   0, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
+      4,   0,   0, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
       2,   0,   0,   3,   3,   0, 
       8, 128,   3,   0, 255, 128, 
       4,   0,   0, 128,  66,   0, 
@@ -3378,7 +3441,7 @@ const BYTE g_ps30_main[] =
       0, 129,   4,   0,   0, 128, 
      88,   0,   0,   4,   4,   0, 
       1, 128,   4,   0,   0, 128, 
-     11,   0,  85, 161,  11,   0, 
+     10,   0,  85, 161,  10,   0, 
     255, 161,   2,   0,   0,   3, 
       3,   0,   8, 128,   3,   0, 
     255, 128,   4,   0,   0, 128, 
@@ -3398,8 +3461,8 @@ const BYTE g_ps30_main[] =
       1, 128,   2,   0,   0, 129, 
       4,   0,   0, 128,  88,   0, 
       0,   4,   4,   0,   1, 128, 
-      4,   0,   0, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
+      4,   0,   0, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
       2,   0,   0,   3,   3,   0, 
       8, 128,   3,   0, 255, 128, 
       4,   0,   0, 128,  66,   0, 
@@ -3416,7 +3479,7 @@ const BYTE g_ps30_main[] =
       0, 129,   4,   0,   0, 128, 
      88,   0,   0,   4,   4,   0, 
       1, 128,   4,   0,   0, 128, 
-     11,   0,  85, 161,  11,   0, 
+     10,   0,  85, 161,  10,   0, 
     255, 161,   2,   0,   0,   3, 
       3,   0,   8, 128,   3,   0, 
     255, 128,   4,   0,   0, 128, 
@@ -3436,8 +3499,8 @@ const BYTE g_ps30_main[] =
       1, 128,   2,   0,   0, 129, 
       4,   0,   0, 128,  88,   0, 
       0,   4,   4,   0,   1, 128, 
-      4,   0,   0, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
+      4,   0,   0, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
       2,   0,   0,   3,   3,   0, 
       8, 128,   3,   0, 255, 128, 
       4,   0,   0, 128,  66,   0, 
@@ -3454,7 +3517,7 @@ const BYTE g_ps30_main[] =
       0, 129,   4,   0,   0, 128, 
      88,   0,   0,   4,   4,   0, 
       1, 128,   4,   0,   0, 128, 
-     11,   0,  85, 161,  11,   0, 
+     10,   0,  85, 161,  10,   0, 
     255, 161,   2,   0,   0,   3, 
       3,   0,   8, 128,   3,   0, 
     255, 128,   4,   0,   0, 128, 
@@ -3474,8 +3537,8 @@ const BYTE g_ps30_main[] =
       1, 128,   2,   0,   0, 129, 
       4,   0,   0, 128,  88,   0, 
       0,   4,   4,   0,   1, 128, 
-      4,   0,   0, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
+      4,   0,   0, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
       2,   0,   0,   3,   3,   0, 
       8, 128,   3,   0, 255, 128, 
       4,   0,   0, 128,  66,   0, 
@@ -3492,51 +3555,13 @@ const BYTE g_ps30_main[] =
       0, 129,   4,   0,   0, 128, 
      88,   0,   0,   4,   4,   0, 
       1, 128,   4,   0,   0, 128, 
-     11,   0,  85, 161,  11,   0, 
-    255, 161,   2,   0,   0,   3, 
-      3,   0,   8, 128,   3,   0, 
-    255, 128,   4,   0,   0, 128, 
-      4,   0,   0,   4,   6,   0, 
-     15, 128,   7,   0, 238, 128, 
-     97,   0, 228, 160,   5,   0, 
-    136, 128,  66,   0,   0,   3, 
-      9,   0,  15, 128,   6,   0, 
-    228, 128,   5,   8, 228, 160, 
-     66,   0,   0,   3,  10,   0, 
-     15, 128,   6,   0, 228, 128, 
-      6,   8, 228, 160,  88,   0, 
-      0,   4,   4,   0,   1, 128, 
-      1,   0,  85, 128,  10,   0, 
-      0, 128,   9,   0,   0, 128, 
-      2,   0,   0,   3,   4,   0, 
-      1, 128,   2,   0,   0, 129, 
-      4,   0,   0, 128,  88,   0, 
-      0,   4,   4,   0,   1, 128, 
-      4,   0,   0, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
-      2,   0,   0,   3,   3,   0, 
-      8, 128,   3,   0, 255, 128, 
-      4,   0,   0, 128,  66,   0, 
-      0,   3,   9,   0,  15, 128, 
-      6,   0, 238, 128,   5,   8, 
-    228, 160,  66,   0,   0,   3, 
-      6,   0,  15, 128,   6,   0, 
-    238, 128,   6,   8, 228, 160, 
-     88,   0,   0,   4,   4,   0, 
-      1, 128,   1,   0,  85, 128, 
-      6,   0,   0, 128,   9,   0, 
-      0, 128,   2,   0,   0,   3, 
-      4,   0,   1, 128,   2,   0, 
-      0, 129,   4,   0,   0, 128, 
-     88,   0,   0,   4,   4,   0, 
-      1, 128,   4,   0,   0, 128, 
-     11,   0,  85, 161,  11,   0, 
+     10,   0,  85, 161,  10,   0, 
     255, 161,   2,   0,   0,   3, 
       3,   0,   8, 128,   3,   0, 
     255, 128,   4,   0,   0, 128, 
       4,   0,   0,   4,   5,   0, 
      15, 128,   7,   0, 228, 128, 
-     96,   0, 228, 160,   5,   0, 
+     97,   0, 228, 160,   5,   0, 
     136, 128,  66,   0,   0,   3, 
       6,   0,  15, 128,   5,   0, 
     228, 128,   5,   8, 228, 160, 
@@ -3550,8 +3575,8 @@ const BYTE g_ps30_main[] =
       1, 128,   2,   0,   0, 129, 
       4,   0,   0, 128,  88,   0, 
       0,   4,   4,   0,   1, 128, 
-      4,   0,   0, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
+      4,   0,   0, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
       2,   0,   0,   3,   3,   0, 
       8, 128,   3,   0, 255, 128, 
       4,   0,   0, 128,  66,   0, 
@@ -3568,7 +3593,7 @@ const BYTE g_ps30_main[] =
       0, 129,   1,   0,  85, 128, 
      88,   0,   0,   4,   1,   0, 
       2, 128,   1,   0,  85, 128, 
-     11,   0,  85, 161,  11,   0, 
+     10,   0,  85, 161,  10,   0, 
     255, 161,   2,   0,   0,   3, 
       1,   0,   2, 128,   1,   0, 
      85, 128,   3,   0, 255, 128, 
@@ -3592,17 +3617,17 @@ const BYTE g_ps30_main[] =
      85, 128,   3,   0,   0, 128, 
      88,   0,   0,   4,   1,   0, 
       2, 128,   2,   0, 170, 129, 
-      1,   0,  85, 128,  11,   0, 
+      1,   0,  85, 128,  10,   0, 
     170, 160,  18,   0,   0,   4, 
       2,   0,   1, 128,   1,   0, 
       0, 128,   1,   0,  85, 128, 
       1,   0, 170, 128,  88,   0, 
       0,   4,   1,   0,   2, 128, 
-      4,   0,  85, 128,  11,   0, 
-    255, 160,  11,   0,  85, 160, 
+      4,   0,  85, 128,  10,   0, 
+    255, 160,  10,   0,  85, 160, 
      88,   0,   0,   4,   1,   0, 
       1, 128,   1,   0,   0, 129, 
-     11,   0, 255, 161,   1,   0, 
+     10,   0, 255, 161,   1,   0, 
      85, 128,  88,   0,   0,   4, 
       1,   0,   1, 128,   1,   0, 
       0, 128,   1,   0, 170, 128, 
@@ -3614,13 +3639,13 @@ const BYTE g_ps30_main[] =
      18, 128,  60,   0, 255, 160, 
       2,   0,   0,   3,   1,   0, 
       1, 128,   1,   0,   0, 128, 
-     11,   0,  85, 160,   4,   0, 
+     10,   0,  85, 160,   4,   0, 
       0,   4,   1,   0,   1, 128, 
       1,   0,  85, 128,   1,   0, 
-      0, 128,  11,   0, 170, 160, 
+      0, 128,  10,   0, 170, 160, 
      88,   0,   0,   4,   1,   0, 
       1, 128,   1,   0, 255, 128, 
-      1,   0,   0, 128,  11,   0, 
+      1,   0,   0, 128,  10,   0, 
     170, 160,   1,   0,   0,   2, 
       1,   0,  18, 128,   0,   0, 
     255, 128,   1,   0,   0,   2, 
@@ -3722,7 +3747,7 @@ const BYTE g_ps30_main[] =
       0,   2,   5,   0,   1, 128, 
      65,   0,   0, 160,   5,   0, 
       0,   3,   5,   0,   7, 128, 
-      5,   0,   0, 128,  87,   0, 
+      5,   0,   0, 128,  88,   0, 
     228, 160,   4,   0,   0,   4, 
       3,   0,   4, 128,   3,   0, 
       0, 144,  65,   0, 170, 160, 
@@ -3770,7 +3795,7 @@ const BYTE g_ps30_main[] =
     255, 160,  88,   0,   0,   4, 
       3,   0,   5, 128,   2,   0, 
     170, 128,   3,   0, 228, 128, 
-     11,   0, 255, 161,   4,   0, 
+     10,   0, 255, 161,   4,   0, 
       0,   4,   4,   0,   3, 128, 
       2,   0, 228, 144,   0,   0, 
       0, 128,   3,   0, 232, 128, 
@@ -3791,8 +3816,8 @@ const BYTE g_ps30_main[] =
       4,   0, 228, 129,  41,   0, 
     228, 160,  88,   0,   0,   4, 
       4,   0,   7, 128,   4,   0, 
-    228, 129,  11,   0, 255, 161, 
-     11,   0,  85, 161,  88,   0, 
+    228, 129,  10,   0, 255, 161, 
+     10,   0,  85, 161,  88,   0, 
       0,   4,   4,   0,   7, 128, 
      41,   0, 228, 160,   2,   0, 
     255, 129,   4,   0, 228, 128, 
@@ -3800,9 +3825,9 @@ const BYTE g_ps30_main[] =
       7, 128,   4,   0, 228, 128, 
       5,   0, 228, 128,   1,   0, 
       0,   2,   5,   0,   7, 128, 
-     11,   0, 255, 161,   1,   0, 
+     10,   0, 255, 161,   1,   0, 
       0,   2,   0,   0,   1, 128, 
-     11,   0, 255, 161,  38,   0, 
+     10,   0, 255, 161,  38,   0, 
       0,   1,   0,   0, 228, 240, 
       1,   0,   0,   2,   2,   0, 
       1, 128,   4,   0,   0, 128, 
@@ -3812,10 +3837,10 @@ const BYTE g_ps30_main[] =
       1, 128,   0,   0,   0, 128, 
      16,   0,   0, 160,   2,   0, 
       0,   3,   6,   0,  15, 128, 
-      2,   0,   0, 128,  14,   0, 
+      2,   0,   0, 128,  86,   0, 
     228, 160,   2,   0,   0,   3, 
       7,   0,  15, 128,   2,   0, 
-      0, 128,  10,   0, 228, 160, 
+      0, 128,  11,   0, 228, 160, 
      88,   0,   0,   4,   8,   0, 
       7, 128,   6,   0,   0, 140, 
      17,   0, 228, 160,   2,   0, 
@@ -3874,7 +3899,7 @@ const BYTE g_ps30_main[] =
     248, 128,   6,   0, 228, 129, 
      11,   0,   0,   3,   4,   0, 
       8, 128,   2,   0,   0, 128, 
-     11,   0, 255, 161,   5,   0, 
+     10,   0, 255, 161,   5,   0, 
       0,   3,   6,   0,   7, 128, 
       7,   0, 228, 128,   4,   0, 
     255, 128,   5,   0,   0,   3, 
@@ -3885,7 +3910,7 @@ const BYTE g_ps30_main[] =
       1,   0,   0, 128,   5,   0, 
     228, 128,   2,   0,   0,   3, 
       0,   0,   1, 128,   0,   0, 
-      0, 128,  11,   0, 170, 160, 
+      0, 128,  10,   0, 170, 160, 
      39,   0,   0,   0,   1,   0, 
       0,   2,   6,   0,   1, 128, 
      17,   0, 255, 160,   1,   0, 
@@ -3922,7 +3947,7 @@ const BYTE g_ps30_main[] =
       0,   2,  14,   0,   7, 128, 
       5,   0, 228, 128,   1,   0, 
       0,   2,   0,   0,   1, 128, 
-     11,   0, 255, 161,  38,   0, 
+     10,   0, 255, 161,  38,   0, 
       0,   1,   0,   0, 228, 240, 
       1,   0,   0,   2,   2,   0, 
       1, 128,   4,   0,  85, 128, 
@@ -3932,17 +3957,17 @@ const BYTE g_ps30_main[] =
       1, 128,   0,   0,   0, 128, 
      16,   0,  85, 160,   2,   0, 
       0,   3,  15,   0,  15, 128, 
-      2,   0,   0, 128,  14,   0, 
+      2,   0,   0, 128,  86,   0, 
     228, 160,   2,   0,   0,   3, 
      16,   0,  15, 128,   2,   0, 
-      0, 128,  10,   0, 228, 160, 
+      0, 128,  11,   0, 228, 160, 
      88,   0,   0,   4,  17,   0, 
       7, 128,  15,   0,   0, 140, 
      17,   0, 228, 160,   2,   0, 
     255, 129,  88,   0,   0,   4, 
      18,   0,  15, 128,  15,   0, 
       0, 140,   6,   0, 228, 128, 
-     11,   0, 255, 161,  88,   0, 
+     10,   0, 255, 161,  88,   0, 
       0,   4,  17,   0,   7, 128, 
      15,   0,  85, 140,  20,   0, 
     228, 160,  17,   0, 228, 128, 
@@ -4003,10 +4028,10 @@ const BYTE g_ps30_main[] =
      16,   0,   0, 128,   4,   0, 
       0,   4,   2,   0,   4, 128, 
       2,   0, 170, 128,   4,   0, 
-    255, 129,  11,   0, 170, 160, 
+    255, 129,  10,   0, 170, 160, 
      11,   0,   0,   3,   4,   0, 
       8, 128,   2,   0, 170, 128, 
-     11,   0, 255, 161,   5,   0, 
+     10,   0, 255, 161,   5,   0, 
       0,   3,  16,   0,   7, 128, 
       2,   0,   0, 128,  16,   0, 
     249, 128,   8,   0,   0,   3, 
@@ -4014,7 +4039,7 @@ const BYTE g_ps30_main[] =
     248, 128,  16,   0, 228, 129, 
      11,   0,   0,   3,   5,   0, 
       8, 128,   2,   0,   0, 128, 
-     11,   0, 255, 161,   5,   0, 
+     10,   0, 255, 161,   5,   0, 
       0,   3,  15,   0,   7, 128, 
      15,   0, 228, 128,   5,   0, 
     255, 128,   5,   0,   0,   3, 
@@ -4025,12 +4050,12 @@ const BYTE g_ps30_main[] =
       1,   0, 255, 128,  14,   0, 
     228, 128,   2,   0,   0,   3, 
       0,   0,   1, 128,   0,   0, 
-      0, 128,  11,   0, 170, 160, 
+      0, 128,  10,   0, 170, 160, 
      39,   0,   0,   0,   1,   0, 
       0,   2,   5,   0,   7, 128, 
      14,   0, 228, 128,   1,   0, 
       0,   2,   0,   0,   1, 128, 
-     11,   0, 255, 161,  38,   0, 
+     10,   0, 255, 161,  38,   0, 
       0,   1,   0,   0, 228, 240, 
       1,   0,   0,   2,   2,   0, 
       1, 128,   4,   0, 170, 128, 
@@ -4040,10 +4065,10 @@ const BYTE g_ps30_main[] =
       1, 128,   0,   0,   0, 128, 
      16,   0, 170, 160,   2,   0, 
       0,   3,   6,   0,  15, 128, 
-      2,   0,   0, 128,  14,   0, 
+      2,   0,   0, 128,  86,   0, 
     228, 160,   2,   0,   0,   3, 
       7,   0,  15, 128,   2,   0, 
-      0, 128,  10,   0, 228, 160, 
+      0, 128,  11,   0, 228, 160, 
      88,   0,   0,   4,   8,   0, 
      15, 128,   6,   0,   0, 140, 
      17,   0, 228, 160,   2,   0, 
@@ -4138,9 +4163,9 @@ const BYTE g_ps30_main[] =
     255, 128,   4,   0,   0,   4, 
       2,   0,   4, 128,   2,   0, 
     170, 128,   4,   0,  85, 129, 
-     11,   0, 170, 160,  11,   0, 
+     10,   0, 170, 160,  11,   0, 
       0,   3,   4,   0,   2, 128, 
-      2,   0, 170, 128,  11,   0, 
+      2,   0, 170, 128,  10,   0, 
     255, 161,   5,   0,   0,   3, 
       7,   0,   7, 128,   2,   0, 
       0, 128,   7,   0, 228, 128, 
@@ -4148,7 +4173,7 @@ const BYTE g_ps30_main[] =
       1, 128,   3,   0, 248, 128, 
       7,   0, 228, 129,  11,   0, 
       0,   3,   4,   0,   8, 128, 
-      2,   0,   0, 128,  11,   0, 
+      2,   0,   0, 128,  10,   0, 
     255, 161,   8,   0,   0,   3, 
       2,   0,   1, 128,   7,   0, 
     228, 128,   6,   0, 228, 128, 
@@ -4156,7 +4181,7 @@ const BYTE g_ps30_main[] =
       1, 128,   9,   0, 255, 128, 
       2,   0,   0, 128,   2,   0, 
       0,   3,   2,   0,   4, 128, 
-      9,   0, 255, 128,  11,   0, 
+      9,   0, 255, 128,  10,   0, 
     170, 160,   6,   0,   0,   2, 
       2,   0,   4, 128,   2,   0, 
     170, 128,   5,   0,   0,   3, 
@@ -4164,7 +4189,7 @@ const BYTE g_ps30_main[] =
     170, 128,   2,   0,   0, 128, 
      88,   0,   0,   4,   2,   0, 
       4, 128,   2,   0,   0, 128, 
-      4,   0, 255, 128,  11,   0, 
+      4,   0, 255, 128,  10,   0, 
     255, 161,  11,   0,   0,   3, 
       4,   0,   8, 128,   2,   0, 
       0, 128,   6,   0, 255, 128, 
@@ -4181,19 +4206,19 @@ const BYTE g_ps30_main[] =
       1,   0, 255, 128,   5,   0, 
     228, 128,   2,   0,   0,   3, 
       0,   0,   1, 128,   0,   0, 
-      0, 128,  11,   0, 170, 160, 
+      0, 128,  10,   0, 170, 160, 
      39,   0,   0,   0,   4,   0, 
       0,   4,   0,   0,   1, 128, 
-      1,   0,  85, 128, 177,   0, 
-      0, 161, 177,   0,  85, 160, 
+      1,   0,  85, 128, 178,   0, 
+      0, 161, 178,   0,  85, 160, 
      19,   0,   0,   2,   1,   0, 
       8, 128, 100,   0,   0, 160, 
       2,   0,   0,   3,   2,   0, 
       1, 128,   1,   0, 255, 129, 
     100,   0,   0, 160,  88,   0, 
       0,   4,   1,   0,   8, 128, 
-      1,   0, 255, 129,  11,   0, 
-    255, 161,  11,   0,  85, 161, 
+      1,   0, 255, 129,  10,   0, 
+    255, 161,  10,   0,  85, 161, 
      88,   0,   0,   4,   1,   0, 
       8, 128, 100,   0,   0, 160, 
       2,   0, 255, 129,   1,   0, 
@@ -4218,7 +4243,7 @@ const BYTE g_ps30_main[] =
      15, 128,   6,   0, 228, 128, 
      73,   0, 228, 160,   2,   0, 
       0,   3,   2,   0,   4, 128, 
-      6,   0, 255, 129,  86,   0, 
+      6,   0, 255, 129,  87,   0, 
     170, 161,   6,   0,   0,   2, 
       4,   0,   2, 128,   6,   0, 
     255, 128,   5,   0,   0,   3, 
@@ -4235,51 +4260,51 @@ const BYTE g_ps30_main[] =
       4,   0,  85, 128,  75,   0, 
     170, 161,   2,   0,   0,   3, 
       8,   0,   4, 128,   8,   0, 
-     85, 129,  11,   0, 170, 160, 
+     85, 129,  10,   0, 170, 160, 
      88,   0,   0,   4,   6,   0, 
       3, 128,   8,   0, 232, 128, 
-     11,   0, 255, 161,  11,   0, 
+     10,   0, 255, 161,  10,   0, 
      85, 161,  90,   0,   0,   4, 
       4,   0,   4, 128,   6,   0, 
     228, 128,   6,   0, 228, 128, 
-     11,   0, 255, 161,  88,   0, 
+     10,   0, 255, 161,  88,   0, 
       0,   4,   4,   0,   4, 128, 
-      4,   0, 170, 129,  11,   0, 
-    255, 161,  11,   0,  85, 161, 
+      4,   0, 170, 129,  10,   0, 
+    255, 161,  10,   0,  85, 161, 
       2,   0,   0,   3,   6,   0, 
       3, 128,   8,   0, 232, 129, 
-     11,   0, 170, 160,  88,   0, 
+     10,   0, 170, 160,  88,   0, 
       0,   4,   6,   0,   3, 128, 
-      6,   0, 228, 128,  11,   0, 
-    255, 161,  11,   0,  85, 161, 
+      6,   0, 228, 128,  10,   0, 
+    255, 161,  10,   0,  85, 161, 
      90,   0,   0,   4,   5,   0, 
       8, 128,   6,   0, 228, 128, 
-      6,   0, 228, 128,  11,   0, 
+      6,   0, 228, 128,  10,   0, 
     255, 161,  88,   0,   0,   4, 
       5,   0,   8, 128,   5,   0, 
-    255, 129,  11,   0, 255, 161, 
-     11,   0,  85, 161,   2,   0, 
+    255, 129,  10,   0, 255, 161, 
+     10,   0,  85, 161,   2,   0, 
       0,   3,   4,   0,   4, 128, 
       4,   0, 170, 128,   5,   0, 
     255, 128,  88,   0,   0,   4, 
       4,   0,   4, 128,   4,   0, 
-    170, 129,  11,   0, 255, 161, 
-     11,   0,  85, 161,   2,   0, 
+    170, 129,  10,   0, 255, 161, 
+     10,   0,  85, 161,   2,   0, 
       0,   3,   5,   0,   8, 128, 
-      4,   0,  85, 129,  11,   0, 
+      4,   0,  85, 129,  10,   0, 
     170, 160,  88,   0,   0,   4, 
       5,   0,   8, 128,   5,   0, 
-    255, 128,  11,   0, 255, 161, 
-     11,   0,  85, 161,   2,   0, 
+    255, 128,  10,   0, 255, 161, 
+     10,   0,  85, 161,   2,   0, 
       0,   3,   4,   0,   4, 128, 
       4,   0, 170, 128,   5,   0, 
     255, 128,  88,   0,   0,   4, 
       4,   0,   4, 128,   4,   0, 
-    170, 129,  11,   0, 255, 161, 
-     11,   0,  85, 161,  88,   0, 
+    170, 129,  10,   0, 255, 161, 
+     10,   0,  85, 161,  88,   0, 
       0,   4,   5,   0,   8, 128, 
-      4,   0,  85, 128,  11,   0, 
-    255, 161,  11,   0,  85, 161, 
+      4,   0,  85, 128,  10,   0, 
+    255, 161,  10,   0,  85, 161, 
       2,   0,   0,   3,   4,   0, 
       4, 128,   4,   0, 170, 128, 
       5,   0, 255, 128,   1,   0, 
@@ -4293,7 +4318,7 @@ const BYTE g_ps30_main[] =
       1,   0,   0,   2,   8,   0, 
       8, 128,   8,   0,  85, 129, 
       1,   0,   0,   2,   9,   0, 
-      2, 128,  11,   0, 170, 160, 
+      2, 128,  10,   0, 170, 160, 
       2,   0,   0,   3,   6,   0, 
       6, 128,   8,   0, 240, 128, 
       9,   0, 208, 128,  66,   0, 
@@ -4304,7 +4329,7 @@ const BYTE g_ps30_main[] =
      85, 129,  10,   0,   0, 128, 
      88,   0,   0,   4,   5,   0, 
       8, 128,   5,   0, 255, 128, 
-     11,   0,  85, 161,  11,   0, 
+     10,   0,  85, 161,  10,   0, 
     255, 161,   1,   0,   0,   2, 
       9,   0,   4, 128,   9,   0, 
       0, 129,   2,   0,   0,   3, 
@@ -4317,8 +4342,8 @@ const BYTE g_ps30_main[] =
       4,   0,  85, 129,   8,   0, 
       0, 128,  88,   0,   0,   4, 
       6,   0,   2, 128,   6,   0, 
-     85, 128,  11,   0,  85, 161, 
-     11,   0, 255, 161,   2,   0, 
+     85, 128,  10,   0,  85, 161, 
+     10,   0, 255, 161,   2,   0, 
       0,   3,   5,   0,   8, 128, 
       5,   0, 255, 128,   6,   0, 
      85, 128,   4,   0,   0,   4, 
@@ -4336,13 +4361,13 @@ const BYTE g_ps30_main[] =
       8, 128,   4,   0,  85, 129, 
       8,   0,   0, 128,  88,   0, 
       0,   4,   4,   0,   8, 128, 
-      4,   0, 255, 128,  11,   0, 
-     85, 161,  11,   0, 255, 161, 
+      4,   0, 255, 128,  10,   0, 
+     85, 161,  10,   0, 255, 161, 
       2,   0,   0,   3,   4,   0, 
       8, 128,   4,   0, 255, 128, 
       5,   0, 255, 128,   4,   0, 
       0,   4,   6,   0,   6, 128, 
-      9,   0, 204, 128,  11,   0, 
+      9,   0, 204, 128,  10,   0, 
     216, 160,   7,   0, 224, 128, 
      66,   0,   0,   3,   7,   0, 
      15, 128,   6,   0, 233, 128, 
@@ -4351,33 +4376,33 @@ const BYTE g_ps30_main[] =
       4,   0,  85, 129,   7,   0, 
       0, 128,  88,   0,   0,   4, 
       4,   0,   2, 128,   4,   0, 
-     85, 128,  11,   0,  85, 161, 
-     11,   0, 255, 161,   2,   0, 
+     85, 128,  10,   0,  85, 161, 
+     10,   0, 255, 161,   2,   0, 
       0,   3,   4,   0,   2, 128, 
       4,   0,  85, 128,   4,   0, 
     255, 128,   1,   0,   0,   2, 
       4,   0,  24, 128,  75,   0, 
       0, 160,   4,   0,   0,   4, 
       4,   0,   2, 128,   4,   0, 
-     85, 128, 177,   0, 170, 160, 
-    177,   0, 255, 160,   4,   0, 
+     85, 128, 178,   0, 170, 160, 
+    178,   0, 255, 160,   4,   0, 
       0,   4,   4,   0,   2, 128, 
       4,   0, 255, 128,   4,   0, 
-     85, 128,  11,   0, 170, 160, 
+     85, 128,  10,   0, 170, 160, 
      88,   0,   0,   4,   4,   0, 
       2, 128,   4,   0, 170, 129, 
-      4,   0,  85, 128,  11,   0, 
+      4,   0,  85, 128,  10,   0, 
     170, 160,  88,   0,   0,   4, 
       2,   0,   4, 128,   2,   0, 
-    170, 128,  11,   0, 170, 160, 
+    170, 128,  10,   0, 170, 160, 
       4,   0,  85, 128,  88,   0, 
       0,   4,   2,   0,   1, 128, 
-      2,   0,   0, 128,  11,   0, 
+      2,   0,   0, 128,  10,   0, 
     170, 160,   2,   0, 170, 128, 
       1,   0,   0,   2,   4,   0, 
-     14, 128,  11,   0, 255, 161, 
+     14, 128,  10,   0, 255, 161, 
       1,   0,   0,   2,   2,   0, 
-      4, 128,  11,   0, 255, 161, 
+      4, 128,  10,   0, 255, 161, 
      38,   0,   0,   1,   1,   0, 
     228, 240,   1,   0,   0,   2, 
       5,   0,   8, 128,   1,   0, 
@@ -4388,47 +4413,47 @@ const BYTE g_ps30_main[] =
     170, 128,   2,   0, 170, 128, 
       2,   0,   0,   3,   7,   0, 
      15, 128,   5,   0, 255, 128, 
-     89,   0, 228, 160,   2,   0, 
+     91,   0, 228, 160,   2,   0, 
       0,   3,   8,   0,  15, 128, 
-      5,   0, 255, 128,  15,   0, 
+      5,   0, 255, 128,  14,   0, 
     228, 160,   2,   0,   0,   3, 
       9,   0,  15, 128,   5,   0, 
-    255, 128,  81,   0, 228, 160, 
+    255, 128,  69,   0, 228, 160, 
       2,   0,   0,   3,  10,   0, 
      15, 128,   5,   0, 255, 128, 
-     91,   0, 228, 160,   2,   0, 
+     76,   0, 228, 160,   2,   0, 
       0,   3,  11,   0,  15, 128, 
-      5,   0, 255, 128,  76,   0, 
+      5,   0, 255, 128,  77,   0, 
     228, 160,   2,   0,   0,   3, 
      12,   0,  15, 128,   5,   0, 
-    255, 128,  93,   0, 228, 160, 
+    255, 128,  80,   0, 228, 160, 
       2,   0,   0,   3,  13,   0, 
      15, 128,   5,   0, 255, 128, 
-     79,   0, 228, 160,   2,   0, 
+     89,   0, 228, 160,   2,   0, 
       0,   3,  14,   0,  15, 128, 
-      5,   0, 255, 128,  80,   0, 
+      5,   0, 255, 128,  81,   0, 
     228, 160,   2,   0,   0,   3, 
       6,   0,  14, 128,   5,   0, 
-    255, 128,  78,   0, 228, 160, 
-      2,   0,   0,   3,  16,   0, 
-     15, 128,   5,   0, 255, 128, 
-     88,   0, 228, 160,   2,   0, 
-      0,   3,  17,   0,  15, 128, 
-      5,   0, 255, 128,  90,   0, 
-    228, 160,   2,   0,   0,   3, 
-     18,   0,  15, 128,   5,   0, 
-    255, 128,  43,   0, 228, 160, 
-      2,   0,   0,   3,  19,   0, 
-     15, 128,   5,   0, 255, 128, 
-     69,   0, 228, 160,   2,   0, 
-      0,   3,  20,   0,  15, 128, 
-      5,   0, 255, 128,  74,   0, 
-    228, 160,   2,   0,   0,   3, 
-     21,   0,  15, 128,   5,   0, 
-    255, 128,  77,   0, 228, 160, 
+    255, 128,  79,   0, 228, 160, 
       2,   0,   0,   3,  15,   0, 
      15, 128,   5,   0, 255, 128, 
-     92,   0, 228, 160,  88,   0, 
+     90,   0, 228, 160,   2,   0, 
+      0,   3,  16,   0,  15, 128, 
+      5,   0, 255, 128,  92,   0, 
+    228, 160,   2,   0,   0,   3, 
+     17,   0,  15, 128,   5,   0, 
+    255, 128,  15,   0, 228, 160, 
+      2,   0,   0,   3,  18,   0, 
+     15, 128,   5,   0, 255, 128, 
+     43,   0, 228, 160,   2,   0, 
+      0,   3,  19,   0,  15, 128, 
+      5,   0, 255, 128,  74,   0, 
+    228, 160,   2,   0,   0,   3, 
+     20,   0,  15, 128,   5,   0, 
+    255, 128,  93,   0, 228, 160, 
+      2,   0,   0,   3,  21,   0, 
+     15, 128,   5,   0, 255, 128, 
+     78,   0, 228, 160,  88,   0, 
       0,   4,  22,   0,  15, 128, 
       5,   0, 255, 140, 101,   0, 
     228, 160,   2,   0, 255, 129, 
@@ -4436,11 +4461,11 @@ const BYTE g_ps30_main[] =
      15, 128,  15,   0,   0, 140, 
     102,   0, 228, 160,  22,   0, 
     228, 128,  88,   0,   0,   4, 
-     22,   0,  15, 128,  16,   0, 
-      0, 140, 103,   0, 228, 160, 
+     22,   0,  15, 128,  15,   0, 
+    170, 140, 103,   0, 228, 160, 
      22,   0, 228, 128,  88,   0, 
       0,   4,  22,   0,  15, 128, 
-     16,   0, 170, 140, 104,   0, 
+     16,   0,   0, 140, 104,   0, 
     228, 160,  22,   0, 228, 128, 
      88,   0,   0,   4,  22,   0, 
      15, 128,   7,   0,   0, 140, 
@@ -4450,10 +4475,10 @@ const BYTE g_ps30_main[] =
     170, 140, 106,   0, 228, 160, 
      22,   0, 228, 128,  88,   0, 
       0,   4,  22,   0,  15, 128, 
-     17,   0,   0, 140, 107,   0, 
+     16,   0, 170, 140, 107,   0, 
     228, 160,  22,   0, 228, 128, 
      88,   0,   0,   4,  22,   0, 
-     15, 128,  17,   0, 170, 140, 
+     15, 128,  17,   0,   0, 140, 
     108,   0, 228, 160,  22,   0, 
     228, 128,  88,   0,   0,   4, 
      22,   0,  15, 128,   8,   0, 
@@ -4463,11 +4488,11 @@ const BYTE g_ps30_main[] =
       8,   0, 170, 140, 110,   0, 
     228, 160,  22,   0, 228, 128, 
      88,   0,   0,   4,  22,   0, 
-     15, 128,  18,   0,   0, 140, 
+     15, 128,  17,   0, 170, 140, 
     111,   0, 228, 160,  22,   0, 
     228, 128,  88,   0,   0,   4, 
      22,   0,  15, 128,  18,   0, 
-    170, 140, 112,   0, 228, 160, 
+      0, 140, 112,   0, 228, 160, 
      22,   0, 228, 128,  88,   0, 
       0,   4,  22,   0,  15, 128, 
       9,   0,   0, 140, 113,   0, 
@@ -4476,11 +4501,11 @@ const BYTE g_ps30_main[] =
      15, 128,   9,   0, 170, 140, 
     114,   0, 228, 160,  22,   0, 
     228, 128,  88,   0,   0,   4, 
-     22,   0,  15, 128,  19,   0, 
-      0, 140, 115,   0, 228, 160, 
+     22,   0,  15, 128,  18,   0, 
+    170, 140, 115,   0, 228, 160, 
      22,   0, 228, 128,  88,   0, 
       0,   4,  22,   0,  15, 128, 
-     19,   0, 170, 140, 116,   0, 
+     19,   0,   0, 140, 116,   0, 
     228, 160,  22,   0, 228, 128, 
      88,   0,   0,   4,  22,   0, 
      15, 128,  10,   0,   0, 140, 
@@ -4490,10 +4515,10 @@ const BYTE g_ps30_main[] =
     170, 140, 118,   0, 228, 160, 
      22,   0, 228, 128,  88,   0, 
       0,   4,  22,   0,  15, 128, 
-     20,   0,   0, 140, 119,   0, 
+     19,   0, 170, 140, 119,   0, 
     228, 160,  22,   0, 228, 128, 
      88,   0,   0,   4,  22,   0, 
-     15, 128,  20,   0, 170, 140, 
+     15, 128,  20,   0,   0, 140, 
     120,   0, 228, 160,  22,   0, 
     228, 128,  88,   0,   0,   4, 
      22,   0,  15, 128,  11,   0, 
@@ -4503,17 +4528,17 @@ const BYTE g_ps30_main[] =
      11,   0, 170, 140, 122,   0, 
     228, 160,  22,   0, 228, 128, 
      88,   0,   0,   4,  22,   0, 
-     15, 128,  21,   0,   0, 140, 
+     15, 128,  20,   0, 170, 140, 
     123,   0, 228, 160,  22,   0, 
     228, 128,  88,   0,   0,   4, 
      22,   0,  15, 128,  21,   0, 
-    170, 140, 124,   0, 228, 160, 
+      0, 140, 124,   0, 228, 160, 
      22,   0, 228, 128,  88,   0, 
       0,   4,  22,   0,  15, 128, 
       6,   0,  85, 140, 125,   0, 
     228, 160,  22,   0, 228, 128, 
      88,   0,   0,   4,  22,   0, 
-     15, 128,  15,   0, 170, 140, 
+     15, 128,  21,   0, 170, 140, 
     126,   0, 228, 160,  22,   0, 
     228, 128,  88,   0,   0,   4, 
      22,   0,  15, 128,  12,   0, 
@@ -4543,11 +4568,11 @@ const BYTE g_ps30_main[] =
      15,   0,  85, 140, 134,   0, 
     228, 160,  22,   0, 228, 128, 
      88,   0,   0,   4,  22,   0, 
-     15, 128,  16,   0,  85, 140, 
+     15, 128,  15,   0, 255, 140, 
     135,   0, 228, 160,  22,   0, 
     228, 128,  88,   0,   0,   4, 
      22,   0,  15, 128,  16,   0, 
-    255, 140, 136,   0, 228, 160, 
+     85, 140, 136,   0, 228, 160, 
      22,   0, 228, 128,  88,   0, 
       0,   4,  22,   0,  15, 128, 
       7,   0,  85, 140, 137,   0, 
@@ -4556,11 +4581,11 @@ const BYTE g_ps30_main[] =
      15, 128,   7,   0, 255, 140, 
     138,   0, 228, 160,  22,   0, 
     228, 128,  88,   0,   0,   4, 
-     22,   0,  15, 128,  17,   0, 
-     85, 140, 139,   0, 228, 160, 
+     22,   0,  15, 128,  16,   0, 
+    255, 140, 139,   0, 228, 160, 
      22,   0, 228, 128,  88,   0, 
       0,   4,  22,   0,  15, 128, 
-     17,   0, 255, 140, 140,   0, 
+     17,   0,  85, 140, 140,   0, 
     228, 160,  22,   0, 228, 128, 
      88,   0,   0,   4,  22,   0, 
      15, 128,   8,   0,  85, 140, 
@@ -4570,10 +4595,10 @@ const BYTE g_ps30_main[] =
     255, 140, 142,   0, 228, 160, 
      22,   0, 228, 128,  88,   0, 
       0,   4,  22,   0,  15, 128, 
-     18,   0,  85, 140, 143,   0, 
+     17,   0, 255, 140, 143,   0, 
     228, 160,  22,   0, 228, 128, 
      88,   0,   0,   4,  22,   0, 
-     15, 128,  18,   0, 255, 140, 
+     15, 128,  18,   0,  85, 140, 
     144,   0, 228, 160,  22,   0, 
     228, 128,  88,   0,   0,   4, 
      22,   0,  15, 128,   9,   0, 
@@ -4583,11 +4608,11 @@ const BYTE g_ps30_main[] =
       9,   0, 255, 140, 146,   0, 
     228, 160,  22,   0, 228, 128, 
      88,   0,   0,   4,  22,   0, 
-     15, 128,  19,   0,  85, 140, 
+     15, 128,  18,   0, 255, 140, 
     147,   0, 228, 160,  22,   0, 
     228, 128,  88,   0,   0,   4, 
      22,   0,  15, 128,  19,   0, 
-    255, 140, 148,   0, 228, 160, 
+     85, 140, 148,   0, 228, 160, 
      22,   0, 228, 128,  88,   0, 
       0,   4,  22,   0,  15, 128, 
      10,   0,  85, 140, 149,   0, 
@@ -4596,11 +4621,11 @@ const BYTE g_ps30_main[] =
      15, 128,  10,   0, 255, 140, 
     150,   0, 228, 160,  22,   0, 
     228, 128,  88,   0,   0,   4, 
-     22,   0,  15, 128,  20,   0, 
-     85, 140, 151,   0, 228, 160, 
+     22,   0,  15, 128,  19,   0, 
+    255, 140, 151,   0, 228, 160, 
      22,   0, 228, 128,  88,   0, 
       0,   4,  22,   0,  15, 128, 
-     20,   0, 255, 140, 152,   0, 
+     20,   0,  85, 140, 152,   0, 
     228, 160,  22,   0, 228, 128, 
      88,   0,   0,   4,  22,   0, 
      15, 128,  11,   0,  85, 140, 
@@ -4610,17 +4635,17 @@ const BYTE g_ps30_main[] =
     255, 140, 154,   0, 228, 160, 
      22,   0, 228, 128,  88,   0, 
       0,   4,  22,   0,  15, 128, 
-     21,   0,  85, 140, 155,   0, 
+     20,   0, 255, 140, 155,   0, 
     228, 160,  22,   0, 228, 128, 
      88,   0,   0,   4,  22,   0, 
-     15, 128,  21,   0, 255, 140, 
+     15, 128,  21,   0,  85, 140, 
     156,   0, 228, 160,  22,   0, 
     228, 128,  88,   0,   0,   4, 
      22,   0,  15, 128,   6,   0, 
     170, 140, 157,   0, 228, 160, 
      22,   0, 228, 128,  88,   0, 
       0,   4,  22,   0,  15, 128, 
-     15,   0, 255, 140, 158,   0, 
+     21,   0, 255, 140, 158,   0, 
     228, 160,  22,   0, 228, 128, 
      88,   0,   0,   4,  22,   0, 
      15, 128,  12,   0,  85, 140, 
@@ -4644,7 +4669,7 @@ const BYTE g_ps30_main[] =
     228, 160,  22,   0, 228, 128, 
       2,   0,   0,   3,  22,   0, 
       7, 128,   5,   0, 255, 128, 
-     80,   0, 228, 160,  88,   0, 
+     81,   0, 228, 160,  88,   0, 
       0,   4,  23,   0,  15, 128, 
       5,   0, 255, 140, 102,   0, 
     228, 160,   2,   0, 255, 129, 
@@ -4652,11 +4677,11 @@ const BYTE g_ps30_main[] =
      15, 128,  15,   0,   0, 140, 
     103,   0, 228, 160,  23,   0, 
     228, 128,  88,   0,   0,   4, 
-     23,   0,  15, 128,  16,   0, 
-      0, 140, 104,   0, 228, 160, 
+     23,   0,  15, 128,  15,   0, 
+    170, 140, 104,   0, 228, 160, 
      23,   0, 228, 128,  88,   0, 
       0,   4,  23,   0,  15, 128, 
-     16,   0, 170, 140, 105,   0, 
+     16,   0,   0, 140, 105,   0, 
     228, 160,  23,   0, 228, 128, 
      88,   0,   0,   4,  23,   0, 
      15, 128,   7,   0,   0, 140, 
@@ -4666,10 +4691,10 @@ const BYTE g_ps30_main[] =
     170, 140, 107,   0, 228, 160, 
      23,   0, 228, 128,  88,   0, 
       0,   4,  23,   0,  15, 128, 
-     17,   0,   0, 140, 108,   0, 
+     16,   0, 170, 140, 108,   0, 
     228, 160,  23,   0, 228, 128, 
      88,   0,   0,   4,  23,   0, 
-     15, 128,  17,   0, 170, 140, 
+     15, 128,  17,   0,   0, 140, 
     109,   0, 228, 160,  23,   0, 
     228, 128,  88,   0,   0,   4, 
      23,   0,  15, 128,   8,   0, 
@@ -4679,11 +4704,11 @@ const BYTE g_ps30_main[] =
       8,   0, 170, 140, 111,   0, 
     228, 160,  23,   0, 228, 128, 
      88,   0,   0,   4,  23,   0, 
-     15, 128,  18,   0,   0, 140, 
+     15, 128,  17,   0, 170, 140, 
     112,   0, 228, 160,  23,   0, 
     228, 128,  88,   0,   0,   4, 
      23,   0,  15, 128,  18,   0, 
-    170, 140, 113,   0, 228, 160, 
+      0, 140, 113,   0, 228, 160, 
      23,   0, 228, 128,  88,   0, 
       0,   4,  23,   0,  15, 128, 
       9,   0,   0, 140, 114,   0, 
@@ -4692,11 +4717,11 @@ const BYTE g_ps30_main[] =
      15, 128,   9,   0, 170, 140, 
     115,   0, 228, 160,  23,   0, 
     228, 128,  88,   0,   0,   4, 
-     23,   0,  15, 128,  19,   0, 
-      0, 140, 116,   0, 228, 160, 
+     23,   0,  15, 128,  18,   0, 
+    170, 140, 116,   0, 228, 160, 
      23,   0, 228, 128,  88,   0, 
       0,   4,  23,   0,  15, 128, 
-     19,   0, 170, 140, 117,   0, 
+     19,   0,   0, 140, 117,   0, 
     228, 160,  23,   0, 228, 128, 
      88,   0,   0,   4,  23,   0, 
      15, 128,  10,   0,   0, 140, 
@@ -4706,10 +4731,10 @@ const BYTE g_ps30_main[] =
     170, 140, 119,   0, 228, 160, 
      23,   0, 228, 128,  88,   0, 
       0,   4,  23,   0,  15, 128, 
-     20,   0,   0, 140, 120,   0, 
+     19,   0, 170, 140, 120,   0, 
     228, 160,  23,   0, 228, 128, 
      88,   0,   0,   4,  23,   0, 
-     15, 128,  20,   0, 170, 140, 
+     15, 128,  20,   0,   0, 140, 
     121,   0, 228, 160,  23,   0, 
     228, 128,  88,   0,   0,   4, 
      23,   0,  15, 128,  11,   0, 
@@ -4719,17 +4744,17 @@ const BYTE g_ps30_main[] =
      11,   0, 170, 140, 123,   0, 
     228, 160,  23,   0, 228, 128, 
      88,   0,   0,   4,  23,   0, 
-     15, 128,  21,   0,   0, 140, 
+     15, 128,  20,   0, 170, 140, 
     124,   0, 228, 160,  23,   0, 
     228, 128,  88,   0,   0,   4, 
      23,   0,  15, 128,  21,   0, 
-    170, 140, 125,   0, 228, 160, 
+      0, 140, 125,   0, 228, 160, 
      23,   0, 228, 128,  88,   0, 
       0,   4,  23,   0,  15, 128, 
       6,   0,  85, 140, 126,   0, 
     228, 160,  23,   0, 228, 128, 
      88,   0,   0,   4,  23,   0, 
-     15, 128,  15,   0, 170, 140, 
+     15, 128,  21,   0, 170, 140, 
     127,   0, 228, 160,  23,   0, 
     228, 128,  88,   0,   0,   4, 
      23,   0,  15, 128,  12,   0, 
@@ -4758,25 +4783,25 @@ const BYTE g_ps30_main[] =
       0,   4,  23,   0,  15, 128, 
      15,   0,  85, 140, 135,   0, 
     228, 160,  23,   0, 228, 128, 
-     88,   0,   0,   4,  23,   0, 
-     15, 128,  16,   0,  85, 140, 
+     88,   0,   0,   4,  15,   0, 
+     15, 128,  15,   0, 255, 140, 
     136,   0, 228, 160,  23,   0, 
     228, 128,  88,   0,   0,   4, 
-     16,   0,  15, 128,  16,   0, 
-    255, 140, 137,   0, 228, 160, 
-     23,   0, 228, 128,  88,   0, 
-      0,   4,  16,   0,  15, 128, 
+     15,   0,  15, 128,  16,   0, 
+     85, 140, 137,   0, 228, 160, 
+     15,   0, 228, 128,  88,   0, 
+      0,   4,  15,   0,  15, 128, 
       7,   0,  85, 140, 138,   0, 
-    228, 160,  16,   0, 228, 128, 
+    228, 160,  15,   0, 228, 128, 
      88,   0,   0,   4,   7,   0, 
      15, 128,   7,   0, 255, 140, 
-    139,   0, 228, 160,  16,   0, 
+    139,   0, 228, 160,  15,   0, 
     228, 128,  88,   0,   0,   4, 
-      7,   0,  15, 128,  17,   0, 
-     85, 140, 140,   0, 228, 160, 
+      7,   0,  15, 128,  16,   0, 
+    255, 140, 140,   0, 228, 160, 
       7,   0, 228, 128,  88,   0, 
       0,   4,   7,   0,  15, 128, 
-     17,   0, 255, 140, 141,   0, 
+     17,   0,  85, 140, 141,   0, 
     228, 160,   7,   0, 228, 128, 
      88,   0,   0,   4,   7,   0, 
      15, 128,   8,   0,  85, 140, 
@@ -4786,10 +4811,10 @@ const BYTE g_ps30_main[] =
     255, 140, 143,   0, 228, 160, 
       7,   0, 228, 128,  88,   0, 
       0,   4,   7,   0,  15, 128, 
-     18,   0,  85, 140, 144,   0, 
+     17,   0, 255, 140, 144,   0, 
     228, 160,   7,   0, 228, 128, 
      88,   0,   0,   4,   7,   0, 
-     15, 128,  18,   0, 255, 140, 
+     15, 128,  18,   0,  85, 140, 
     145,   0, 228, 160,   7,   0, 
     228, 128,  88,   0,   0,   4, 
       7,   0,  15, 128,   9,   0, 
@@ -4799,11 +4824,11 @@ const BYTE g_ps30_main[] =
       9,   0, 255, 140, 147,   0, 
     228, 160,   7,   0, 228, 128, 
      88,   0,   0,   4,   7,   0, 
-     15, 128,  19,   0,  85, 140, 
+     15, 128,  18,   0, 255, 140, 
     148,   0, 228, 160,   7,   0, 
     228, 128,  88,   0,   0,   4, 
       7,   0,  15, 128,  19,   0, 
-    255, 140, 149,   0, 228, 160, 
+     85, 140, 149,   0, 228, 160, 
       7,   0, 228, 128,  88,   0, 
       0,   4,   7,   0,  15, 128, 
      10,   0,  85, 140, 150,   0, 
@@ -4812,11 +4837,11 @@ const BYTE g_ps30_main[] =
      15, 128,  10,   0, 255, 140, 
     151,   0, 228, 160,   7,   0, 
     228, 128,  88,   0,   0,   4, 
-      7,   0,  15, 128,  20,   0, 
-     85, 140, 152,   0, 228, 160, 
+      7,   0,  15, 128,  19,   0, 
+    255, 140, 152,   0, 228, 160, 
       7,   0, 228, 128,  88,   0, 
       0,   4,   7,   0,  15, 128, 
-     20,   0, 255, 140, 153,   0, 
+     20,   0,  85, 140, 153,   0, 
     228, 160,   7,   0, 228, 128, 
      88,   0,   0,   4,   7,   0, 
      15, 128,  11,   0,  85, 140, 
@@ -4826,17 +4851,17 @@ const BYTE g_ps30_main[] =
     255, 140, 155,   0, 228, 160, 
       7,   0, 228, 128,  88,   0, 
       0,   4,   7,   0,  15, 128, 
-     21,   0,  85, 140, 156,   0, 
+     20,   0, 255, 140, 156,   0, 
     228, 160,   7,   0, 228, 128, 
      88,   0,   0,   4,   7,   0, 
-     15, 128,  21,   0, 255, 140, 
+     15, 128,  21,   0,  85, 140, 
     157,   0, 228, 160,   7,   0, 
     228, 128,  88,   0,   0,   4, 
       7,   0,  15, 128,   6,   0, 
     170, 140, 158,   0, 228, 160, 
       7,   0, 228, 128,  88,   0, 
       0,   4,   7,   0,  15, 128, 
-     15,   0, 255, 140, 159,   0, 
+     21,   0, 255, 140, 159,   0, 
     228, 160,   7,   0, 228, 128, 
      88,   0,   0,   4,   7,   0, 
      15, 128,  12,   0,  85, 140, 
@@ -4865,7 +4890,7 @@ const BYTE g_ps30_main[] =
      14,   0, 255, 128,   5,   0, 
     255, 129,   2,   0,   0,   3, 
       8,   0,   2, 128,   2,   0, 
-    170, 128,  11,   0, 170, 160, 
+    170, 128,  10,   0, 170, 160, 
      88,   0,   0,   4,   8,   0, 
       4, 128,   8,   0,   0, 128, 
       2,   0, 170, 128,   8,   0, 
@@ -4889,13 +4914,13 @@ const BYTE g_ps30_main[] =
      14,   0, 255, 128,   4,   0, 
       0,   4,   6,   0,   2, 128, 
       8,   0, 255, 128,   6,   0, 
-     85, 129,  11,   0, 170, 160, 
+     85, 129,  10,   0, 170, 160, 
       5,   0,   0,   3,   6,   0, 
       2, 128,   6,   0,  85, 128, 
       6,   0,  85, 128,  88,   0, 
       0,   4,   6,   0,   4, 128, 
       8,   0, 170, 129,   2,   0, 
-      0, 128,  11,   0, 170, 160, 
+      0, 128,  10,   0, 170, 160, 
       5,   0,   0,   3,   7,   0, 
       7, 128,   7,   0, 255, 128, 
       7,   0, 228, 128,   5,   0, 
@@ -4928,11 +4953,11 @@ const BYTE g_ps30_main[] =
       1, 128,   3,   0, 255, 129, 
       5,   0,  85, 161,  88,   0, 
       0,   4,   2,   0,   1, 128, 
-      2,   0,   0, 128,  11,   0, 
-    255, 161,  11,   0,  85, 161, 
+      2,   0,   0, 128,  10,   0, 
+    255, 161,  10,   0,  85, 161, 
      88,   0,   0,   4,   1,   0, 
       8, 128,   1,   0, 255, 128, 
-     11,   0, 255, 161,   2,   0, 
+     10,   0, 255, 161,   2,   0, 
       0, 128,  41,   0,   5,   2, 
       1,   0, 255, 128,   1,   0, 
     255, 129,   1,   0,   0,   2, 
@@ -4999,7 +5024,7 @@ const BYTE g_ps30_main[] =
      67,   0, 170, 161,   3,   0, 
     170, 144,   2,   0,   0,   3, 
       1,   0,  20, 128,   0,   0, 
-      0, 129,  11,   0, 170, 160, 
+      0, 129,  10,   0, 170, 160, 
       2,   0,   0,   3,   0,   0, 
      17, 128,   0,   0,   0, 128, 
       4,   0, 255, 160,   5,   0, 
@@ -5058,7 +5083,7 @@ const BYTE g_ps30_main[] =
     170, 128,  68,   0,  85, 160, 
       4,   0,   0,   4,   5,   0, 
       7, 128,   1,   0, 170, 128, 
-     14,   0, 255, 161,   4,   0, 
+     86,   0, 255, 161,   4,   0, 
     249, 128,  88,   0,   0,   4, 
       4,   0,  14, 128,   0,   0, 
       0, 128,   4,   0, 228, 128, 
@@ -5068,18 +5093,18 @@ const BYTE g_ps30_main[] =
      85, 129,   9,   0, 255, 160, 
      88,   0,   0,   4,   0,   0, 
       1, 128,   0,   0,   0, 128, 
-     11,   0, 255, 161,  11,   0, 
+     10,   0, 255, 161,  10,   0, 
      85, 161,   2,   0,   0,   3, 
       1,   0,   4, 128,   1,   0, 
      85, 129,  82,   0, 170, 160, 
      88,   0,   0,   4,   1,   0, 
       4, 128,   1,   0, 170, 128, 
-     11,   0, 255, 161,  11,   0, 
+     10,   0, 255, 161,  10,   0, 
      85, 161,   2,   0,   0,   3, 
       0,   0,   1, 128,   0,   0, 
       0, 128,   1,   0, 170, 128, 
      41,   0,   4,   2,   0,   0, 
-      0, 129,  11,   0, 255, 161, 
+      0, 129,  10,   0, 255, 161, 
       4,   0,   0,   4,   0,   0, 
       1, 128,   3,   0,  85, 128, 
      63,   0, 170, 160,   3,   0, 
@@ -5092,10 +5117,10 @@ const BYTE g_ps30_main[] =
     255, 160,   4,   0,   0,   4, 
       1,   0,   2, 128,   1,   0, 
      85, 128,   1,   0, 170, 128, 
-     11,   0, 170, 160,  88,   0, 
+     10,   0, 170, 160,  88,   0, 
       0,   4,   1,   0,   2, 128, 
       1,   0, 170, 128,   1,   0, 
-     85, 128,  11,   0, 170, 160, 
+     85, 128,  10,   0, 170, 160, 
       2,   0,   0,   3,   2,   0, 
       7, 128,  42,   0, 228, 160, 
       3,   0, 228, 145,   8,   0, 
@@ -5107,14 +5132,14 @@ const BYTE g_ps30_main[] =
       1,   0,   8, 128,  42,   0, 
     255, 160,  11,   0,   0,   3, 
       3,   0,   2, 128,   1,   0, 
-    255, 128,  15,   0,   0, 161, 
+    255, 128,  14,   0,   0, 161, 
       5,   0,   0,   3,   1,   0, 
       2, 128,   1,   0,  85, 128, 
       3,   0,  85, 128,   1,   0, 
       0,   2,   5,   0,   7, 128, 
-     11,   0, 255, 161,   1,   0, 
+     10,   0, 255, 161,   1,   0, 
       0,   2,   1,   0,   8, 128, 
-     11,   0, 255, 161,  38,   0, 
+     10,   0, 255, 161,  38,   0, 
       0,   1,   0,   0, 228, 240, 
       1,   0,   0,   2,   3,   0, 
       2, 128,   4,   0,   0, 128, 
@@ -5124,10 +5149,10 @@ const BYTE g_ps30_main[] =
       2, 128,   1,   0, 255, 128, 
      16,   0,   0, 160,   2,   0, 
       0,   3,   7,   0,  15, 128, 
-      3,   0,  85, 128,  14,   0, 
+      3,   0,  85, 128,  86,   0, 
     228, 160,   2,   0,   0,   3, 
       8,   0,  15, 128,   3,   0, 
-     85, 128,  10,   0, 228, 160, 
+     85, 128,  11,   0, 228, 160, 
      88,   0,   0,   4,   6,   0, 
      14, 128,   7,   0,   0, 140, 
      17,   0, 144, 160,   2,   0, 
@@ -5200,13 +5225,13 @@ const BYTE g_ps30_main[] =
       0, 128,   5,   0, 228, 128, 
       2,   0,   0,   3,   1,   0, 
       8, 128,   1,   0, 255, 128, 
-     11,   0, 170, 160,  39,   0, 
+     10,   0, 170, 160,  39,   0, 
       0,   0,   5,   0,   0,   3, 
       1,   0,   7, 128,   1,   0, 
       0, 128,   5,   0, 228, 128, 
      42,   0,   0,   0,   1,   0, 
       0,   2,   1,   0,   7, 128, 
-     11,   0, 255, 161,  43,   0, 
+     10,   0, 255, 161,  43,   0, 
       0,   0,   1,   0,   0,   2, 
       0,   0,  17, 128,   3,   0, 
     255, 128,   1,   0,   0,   2, 
@@ -5221,7 +5246,7 @@ const BYTE g_ps30_main[] =
       3,   0, 255, 139,   2,   0, 
      85, 128,   2,   0,   0,   3, 
       2,   0,   2, 128,   4,   0, 
-      0, 129,  11,   0, 170, 160, 
+      0, 129,  10,   0, 170, 160, 
       5,   0,   0,   3,   5,   0, 
       7, 128,   1,   0, 255, 128, 
      46,   0, 228, 160,   4,   0, 
@@ -5251,7 +5276,7 @@ const BYTE g_ps30_main[] =
      12,   0, 228, 160,  88,   0, 
       0,   4,   2,   0,   7, 128, 
       2,   0, 228, 128,   4,   0, 
-    228, 128,  11,   0, 255, 161, 
+    228, 128,  10,   0, 255, 161, 
       2,   0,   0,   3,   1,   0, 
       7, 128,   1,   0, 228, 128, 
       2,   0, 228, 128,   5,   0, 
@@ -5262,37 +5287,57 @@ const BYTE g_ps30_main[] =
     228, 160,   3,   0, 228, 145, 
      36,   0,   0,   2,   4,   0, 
       7, 128,   2,   0, 228, 128, 
-      8,   0,   0,   3,   1,   0, 
-     24, 128,   3,   0, 248, 128, 
-      4,   0, 228, 128,   2,   0, 
+      8,   0,   0,   3,   2,   0, 
+     17, 128,   3,   0, 248, 128, 
+      4,   0, 228, 128,   8,   0, 
       0,   3,   1,   0,   8, 128, 
-      1,   0, 255, 129,  11,   0, 
-    170, 160,   5,   0,   0,   3, 
-      2,   0,   1, 128,   1,   0, 
-    255, 128,   1,   0, 255, 128, 
-      5,   0,   0,   3,   2,   0, 
-      1, 128,   2,   0,   0, 128, 
-      2,   0,   0, 128,   5,   0, 
-      0,   3,   1,   0,   8, 128, 
-      1,   0, 255, 128,   2,   0, 
-      0, 128,   4,   0,   0,   4, 
-      1,   0,   8, 128,   1,   0, 
-    255, 128,  85,   0, 170, 160, 
-     85,   0, 255, 160,   8,   0, 
-      0,   3,   2,   0,   1, 128, 
       4,   0, 228, 129,   3,   0, 
     248, 128,   2,   0,   0,   3, 
-      2,   0,   1, 128,   2,   0, 
-      0, 128,   2,   0,   0, 128, 
-      4,   0,   0,   4,   2,   0, 
+      1,   0,   8, 128,   1,   0, 
+    255, 128,   1,   0, 255, 128, 
+      4,   0,   0,   4,   3,   0, 
       7, 128,   3,   0, 248, 128, 
-      2,   0,   0, 129,   4,   0, 
+      1,   0, 255, 129,   4,   0, 
     228, 129,  66,   0,   0,   3, 
-      2,   0,  15, 128,   2,   0, 
+      3,   0,  15, 128,   3,   0, 
     228, 128,   8,   8, 228, 160, 
+      2,   0,   0,   3,   1,   0, 
+      8, 128,   6,   0,   0, 128, 
+     64,   0,  85, 161,   1,   0, 
+      0,   2,   2,   0,  20, 128, 
+     13,   0,  85, 160,   4,   0, 
+      0,   4,   2,   0,   2, 128, 
+      2,   0, 170, 128,  85,   0, 
+    170, 160,  85,   0, 255, 160, 
+     66,   0,   0,   3,   4,   0, 
+     15, 128,   2,   0, 228, 128, 
+     11,   8, 228, 160,   4,   0, 
+      0,   4,   2,   0,   2, 128, 
+      4,   0,   0, 128,   8,   0, 
+    255, 160,   4,   0,  85, 128, 
       5,   0,   0,   3,   2,   0, 
-      7, 128,   1,   0, 255, 128, 
-      2,   0, 228, 128,   5,   0, 
+     14, 128,   2,   0,  85, 128, 
+      3,   0, 144, 128,   2,   0, 
+      0,   3,   2,   0,   1, 128, 
+      2,   0,   0, 129,  10,   0, 
+    170, 160,   5,   0,   0,   3, 
+      3,   0,   8, 128,   2,   0, 
+      0, 128,   2,   0,   0, 128, 
+      5,   0,   0,   3,   3,   0, 
+      8, 128,   3,   0, 255, 128, 
+      3,   0, 255, 128,   5,   0, 
+      0,   3,   2,   0,   1, 128, 
+      2,   0,   0, 128,   3,   0, 
+    255, 128,   4,   0,   0,   4, 
+      2,   0,   1, 128,   2,   0, 
+      0, 128,  96,   0,   0, 160, 
+     96,   0,  85, 160,   5,   0, 
+      0,   3,   3,   0,   7, 128, 
+      2,   0,   0, 128,   3,   0, 
+    228, 128,  88,   0,   0,   4, 
+      2,   0,   7, 128,   1,   0, 
+    255, 128,   3,   0, 228, 128, 
+      2,   0, 249, 128,   5,   0, 
       0,   3,   2,   0,   7, 128, 
       2,   0, 228, 128,  13,   0, 
      85, 160,   4,   0,   0,   4, 

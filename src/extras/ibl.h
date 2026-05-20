@@ -21,6 +21,15 @@ public:
 
 	static void *captureCube;	// IDirect3DCubeTexture9, RGBA16F, CaptureSize²
 	static void *irradianceCube;	// same format, IrradianceSize²
+	// Split-sum BRDF LUT — 256×256 F16_RGBA 2D texture (.r = scale,
+	// .g = bias for the Karis split-sum approximation). Baked once at
+	// CIBL::Open from brdfLut_PS — no per-frame upkeep. Binds on PS
+	// sampler s11 in default_pp_PS so the runtime IBL specular path
+	// becomes prefiltered(R) * (F0 * LUT.r + LUT.g) for proper
+	// Fresnel + roughness-aware reflectance. Stage 12 P1 = LUT only
+	// (uses the existing captureCube as the reflection source);
+	// Stage 12 P2 = full GGX-prefiltered mip-chain cube alongside.
+	static void *brdfLut;
 	static bool Enabled;		// menu toggle
 	static int FrameCounter;	// drives the refresh schedule
 	// Reflection strength — drives the Fresnel-weighted specular term
@@ -68,6 +77,13 @@ public:
 	// signature so CCFOSelect can take a plain function pointer.
 	static void CaptureSizeAfterChange(int8 before, int8 after);
 	static void IrradianceSizeAfterChange(int8 before, int8 after);
+
+	// Bake the split-sum BRDF LUT into brdfLut. Runs once at Open after
+	// the LUT raster is allocated. Idempotent — re-running just re-draws
+	// the same content. Direct D3D9 quad render bypassing librw im2d for
+	// the same reason captureCube uses direct dispatch (Open-time has no
+	// live scene camera).
+	static void BakeBrdfLut(void);
 };
 
 #endif

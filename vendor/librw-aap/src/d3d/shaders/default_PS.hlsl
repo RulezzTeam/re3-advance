@@ -62,6 +62,14 @@ samplerCUBE iblIrradianceCube : register(s7);
 // path and the contribution multiplies out via reflProps below.
 samplerCUBE iblReflectionCube : register(s8);
 
+// Split-sum BRDF LUT — Stage 12 P1. 2D R/G16F texture, .r = scale and
+// .g = bias for the Karis split-sum approximation of GGX × Fresnel.
+// Baked once at CIBL::Open by brdfLut_PS. Sampled here at (NdotV,
+// roughness) to drive the IBL specular term. Gated by iblReflParams.y
+// = 1 only after the bake latch fires — pre-bake the texture is RT
+// noise and the receiver falls back to the legacy analytic Fresnel.
+sampler2D iblBrdfLut : register(s11);
+
 // Per-pixel specular reflection weight. .x = strength (0 = off).
 // The pipeline still drives the lit/spec terms; this is a Fresnel-
 // weighted *additive* contribution on top of the colour, capturing
@@ -705,22 +713,51 @@ float4 ComputeShadedColor(VS_out input)
 	// along the world-space reflection vector, Fresnel-weight it,
 	// modulate by the material specular term, add on top. This gives
 	// every reflective surface (buildings, road, peds — not just
-	// cars) a directional sky reflection. The cube binding shares
-	// the iblIrradianceCube handle when the host doesn't bind a
-	// distinct reflection cube, so even in fallback mode there's a
-	// usable reflection source.
+	// cars) a directional sky reflection.
+	//
+	// Stage 12 P1: when iblReflParams.y > 0.5 (LUT baked + bound), use
+	// the Karis split-sum approximation —
+	//     IBL_specular ≈ cube(R) * (F0 * LUT.r + LUT.g)
+	// — which gives a physically-grounded Fresnel × roughness response
+	// instead of the legacy hardcoded F0=0.04 + Schlick. The cube here
+	// is still the sharp capture (Stage 12 P2 will add a prefilter
+	// mip-chain so roughness blurs the reflection too); for now we
+	// derive an effective roughness from surfSpecular so glossy mats
+	// (high spec) read as sharp and rough mats (low spec) at least
+	// participate in the LUT's grazing-angle Fresnel curve.
 	{
 		float3 V = normalize(eyePosPS.xyz - input.WorldPos);
 		float NoV = saturate(dot(N, V));
-		float oneMinus = 1.0 - NoV;
-		float f5 = oneMinus * oneMinus; f5 *= f5 * oneMinus;
-		float F0 = 0.04;	// dielectric default
-		float fresnel = F0 + (1.0 - F0) * f5;
-
 		float3 R = reflect(-V, N);
 		float3 reflectionColor = texCUBE(iblReflectionCube, R).rgb;
+
+		float3 specTerm;
+		// No [branch] attribute — tex2D(iblBrdfLut, ...) below uses
+		// implicit gradients which a dynamic branch can't carry safely;
+		// fxc would error X3528. The compiler picks the cheapest branch
+		// strategy on its own.
+		if(iblReflParams.y > 0.5){
+			// Split-sum path. F0 = 0.04 dielectric baseline (Stage 13
+			// PBR will replace this with per-material metallic-aware
+			// F0). roughness derived from surfSpecular: glossy mats
+			// (spec=1) → rough=0.2, rough mats (spec=0) → rough=1.0.
+			float roughness = lerp(1.0, 0.2, saturate(surfSpecular));
+			float3 F0 = float3(0.04, 0.04, 0.04);
+			float2 envBRDF = tex2D(iblBrdfLut,
+			    float2(NoV, roughness)).rg;
+			specTerm = reflectionColor * (F0 * envBRDF.x + envBRDF.y);
+		}else{
+			// Legacy analytic Fresnel — kept as the fallback when the
+			// LUT bake hasn't completed (first frame after Open) or
+			// when the user disabled the IBL cube path entirely.
+			float oneMinus = 1.0 - NoV;
+			float f5 = oneMinus * oneMinus; f5 *= f5 * oneMinus;
+			float F0 = 0.04;
+			float fresnel = F0 + (1.0 - F0) * f5;
+			specTerm = reflectionColor * fresnel;
+		}
 		// Surface-specular and the user-set strength gate the contribution.
-		color.rgb += reflectionColor * fresnel * surfSpecular * iblReflParams.x;
+		color.rgb += specTerm * surfSpecular * iblReflParams.x;
 	}
 #endif
 
