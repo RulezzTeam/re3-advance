@@ -332,6 +332,30 @@ CPostFX::InitOnce(void)
 #endif
 }
 
+// Last-known camera dimensions, used by ResizeIfChanged() to detect Alt-Tab
+// / full-screen toggle / resolution-change events. Updated every Open call
+// so the first Open seeds them with the current camera size.
+static int32 sLastCamW = 0;
+static int32 sLastCamH = 0;
+
+bool
+CPostFX::ResizeIfChanged(RwCamera *cam)
+{
+	if(cam == nullptr || pFrontBuffer == nullptr)
+		return false;
+	int32 curW = RwRasterGetWidth(RwCameraGetRaster(cam));
+	int32 curH = RwRasterGetHeight(RwCameraGetRaster(cam));
+	if(curW == sLastCamW && curH == sLastCamH)
+		return false;
+	// Resolution change detected — drop all camera-sized RTs and re-Open.
+	// Close() destroys everything (HDR scene + SSAO/SSR/Bloom/TAA/G-buf
+	// pyramids); the next Open recreates them at the new dimensions. This
+	// is the same recovery path that runs after Alt-Tab + device lost.
+	Close();
+	Open(cam);
+	return true;
+}
+
 void
 CPostFX::Open(RwCamera *cam)
 {
@@ -342,6 +366,10 @@ CPostFX::Open(RwCamera *cam)
 	uint32 height = Pow(2.0f, int32(log2(RwRasterGetHeight(RwCameraGetRaster(cam))))+1);
 	uint32 depth  = RwRasterGetDepth(RwCameraGetRaster(cam));
 	pFrontBuffer = RwRasterCreate(width, height, depth, rwRASTERTYPECAMERATEXTURE);
+
+	// Stamp the camera dimensions so ResizeIfChanged sees a stable baseline.
+	sLastCamW = RwRasterGetWidth(RwCameraGetRaster(cam));
+	sLastCamH = RwRasterGetHeight(RwCameraGetRaster(cam));
 	pBackBuffer = RwRasterCreate(width, height, depth, rwRASTERTYPECAMERATEXTURE);
 #ifdef POSTFX_BLOOM
 	pBloomA = RwRasterCreate(width, height, depth, rwRASTERTYPECAMERATEXTURE);
@@ -755,6 +783,11 @@ CPostFX::Close(void)
 #endif
 	CSpotShadow::Close();
 	CIBL::Close();
+	// Run ForceReset BEFORE Close so the D3D9 render-state bits get
+	// restored while the device pointer is still alive. After Close,
+	// CGBuffer::Open might be called again with stale COLORWRITEENABLE1
+	// = 0 from a prior session if we skipped this step.
+	CGBuffer::ForceReset();
 	CGBuffer::Close();
 #endif
 #ifdef RW_D3D9

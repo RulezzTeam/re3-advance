@@ -46,6 +46,15 @@ public:
 	static void DropMRT(void);
 	static void EndScenePass(RwCamera *cam);
 	static void ResolveTonemap(RwCamera *cam);
+
+	// Idempotent recovery — drops any latched MRT state and forces
+	// COLORWRITEENABLE1 back to 0x0F so the next LDR pass isn't blocked
+	// from writing the colour channel. Called from CPostFX::Close, and
+	// safe to call from any error-handling path (menu enter, mission
+	// load, save/load, exception unwind). Survives being called when
+	// CGBuffer isn't open + when an HDR pass was never started, so the
+	// caller never has to nullcheck.
+	static void ForceReset(void);
 };
 
 // Forward declared shader pointer for the dedicated HDR-resolve PS that

@@ -188,6 +188,15 @@ public:
 	static void InitOnce(void);
 	static void Open(RwCamera *cam);
 	static void Close(void);
+
+	// Hook for the main-loop frame start. Compares the current camera
+	// width/height against the values stashed at the last Open; if they
+	// differ (Alt-Tab into different fullscreen res, exclusive→windowed
+	// toggle, in-game resolution change), drops all camera-sized RTs
+	// and re-Opens at the new dimensions. Returns true if it
+	// reallocated. Called from DoRWStuffStartOfFrame_Horizon so the
+	// resize lands before any postfx draw uses stale RT sizes.
+	static bool ResizeIfChanged(RwCamera *cam);
 	static void RenderOverlayBlur(RwCamera *cam, int32 r, int32 g, int32 b, int32 a);
 	static void RenderOverlaySniper(RwCamera *cam, int32 r, int32 g, int32 b, int32 a);
 	static void RenderOverlayShader(RwCamera *cam, int32 r, int32 g, int32 b, int32 a);

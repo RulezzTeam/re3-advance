@@ -244,6 +244,13 @@ DoRWStuffStartOfFrame_Horizon(int16 TopRed, int16 TopGreen, int16 TopBlue, int16
 	TheCamera.m_viewMatrix.Update();
 
 #ifdef POSTFX_HDR
+	// Resize handling — covers Alt-Tab into a different fullscreen res,
+	// exclusive↔windowed toggle, and in-game resolution change. If the
+	// camera framebuffer dimensions changed since the last Open, drop
+	// + reallocate all camera-sized HDR RTs before any postfx pass
+	// (including the upcoming BeginScenePass) tries to use them.
+	CPostFX::ResizeIfChanged(Scene.camera);
+
 	// Switch to the HDR off-screen camera BEFORE drawing the sky gradient
 	// — otherwise CClouds::RenderBackground would paint into the LDR
 	// backbuffer and be overwritten when ResolveHDR copies pHdrScene back.

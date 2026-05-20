@@ -160,22 +160,38 @@ CGBuffer::BeginScenePass(RwCamera *cam)
 void
 CGBuffer::DropMRT(void)
 {
-	if(!bSceneInHDR)
-		return;
+	// Idempotent — safe to call whether or not an HDR scene pass is in
+	// flight. The previous (bSceneInHDR && gbufferEnabled) double-gate
+	// meant a stale COLORWRITEENABLE1=0 could survive an exception unwind
+	// that left bSceneInHDR=false but gbufferEnabled=true. We now always
+	// restore the colour mask, and only clear the MRT slot when there's
+	// actually one to clear.
 	if(rw::d3d::gbufferEnabled){
 		rw::d3d::clearMRT();
 		rw::d3d::gbufferEnabled = false;
+	}
 #ifdef RW_D3D9
-		// Also restore slot 1 colour-write so we don't leak the
-		// "disabled" state into post-effect / 2D passes.
+	// ALWAYS restore slot 1 colour-write. The "disabled" mask (0) is a
+	// scoped optimisation for the opaque HDR pass; LDR HUD / particle /
+	// menu transitions silently fail to write the backbuffer otherwise,
+	// because their PS only emits oColor0 but D3D9 still gates writes
+	// by the colour-write mask on whatever RTs are bound.
+	if(rw::d3d::d3ddevice)
 		rw::d3d::d3ddevice->SetRenderState(D3DRS_COLORWRITEENABLE1, 0x0F);
 #endif
-	}
 }
 
 void
 CGBuffer::EndScenePass(RwCamera *cam)
 {
+	// Best-effort cleanup. Run unconditionally so that:
+	//   - duplicated EndScenePass calls don't double-restore the camera
+	//     framebuffer (the !bSceneInHDR early-out handles that), and
+	//   - DropMRT still runs even when bSceneInHDR is false, in case an
+	//     earlier exception left COLORWRITEENABLE1 = 0 or the MRT bound.
+	// Idempotent — safe in error-handling paths.
+	DropMRT();
+
 	if(!bSceneInHDR)
 		return;
 
@@ -183,8 +199,6 @@ CGBuffer::EndScenePass(RwCamera *cam)
 	// shader stops sampling it because iblParams.z stays at 1 only
 	// during the scene draws — gbuf clear happens before the next pass.
 	CIBL::UnbindReceiver();
-
-	DropMRT();
 
 	rw::Camera *rwcam = (rw::Camera*)cam;
 	RwCameraEndUpdate(cam);
@@ -194,6 +208,28 @@ CGBuffer::EndScenePass(RwCamera *cam)
 	pSavedZBuffer = nil;
 	RwCameraBeginUpdate(cam);
 
+	bSceneInHDR = false;
+}
+
+void
+CGBuffer::ForceReset(void)
+{
+	// Belt-and-braces recovery. Called from CPostFX::Close + any place
+	// the user can interrupt rendering (menu enter, save / load, mission
+	// transition). Doesn't touch the saved framebuffer pointers — the
+	// camera's framebuffer is owned by the engine outside our control;
+	// restoring it without a valid scene cam would itself break things.
+	if(rw::d3d::gbufferEnabled){
+		rw::d3d::clearMRT();
+		rw::d3d::gbufferEnabled = false;
+	}
+#ifdef RW_D3D9
+	if(rw::d3d::d3ddevice)
+		rw::d3d::d3ddevice->SetRenderState(D3DRS_COLORWRITEENABLE1, 0x0F);
+#endif
+	// Mark the in-HDR flag false so the next BeginScenePass picks up the
+	// camera framebuffer cleanly. If the scene cam is mid-pass when this
+	// is called, the worst that happens is a one-frame flash.
 	bSceneInHDR = false;
 }
 
