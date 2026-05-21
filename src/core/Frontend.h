@@ -357,13 +357,15 @@ enum eCheckHover
 enum
 {
 #if defined LEGACY_MENU_OPTIONS || defined CUSTOM_FRONTEND_OPTIONS
-	// Bumped from 18 -> 32 -> 48 -> 56 -> 72 -> 96 to fit the extended
-	// graphics page (HDR + G-buffer + SSAO sliders + GTAO toggle +
+	// Bumped from 18 -> 32 -> 48 -> 56 -> 72 -> 96 -> 128 to fit the
+	// extended graphics page (HDR + G-buffer + SSAO sliders + GTAO toggle +
 	// water reflection + CSM + bloom + tonemap + vignette + CA + FXAA +
 	// god rays + envmap-size + TAA + volumetric fog + contact AO +
-	// contact shadows + IBL + SSR + wet surfaces + DoF). 96 leaves
-	// headroom for Hosek-Wilkie sky + motion vectors + future passes.
-	NUM_MENUROWS = 96,
+	// contact shadows + IBL + SSR + wet surfaces + DoF + Hosek-Wilkie sky
+	// + motion vectors + SSGI + bent-normal ambient + Stage 33/32 sliders).
+	// 128 leaves comfortable headroom for the probe-system (Stage 34+)
+	// and future quality tiers without another bump.
+	NUM_MENUROWS = 128,
 #else
 	NUM_MENUROWS = 12,
 #endif

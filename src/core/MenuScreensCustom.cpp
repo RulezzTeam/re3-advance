@@ -220,6 +220,9 @@
 		MENUACTION_CFO_SELECT, "FED_SGI", { new CCFOSelect((int8*)&CPostFX::SsgiEnable, "Graphics", "SSGI", off_on, 2, false, nil, false, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_SGS", { new CCFOSlider(&CPostFX::SsgiStrength, "Graphics", "SsgiStrength", 0.0f, 2.0f, nil, (int8*)&CPostFX::SsgiEnable, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_SGD", { new CCFOSlider(&CPostFX::SsgiMaxDistance, "Graphics", "SsgiDistance", 4.0f, 60.0f, nil, (int8*)&CPostFX::SsgiEnable, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_BNA", { new CCFOSelect((int8*)&CPostFX::BentNormalAmbientEnable, "Graphics", "BentN", off_on, 2, false, nil, false, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_BNS", { new CCFOSlider(&CPostFX::BentNormalAmbientStrength, "Graphics", "BentNStrength", 0.0f, 2.0f, nil, (int8*)&CPostFX::BentNormalAmbientEnable, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_BNB", { new CCFOSlider(&CPostFX::BentNormalAmbientBias, "Graphics", "BentNBias", 0.0f, 1.0f, nil, (int8*)&CPostFX::BentNormalAmbientEnable, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_WET", { new CCFOSelect((int8*)&CPostFX::WetSurfacesEnable, "Graphics", "WetSurfaces", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_WTI", { new CCFOSlider(&CPostFX::WetSurfacesIntensity, "Graphics", "WetIntensity", 0.0f, 2.0f, nil, (int8*)&CPostFX::WetSurfacesEnable) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_WTS", { new CCFOSlider(&CPostFX::WetSurfacesSpec, "Graphics", "WetSpec", 1.0f, 6.0f, nil, (int8*)&CPostFX::WetSurfacesEnable) }, 0, 0, MENUALIGN_LEFT, \
@@ -445,6 +448,13 @@ void RestoreDefGraphics(int8 action) {
 		CPostFX::SsgiMaxDistance = 18.0f;
 		CPostFX::SsgiStepCount = 6;
 		CPostFX::SsgiNdotLGate = 0.05f;
+		// Stage 32 — bent-normal ambient bias. Default ON, subtle weight.
+		// No visible effect when SSAO/GTAO disabled (gated by hdrSsao.x
+		// in the shader); when GTAO is active the .gba channel of pSsaoA
+		// is a real bent normal and the delta term lights up.
+		CPostFX::BentNormalAmbientEnable = true;
+		CPostFX::BentNormalAmbientStrength = 0.5f;
+		CPostFX::BentNormalAmbientBias = 0.6f;
 		CPostFX::WetSurfacesEnable = true;
 		CPostFX::WetSurfacesIntensity = 1.0f;
 		CPostFX::WetSurfacesDiffuse = 0.45f;

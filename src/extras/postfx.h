@@ -141,6 +141,17 @@ public:
 	static float SsgiNdotLGate;	// receiver cosine cutoff (avoid grazing)
 	static void RenderSSGI(RwCamera *cam);
 
+	// Stage 32 — bent-normal-aware ambient correction. Reads the GTAO
+	// bent normal from pSsaoA.gba in hdrResolve_PS and adds an IBL-
+	// gradient delta to the scene colour, weighted by AO. Zero cost on
+	// scenes without SSAO active (gated by hdrSsao.x in the shader),
+	// and on SSAO/HBAO without GTAO the bent-N channel is the surface
+	// normal fallback → delta ≈ 0 → no visible change. Default ON when
+	// SSAO is active; small visual win on alcoves, doorways, foliage.
+	static bool BentNormalAmbientEnable;
+	static float BentNormalAmbientStrength;	// 0..2 — additive bias weight
+	static float BentNormalAmbientBias;	// 0..1 — lerp surface N → bent N
+
 	// Depth of Field — bokeh blur driven by gbuf depth + focal distance.
 	// Runs before ResolveHDR, blurs pHdrScene in-place via a scratch RT
 	// so the downstream tonemap sees the blurred image.

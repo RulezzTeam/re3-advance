@@ -150,6 +150,15 @@ float CPostFX::SsgiStrength = 0.7f;
 float CPostFX::SsgiMaxDistance = 18.0f;	// metres — local bounce only
 int CPostFX::SsgiStepCount = 6;
 float CPostFX::SsgiNdotLGate = 0.05f;
+// Stage 32 — bent-normal ambient bias. Default ON: cheap [branch] gate
+// (skips entire block if SSAO inactive), and on GTAO-active scenes adds
+// a noticeable directional fill to alcoves / doorways / underbody pockets
+// without re-running the receiver IBL pass. Subtle by default (0.5) so
+// users don't see a sudden ambient shift when enabling SSAO; can be
+// turned off entirely if disliked.
+bool CPostFX::BentNormalAmbientEnable = true;
+float CPostFX::BentNormalAmbientStrength = 0.5f;
+float CPostFX::BentNormalAmbientBias = 0.6f;
 // Depth of field — off by default; defaults give a tasteful cinematic
 // near/far blur centred on ~15m (typical car interior distance).
 RwRaster *CPostFX::pDofScratch;
@@ -2057,6 +2066,19 @@ CPostFX::ResolveHDR(RwCamera *cam)
 			0.0f, 0.0f, 0.0f,
 		};
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(42, ssgiCompose, 1);
+
+		// c43: bent-normal ambient bias (Stage 32). Only meaningful when
+		// SSAO is active (the shader gates on hdrSsao.x as well) so we
+		// zero out when SSAO is off — saves a branch in the shader hot
+		// path. The .gba channel of pSsaoA is the GTAO bent normal; on
+		// SSAO/HBAO modes it falls back to surface N so the delta is
+		// zero. Either way: no double-AO, no crushed shadows.
+		float bentBias[4] = {
+			(BentNormalAmbientEnable && ssaoActive) ? BentNormalAmbientStrength : 0.0f,
+			BentNormalAmbientBias,
+			0.0f, 0.0f,
+		};
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(43, bentBias, 1);
 	}
 
 	rw::d3d::im2dOverridePS = hdrResolve_PS;

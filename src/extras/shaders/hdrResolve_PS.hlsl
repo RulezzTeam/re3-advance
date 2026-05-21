@@ -88,6 +88,19 @@ float4 volSpotCol[8] : register(c33);
 // (e.g. .y = AO modulation, .z = sky-bounce gate) without touching binders.
 float4 ssgiCompose : register(c42);
 
+// Stage 32 — bent-normal-aware ambient bias. GTAO writes the average
+// unoccluded direction into pSsaoA.gba (.r is AO). When bentBias.x > 0
+// the resolve pass adds an ambient *correction* equal to the difference
+// between the IBL gradient evaluated at the bent normal vs the surface
+// normal, weighted by AO. Net effect: ambient leans away from occluded
+// directions (the back wall of an alcove fills less, the open side
+// fills more) while keeping the energy budget bounded by AO×strength.
+//   .x = strength (0 = bypass entire block)
+//   .y = bias toward bent N (0 = surface N only, 1 = full bent N)
+//   .z = reserved (future: per-surface gating)
+//   .w = reserved
+float4 bentParams : register(c43);
+
 float3 ACES(float3 x)
 {
 	return saturate((x*(2.51*x + 0.03)) / (x*(2.43*x + 0.59) + 0.14));
@@ -127,6 +140,49 @@ float4 main(in float2 uv : TEXCOORD0) : COLOR0
 		ao = pow(saturate(ao), max(hdrSsao.y, 0.1));
 		ao = lerp(1.0, ao, hdrSsao.x);
 		col *= ao;
+	}
+
+	// Stage 32 — bent-normal ambient bias. Reads the GTAO bent normal from
+	// the same ssaoTex (.gba) and adds an additive ambient correction
+	// equal to the IBL gradient at the bent normal MINUS the gradient at
+	// the surface normal. With AO weighting this becomes "fill the open
+	// hemisphere a bit more, fill the closed one a bit less" — the visual
+	// signature of bent normals without re-running the receiver IBL.
+	// SSAO must also be active (the .gba channel is only meaningful when
+	// the GTAO/SSAO pass wrote it; the SSAO/HBAO fallback writes surface
+	// N, so the delta is zero and the term is a no-op without GTAO).
+	[branch]
+	if(bentParams.x > 0.001 && hdrSsao.x > 0.001){
+		float4 aoSample = tex2D(ssaoTex, uv);
+		float4 gbufN    = tex2D(gbufTex, uv);
+		float3 surfN    = SafeNormalize(gbufN.rgb * 2.0 - 1.0);
+		float3 bentN    = SafeNormalize(aoSample.gba * 2.0 - 1.0);
+		// Treat bent N as a small perturbation of surface N — the SSAO
+		// pass stores it in screen-tangent space, but its overall up
+		// component is a reasonable proxy for world-space "open-sky".
+		// Lerp gives the artist a per-scene dial: 0 = ignore bent N,
+		// 1 = trust it fully.
+		float3 effN = SafeNormalize(lerp(surfN, bentN, bentParams.y));
+
+		// Procedural sky gradient at both normals — same up/horizon/down
+		// split the SSR fallback uses. We don't ship a full IBL cube
+		// sample here because the receiver already ran that path; the
+		// goal is a cheap delta, not a re-bake.
+		float upS = saturate( surfN.z); float dnS = saturate(-surfN.z);
+		float hoS = 1.0 - saturate(abs(surfN.z));
+		float3 ambSurf = upS * ssrIblSky.rgb + dnS * ssrIblGround.rgb + hoS * ssrIblHorizon.rgb;
+
+		float upE = saturate( effN.z);  float dnE = saturate(-effN.z);
+		float hoE = 1.0 - saturate(abs(effN.z));
+		float3 ambEff  = upE * ssrIblSky.rgb + dnE * ssrIblGround.rgb + hoE * ssrIblHorizon.rgb;
+
+		// Re-fetch AO so the delta is weighted by how occluded we are —
+		// fully unoccluded surfaces (aoSample.r=1) get the largest bias,
+		// open sky pixels (where AO is ≈ 1 by design) get a clean signal,
+		// and pixels with no meaningful bent N (aoSample.r ≈ 1, bentN ≈
+		// surfN) naturally produce delta ≈ 0 → no visible change.
+		float ao = aoSample.r;
+		col += (ambEff - ambSurf) * (bentParams.x * ao);
 	}
 
 	// Volumetric fog + spotlight cones — single ray-march that integrates
