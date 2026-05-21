@@ -76,6 +76,7 @@
 #ifdef POSTFX_HDR
 #include "gbuffer.h"
 #include "spotShadow.h"
+#include "probeManager.h"
 #ifdef POSTFX_CSM
 #include "csm.h"
 #endif
@@ -1663,6 +1664,11 @@ Idle(void *arg)
 		CSpotShadow::PickActiveLight(Scene.camera);
 		CSpotShadow::RenderShadowMap(Scene.camera);
 		CSpotShadow::BindReceiver();
+		// Stage 34: lazy-bootstrap the probe manager once CWorld has
+		// enough buildings to be considered "loaded". Cheap bool check
+		// on subsequent frames; no-op until consumers (Stages 35-39)
+		// hook payloads onto the probe list.
+		CProbeManager::Update();
 #endif
 
 		tbStartTimer(0, "RenderScene");
