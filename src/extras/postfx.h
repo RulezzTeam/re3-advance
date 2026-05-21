@@ -191,6 +191,15 @@ public:
 	static bool ReflectionProbeEnable;
 	static float ReflectionProbeStrength;	// 0..1 — lerp neutral → tint
 
+	// Stage 13 — Optional PBR via neo_pbr.txd. STRICTLY OPT-IN.
+	// Default OFF; even when the user enables it, the runtime checks
+	// for asset-pack availability (models/neo_pbr.txd) and downgrades
+	// gracefully if absent. The receiver pipeline (G-buffer slot 2
+	// metallic/roughness/AO + shader PBR math) is Stage 13.2 — for
+	// now this flag gates only the *menu visibility* and pack-load
+	// attempt, so flipping it on with no pack does nothing harmful.
+	static bool PbrEnable;
+
 	// Stage 19 — Volumetric clouds. Half-res raymarch through a
 	// procedural cloud layer; result composited onto sky pixels by
 	// hdrResolve_PS. RT is RGBA16F (HDR-safe sun in-scatter +

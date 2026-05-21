@@ -32,6 +32,7 @@
 #include "spotShadow.h"
 #include "decals.h"	// Stage 15 — CDecals menu binding
 #include "oceanWaves.h"	// Stage 21 — COceanWaves menu binding
+#include "pbrPack.h"	// Stage 13 — PBR asset pack menu hook
 #endif
 #include "custompipes.h"
 #include "RwHelper.h"
@@ -244,6 +245,7 @@
 		MENUACTION_CFO_SLIDER, "FED_OWA", { new CCFOSlider(&COceanWaves::Amplitude, "Graphics", "OceanWaveAmp", 0.0f, 2.0f, nil, (int8*)&COceanWaves::Enabled, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_OWS", { new CCFOSlider(&COceanWaves::WindSpeed, "Graphics", "OceanWindSpd", 0.0f, 20.0f, nil, (int8*)&COceanWaves::Enabled, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_OWC", { new CCFOSlider(&COceanWaves::Choppiness, "Graphics", "OceanChop", 0.0f, 2.0f, nil, (int8*)&COceanWaves::Enabled, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_PBR", { new CCFOSelect((int8*)&CPostFX::PbrEnable, "Graphics", "PBR", off_on, 2, false, CPbrPack::PbrEnableAfterChange, false, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_WET", { new CCFOSelect((int8*)&CPostFX::WetSurfacesEnable, "Graphics", "WetSurfaces", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_WTI", { new CCFOSlider(&CPostFX::WetSurfacesIntensity, "Graphics", "WetIntensity", 0.0f, 2.0f, nil, (int8*)&CPostFX::WetSurfacesEnable) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_WTS", { new CCFOSlider(&CPostFX::WetSurfacesSpec, "Graphics", "WetSpec", 1.0f, 6.0f, nil, (int8*)&CPostFX::WetSurfacesEnable) }, 0, 0, MENUALIGN_LEFT, \
@@ -517,6 +519,9 @@ void RestoreDefGraphics(int8 action) {
 		COceanWaves::Choppiness = 0.6f;
 		COceanWaves::FoamThreshold = 0.7f;
 		COceanWaves::TileSize = 64.0f;
+		// Stage 13 — PBR opt-in. Default OFF; pack-load probe runs on
+		// user toggle via the AfterChange handler.
+		CPostFX::PbrEnable = false;
 		CPostFX::WetSurfacesEnable = true;
 		CPostFX::WetSurfacesIntensity = 1.0f;
 		CPostFX::WetSurfacesDiffuse = 0.45f;

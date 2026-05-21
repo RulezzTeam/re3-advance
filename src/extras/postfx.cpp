@@ -183,6 +183,12 @@ float CPostFX::AtmosphereProbeStrength = 0.5f;
 // effect is "atmospheric" rather than "cosmetic" when enabled.
 bool CPostFX::ReflectionProbeEnable = false;
 float CPostFX::ReflectionProbeStrength = 0.6f;
+// Stage 13 — PBR opt-in. Default OFF. Scaffold-only: even with this
+// true and a neo_pbr.txd present, the receiver doesn't yet sample
+// PBR maps (Stage 13.2). Toggling it is a no-op on rendering for
+// now, but the menu wiring + pack-load probe land cleanly under
+// the gate so the rest of Stage 13 can drop in without churn.
+bool CPostFX::PbrEnable = false;
 // Stage 19 — Volumetric clouds. Default OFF (heavy per-pixel cost
 // even at half-res). Defaults aim for "partly cloudy" — readable
 // without dominating the sky.
