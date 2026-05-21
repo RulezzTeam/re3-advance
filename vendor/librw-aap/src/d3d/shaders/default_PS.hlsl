@@ -418,13 +418,31 @@ float CSMSampleCascade(int idx, float3 worldPos)
 
 	float vis = 0.0;
 	float2 texelStep = csmTuning.xy * max(csmTuning2.y, 1.0);
-	// Six-mode shadow filter — Sharp / Soft / Ultra (PCF) + VSM/MSM. Branches
-	// are uniform (csmTuning2.x is a static constant for the whole frame),
-	// so the compiler keeps only one branch alive per draw. VSM/MSM trade
-	// the progressively-larger PCF sample count for one fetch + closed-form
-	// statistical reconstruction — naturally smooth shadows that handle
-	// soft penumbras without the PCF banding.
-	if(csmTuning2.x > 4.5){
+
+	// Stage 30 — Hybrid CSM. Mode 6 picks a different filter per cascade:
+	//   idx 0 (Near)  → Soft PCF (16-tap) — sharp shadows under the
+	//                  player's feet where banding would be most visible.
+	//   idx 1 (Mid)   → EVSM — soft penumbras at mid-range without the
+	//                  light-bleed signature of plain VSM.
+	//   idx 2 (Far)   → MSM — clean far shadows + no acne on distant
+	//                  occluders thanks to dual-Chebyshev tightening.
+	// effectiveMode replaces csmTuning2.x in the filter dispatch below;
+	// it's per-pixel uniform within a draw (idx is the unrolled cascade
+	// index passed in), so fxc still keeps only one branch alive.
+	float effectiveMode = csmTuning2.x;
+	if(csmTuning2.x > 5.5){
+		if(idx == 0)      effectiveMode = 1.0;	// Near: Soft PCF
+		else if(idx == 1) effectiveMode = 4.0;	// Mid:  EVSM
+		else              effectiveMode = 5.0;	// Far:  MSM
+	}
+
+	// Six-mode shadow filter — Sharp / Soft / Ultra (PCF) + VSM/MSM/EVSM.
+	// Branches are uniform once idx is fixed, so the compiler keeps only
+	// one branch alive per draw. VSM/MSM/EVSM trade the progressively-
+	// larger PCF sample count for one fetch + closed-form statistical
+	// reconstruction — naturally smooth shadows that handle soft penumbras
+	// without the PCF banding.
+	if(effectiveMode > 4.5){
 		// MSM — Moment Shadow Maps (Peters & Klein 2015, simplified
 		// dual-Chebyshev form). Reads all 4 moments (z, z², z³, z⁴) and
 		// applies two Chebyshev bounds in parallel — one over (μ₁, μ₂)
@@ -454,7 +472,7 @@ float CSMSampleCascade(int idx, float3 worldPos)
 		// worst leaks.
 		float lbr = csmTuning2.w > 0.001 ? csmTuning2.w : 0.15;
 		return saturate((v - lbr) / (1.0 - lbr));
-	}else if(csmTuning2.x > 3.5){
+	}else if(effectiveMode > 3.5){
 		// EVSM — Exponential Variance Shadow Maps (Lauritzen 2008). The
 		// caster (csm_depth_evsm_PS) stores 4 channels:
 		//   m.x = avg(exp(+kPos·z))     m.z = avg(exp(+kPos·z)²)
@@ -492,7 +510,7 @@ float CSMSampleCascade(int idx, float3 worldPos)
 		float v = min(p_p, p_n);
 		float lbr = csmTuning2.w > 0.001 ? csmTuning2.w : 0.15;
 		return saturate((v - lbr) / (1.0 - lbr));
-	}else if(csmTuning2.x > 2.5){
+	}else if(effectiveMode > 2.5){
 		// VSM — sample (depth, depth²) once per cascade. Chebyshev
 		// inequality: P(z > t) ≤ σ² / (σ² + (μ - t)²). Returns 1 when
 		// fully lit, <1 in penumbra, 0 in full shadow. Numerical guard
@@ -512,7 +530,7 @@ float CSMSampleCascade(int idx, float3 worldPos)
 		// pixels don't bleed light through thin occluders. Linear chop
 		// at 0.2 is a standard trick (Donnelly & Lauritzen 2006).
 		return saturate((pmax - 0.2) / 0.8);
-	}else if(csmTuning2.x > 1.5){
+	}else if(effectiveMode > 1.5){
 		// Ultra — 32 taps. Halves visible PCF banding at the cost of 2×
 		// the work of Soft. Recommended at 1080p+ on modern GPUs.
 		[unroll]
@@ -525,7 +543,7 @@ float CSMSampleCascade(int idx, float3 worldPos)
 			vis += step(refZ, d);
 		}
 		return vis * (1.0/32.0);
-	}else if(csmTuning2.x > 0.5){
+	}else if(effectiveMode > 0.5){
 		// Soft — 16 taps. Picks up 4× the samples vs Sharp for visibly
 		// less banding. Worth it on the player's car interior + close
 		// foliage where shadow edges are visible.

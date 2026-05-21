@@ -384,6 +384,18 @@ CCSM::RenderShadowMaps(RwCamera *cam)
 		RwCameraBeginUpdate(Cascades[i].lightCam);
 
 #ifdef RW_D3D9
+		// Stage 30: per-cascade caster dispatch for Hybrid mode (6).
+		// Near = PCF/MSM-compatible (linear z, z², z³, z⁴),
+		// Mid  = EVSM (warped moments),
+		// Far  = same as Near — MSM reads .rgba from the same caster.
+		// All other modes use a single global caster set in Open /
+		// SoftnessModeAfterChange so the per-loop assign is a no-op.
+		if(SoftnessMode == 6 && csmDepthEvsmPS != nullptr){
+			rw::d3d::shadow_PS = (i == 1) ? csmDepthEvsmPS : csmDepthPS;
+		}
+#endif
+
+#ifdef RW_D3D9
 		// devView/devProj are valid only after beginUpdate. Cache the
 		// world→cascade-clip matrix here so the receiver gets the same
 		// transform we used to rasterise depths into the cascade RT.
