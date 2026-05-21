@@ -5,6 +5,23 @@
 // height fog with directional in-scatter from the sun, then applies the
 // final tonemap pipeline (exposure -> ACES -> saturation -> gamma) before
 // writing to the LDR backbuffer.
+//
+// Constant register map (post-Stage-6 audit):
+//   c10..c11   = tonemap + SSAO compose
+//   c12..c19   = volumetric fog (camera, rays, sun, colour, params)
+//   c20..c24   = SSR compose (strength, fresnel, sky fallback)
+//   c25..c40   = volumetric spotlight slots (8 × pos+col)
+//   c41        = volQuality (raymarch step count)
+//   c42        = ssgiCompose (Stage 33)
+//   c43        = bentParams  (Stage 32)
+//   c44        = reflTint    (Stage 35)
+//   c45        = vcCompose   (Stage 19)
+//
+// Stage 6 const reorg verdict: NOT required. Current layout uses 46 of
+// the ps_3_0 224-register budget (~20% saturation); no overlaps exist;
+// the functional grouping (10s = base, 20s = SSR, 30s = volSpot, 40s =
+// extended features) is intentional and stays readable. Moving the
+// allocator base offset (c12 → c40) would obfuscate without benefit.
 
 sampler2D hdrTex  : register(s0);
 sampler2D ssaoTex : register(s1);	// R8 AO; 1.0 = fully lit
