@@ -55,8 +55,31 @@ CCSM::MapSizeAfterChange(int8 before, int8 after)
 	sPendingMapSizeRealloc = true;
 }
 
+void
+CCSM::SoftnessModeAfterChange(int8 before, int8 after)
+{
+	// Going to / from EVSM (mode 4) or Hybrid (mode 6) changes the
+	// required raster precision (F16 ↔ F32) so we need a reallocate
+	// cycle. PCF (0..2) / VSM (3) / MSM (5) all share F16 — toggling
+	// among those is free, the shader path is selected purely by the
+	// receiver branch on csmTuning2.x.
+	bool wasF32 = (before == 4) || (before == 6);
+	bool isF32  = (after  == 4) || (after  == 6);
+	if(wasF32 != isF32)
+		sPendingMapSizeRealloc = true;
+	// Caster swap is cheap and lossless — do it immediately so the next
+	// rendered cascade emits the correct moment layout. ComputeCascades
+	// + RenderShadowMaps re-fetch shadow_PS each frame via the global,
+	// so this takes effect on the very next dispatch.
+#ifdef RW_D3D9
+	if(csmDepthEvsmPS != nullptr && csmDepthPS != nullptr)
+		rw::d3d::shadow_PS = (after == 4) ? csmDepthEvsmPS : csmDepthPS;
+#endif
+}
+
 void *csmDepthVS;
 void *csmDepthPS;
+void *csmDepthEvsmPS;	// Stage 28 — emits the EVSM warped moments
 void *csmSkinDepthVS;	// bone-aware variant for peds + drivers
 
 // Helper to bind a CAMERATEXTURE raster on a sampler slot for the
@@ -127,6 +150,10 @@ CCSM::Open(RwCamera *cam)
 		#include "shaders/obj/csm_depth_PS.inc"
 		csmDepthPS = rw::d3d::createPixelShader(csm_depth_PS_cso);
 	}
+	if(csmDepthEvsmPS == nullptr){
+		#include "shaders/obj/csm_depth_evsm_PS.inc"
+		csmDepthEvsmPS = rw::d3d::createPixelShader(csm_depth_evsm_PS_cso);
+	}
 	if(csmSkinDepthVS == nullptr){
 		#include "shaders/obj/csm_skin_depth_VS.inc"
 		csmSkinDepthVS = rw::d3d::createVertexShader(csm_skin_depth_VS_cso);
@@ -135,8 +162,11 @@ CCSM::Open(RwCamera *cam)
 	// callbacks can swap to depth-only emission during the cascade pass.
 	// csm_skin_depth_VS applies bone matrices to Position so peds /
 	// drivers cast correctly-deformed shadows instead of T-poses.
+	// EVSM (SoftnessMode == 4) uses the warped-moment caster; everything
+	// else uses the linear+z²+z³+z⁴ layout. Hybrid (6) is deferred and
+	// will need per-cascade caster dispatch — keep both shaders loaded.
 	rw::d3d::shadow_VS = csmDepthVS;
-	rw::d3d::shadow_PS = csmDepthPS;
+	rw::d3d::shadow_PS = (SoftnessMode == 4) ? csmDepthEvsmPS : csmDepthPS;
 	rw::d3d::shadow_skin_VS = csmSkinDepthVS;
 #endif
 
@@ -147,11 +177,16 @@ CCSM::Open(RwCamera *cam)
 
 	rw::Camera *sceneCam = (rw::Camera*)cam;
 
-	// Use the rw "f16" path is overkill for depth; R32F would be ideal but
-	// we don't have it in the librw format table yet. F16_RGBA is the
-	// closest float colour format and gives us 16-bit precision per channel
-	// which is enough for ~mm precision on a 250m far clip cascade.
-	int32 colorFmt = (int32)rw::Raster::CAMERATEXTURE | (int32)rw::Raster::F16_RGBA;
+	// PCF / VSM / MSM modes pack their moments inside F16's ~6.5e4 range
+	// because the cascade depth is normalised to [0,1] before squaring.
+	// EVSM (mode 4) emits exp(±20×z) which overflows F16 by 4 orders of
+	// magnitude — switch to F32_RGBA (Stage 27 added the format to librw)
+	// for those modes. F32 also benefits future Hybrid (mode 6) which
+	// renders some cascades as EVSM and some as MSM.
+	bool needsF32 = (SoftnessMode == 4) || (SoftnessMode == 6);
+	int32 colorFmt = (int32)rw::Raster::CAMERATEXTURE |
+	                 (needsF32 ? (int32)rw::Raster::F32_RGBA
+	                           : (int32)rw::Raster::F16_RGBA);
 
 	for(int i = 0; i < CSM_NUM_CASCADES; i++){
 		Cascades[i].depthRT = RwRasterCreate(size, size, 0, colorFmt);

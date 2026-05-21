@@ -454,6 +454,44 @@ float CSMSampleCascade(int idx, float3 worldPos)
 		// worst leaks.
 		float lbr = csmTuning2.w > 0.001 ? csmTuning2.w : 0.15;
 		return saturate((v - lbr) / (1.0 - lbr));
+	}else if(csmTuning2.x > 3.5){
+		// EVSM — Exponential Variance Shadow Maps (Lauritzen 2008). The
+		// caster (csm_depth_evsm_PS) stores 4 channels:
+		//   m.x = avg(exp(+kPos·z))     m.z = avg(exp(+kPos·z)²)
+		//   m.y = avg(-exp(-kNeg·z))    m.w = avg(exp(-kNeg·z)²)
+		// We run Chebyshev independently on both warps and take the
+		// MINIMUM (pessimistic) bound — the trick that makes EVSM far
+		// less light-bleed-prone than VSM/MSM under wide occluder
+		// distributions. kPos / kNeg must match the caster's constants.
+		// Requires F32_RGBA cascade RT — host gates allocation on mode.
+		const float kPos = 20.0;
+		const float kNeg = 20.0;
+		float ePosRef =  exp( kPos * refZ);
+		float eNegRef = -exp(-kNeg * refZ);
+
+		float4 m;
+		if(idx == 0)      m = tex2D(csmTex0, uv).rgba;
+		else if(idx == 1) m = tex2D(csmTex1, uv).rgba;
+		else              m = tex2D(csmTex2, uv).rgba;
+
+		// Positive warp.
+		float mu_p  = m.x;
+		float var_p = max(m.z - mu_p * mu_p, 1e-5);
+		float d_p   = ePosRef - mu_p;
+		float p_p   = (d_p <= 0.0) ? 1.0 : var_p / (var_p + d_p * d_p);
+
+		// Negative warp. .y was stored as -exp(-k·z), so eNegRef has the
+		// same sign convention — comparisons follow the positive case.
+		float mu_n  = m.y;
+		float var_n = max(m.w - mu_n * mu_n, 1e-5);
+		float d_n   = eNegRef - mu_n;
+		float p_n   = (d_n <= 0.0) ? 1.0 : var_n / (var_n + d_n * d_n);
+
+		// Pessimistic min — each warp catches a different failure mode
+		// of the other. Light-bleeding chop matches VSM/MSM defaults.
+		float v = min(p_p, p_n);
+		float lbr = csmTuning2.w > 0.001 ? csmTuning2.w : 0.15;
+		return saturate((v - lbr) / (1.0 - lbr));
 	}else if(csmTuning2.x > 2.5){
 		// VSM — sample (depth, depth²) once per cascade. Chebyshev
 		// inequality: P(z > t) ≤ σ² / (σ² + (μ - t)²). Returns 1 when

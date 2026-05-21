@@ -53,9 +53,18 @@ public:
 	// reallocates the cascade depth/Z rasters. Safe to call when CSM
 	// is disabled.
 	static void MapSizeAfterChange(int8 before, int8 after);
+
+	// Menu CCFOSelect AfterChange for SoftnessMode. EVSM (4) and Hybrid
+	// (6) need F32_RGBA cascade depth rasters because the warped values
+	// exp(±20×z) overflow F16's ~6.5e4 cap. Other modes can stay on F16.
+	// This handler defers a Close+Open cycle so the next frame allocates
+	// the right precision, and swaps the active caster PS so EVSM/Hybrid
+	// emit the warped moments instead of the linear+squared layout.
+	static void SoftnessModeAfterChange(int8 before, int8 after);
 };
 
 extern void *csmDepthVS;
 extern void *csmDepthPS;
+extern void *csmDepthEvsmPS;	// Stage 28 — emits exp(±k×z) and squares
 
 #endif

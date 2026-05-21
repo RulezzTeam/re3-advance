@@ -265,7 +265,7 @@
 		MENUACTION_CFO_SELECT, "FED_CSM", { new CCFOSelect((int8*)&CCSM::Enabled, "Graphics", "CSM", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_CSS", { new CCFOSlider(&CCSM::Strength, "Graphics", "CSMStrength", 0.0f, 1.0f, nil, (int8*)&CCSM::Enabled) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_CMR", { new CCFOSelect(&CCSM::MapSizeIndex, "Graphics", "CSMMapSize", cascadeMapSizes, 3, false, CCSM::MapSizeAfterChange, false, (int8*)&CCSM::Enabled) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SELECT, "FED_CFM", { new CCFOSelect((int8*)&CCSM::SoftnessMode, "Graphics", "CSMSoft", csmSoftNames, 7, false, nil, false, (int8*)&CCSM::Enabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_CFM", { new CCFOSelect((int8*)&CCSM::SoftnessMode, "Graphics", "CSMSoft", csmSoftNames, 7, false, CCSM::SoftnessModeAfterChange, false, (int8*)&CCSM::Enabled) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_CFR", { new CCFOSlider(&CCSM::SoftnessRadius, "Graphics", "CSMSoftR", 1.0f, 4.0f, nil, (int8*)&CCSM::Enabled) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_SPS", { new CCFOSelect((int8*)&CSpotShadow::Enabled, "Graphics", "SpotShadow", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_SSZ", { new CCFOSelect(&CSpotShadow::MapSizeIndex, "Graphics", "SpotShadowSize", spotShadowSizes, 4, false, CSpotShadow::MapSizeAfterChange, false, (int8*)&CSpotShadow::Enabled) }, 0, 0, MENUALIGN_LEFT, \
