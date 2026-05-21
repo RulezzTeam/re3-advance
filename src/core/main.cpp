@@ -1716,6 +1716,12 @@ Idle(void *arg)
 		// direction biasing, so it sits AFTER SSAO. Output lands in
 		// pSsgiA and is composed additively by ResolveHDR.
 		CPostFX::RenderSSGI(Scene.camera);
+		// Stage 19 — volumetric clouds. Half-res raymarch through a
+		// procedural cloud layer between two altitudes; output is
+		// (sun in-scatter, transmittance) composited onto sky pixels
+		// by ResolveHDR. Cheap-skipping for non-sky pixels inside
+		// the cloud shader itself.
+		CPostFX::RenderVolClouds(Scene.camera);
 		// Depth of field — bokeh blur on pHdrScene before the tonemap
 		// resolve. Off by default, opt-in via menu. Swaps pHdrScene
 		// for the blurred scratch raster so ResolveHDR reads the blur.

@@ -182,6 +182,17 @@ float CPostFX::AtmosphereProbeStrength = 0.5f;
 // effect is "atmospheric" rather than "cosmetic" when enabled.
 bool CPostFX::ReflectionProbeEnable = false;
 float CPostFX::ReflectionProbeStrength = 0.6f;
+// Stage 19 — Volumetric clouds. Default OFF (heavy per-pixel cost
+// even at half-res). Defaults aim for "partly cloudy" — readable
+// without dominating the sky.
+RwRaster *CPostFX::pVolCloudsA;
+bool CPostFX::VolCloudsEnable = false;
+float CPostFX::VolCloudsCoverage = 0.5f;
+float CPostFX::VolCloudsDensity = 1.0f;
+float CPostFX::VolCloudsWindSpeed = 1.5f;
+int32 CPostFX::VolCloudsSteps = 24;
+float CPostFX::VolCloudsLayerBottom = 1200.0f;
+float CPostFX::VolCloudsLayerTop = 2400.0f;
 // Depth of field — off by default; defaults give a tasteful cinematic
 // near/far blur centred on ~15m (typical car interior distance).
 RwRaster *CPostFX::pDofScratch;
@@ -321,6 +332,8 @@ static void *ssr_PS;
 static rw::Camera *ssrCam;	// half-res RGBA8 SSR target
 static void *ssgi_PS;
 static rw::Camera *ssgiCam;	// half-res RGBA16F SSGI bounce-light target
+static void *volClouds_PS;
+static rw::Camera *volCloudsCam;	// half-res RGBA16F cloud RT
 static void *dof_PS;
 static rw::Camera *dofCam;	// full-res RGBA16F bokeh scratch
 static void *motionBlur_PS;
@@ -532,6 +545,16 @@ CPostFX::Open(RwCamera *cam)
 		int32 ssgiFmt = (int32)rw::Raster::CAMERATEXTURE | (int32)rw::Raster::F16_RGBA;
 		pSsgiA = RwRasterCreate(sw, sh, 0, ssgiFmt);
 		ssgiCam = CreateBloomCam(pSsgiA);
+	}
+
+	// Stage 19 — Volumetric clouds RT. Same half-res target, RGBA16F
+	// so the cloud in-scatter (sun colour × phase) stays HDR through
+	// the eventual ResolveHDR tonemap. Alpha channel carries the
+	// transmittance through the cloud layer.
+	{
+		int32 vcFmt = (int32)rw::Raster::CAMERATEXTURE | (int32)rw::Raster::F16_RGBA;
+		pVolCloudsA = RwRasterCreate(sw, sh, 0, vcFmt);
+		volCloudsCam = CreateBloomCam(pVolCloudsA);
 	}
 
 	// DoF scratch — full-res RGBA16F so the bokeh blur preserves HDR
@@ -807,6 +830,10 @@ CPostFX::Open(RwCamera *cam)
 	ssgi_PS = rw::d3d::createPixelShader(ssgi_PS_cso);
 	}
 	{
+#include "shaders/obj/volClouds_PS.inc"
+	volClouds_PS = rw::d3d::createPixelShader(volClouds_PS_cso);
+	}
+	{
 #include "shaders/obj/dof_PS.inc"
 	dof_PS = rw::d3d::createPixelShader(dof_PS_cso);
 	}
@@ -886,6 +913,8 @@ CPostFX::Close(void)
 	if(pSsrA){ RwRasterDestroy(pSsrA); pSsrA = nil; }
 	if(ssgiCam){ DestroyBloomCam(ssgiCam); ssgiCam = nil; }
 	if(pSsgiA){ RwRasterDestroy(pSsgiA); pSsgiA = nil; }
+	if(volCloudsCam){ DestroyBloomCam(volCloudsCam); volCloudsCam = nil; }
+	if(pVolCloudsA){ RwRasterDestroy(pVolCloudsA); pVolCloudsA = nil; }
 	if(dofCam){ DestroyBloomCam(dofCam); dofCam = nil; }
 	if(pDofScratch){ RwRasterDestroy(pDofScratch); pDofScratch = nil; }
 	if(motionBlurCam){ DestroyBloomCam(motionBlurCam); motionBlurCam = nil; }
@@ -936,6 +965,7 @@ CPostFX::Close(void)
 	if(taa_PS){ rw::d3d::destroyPixelShader(taa_PS); taa_PS = nil; }
 	if(ssr_PS){ rw::d3d::destroyPixelShader(ssr_PS); ssr_PS = nil; }
 	if(ssgi_PS){ rw::d3d::destroyPixelShader(ssgi_PS); ssgi_PS = nil; }
+	if(volClouds_PS){ rw::d3d::destroyPixelShader(volClouds_PS); volClouds_PS = nil; }
 	if(dof_PS){ rw::d3d::destroyPixelShader(dof_PS); dof_PS = nil; }
 	if(motionBlur_PS){ rw::d3d::destroyPixelShader(motionBlur_PS); motionBlur_PS = nil; }
 	if(gtao_PS){ rw::d3d::destroyPixelShader(gtao_PS); gtao_PS = nil; }
@@ -1694,6 +1724,115 @@ CPostFX::RenderSSGI(RwCamera *cam)
 	POP_RENDERGROUP();
 }
 
+// Stage 19 — Volumetric clouds. Half-res raymarch through a procedural
+// cloud layer between VolCloudsLayerBottom and VolCloudsLayerTop. Only
+// runs on sky pixels (gbuf.a < epsilon); output is (sun in-scatter,
+// transmittance). hdrResolve_PS composites the result onto sky pixels
+// after the SSR sky fallback. Animated by a host-side time accumulator
+// driven by CTimer (wind moves the noise field).
+void
+CPostFX::RenderVolClouds(RwCamera *cam)
+{
+	if(!CGBuffer::HdrEnabled || !CGBuffer::GbufEnabled || !VolCloudsEnable)
+		return;
+	if(CGBuffer::pGbufNormalDepth == nil || pVolCloudsA == nil ||
+	   volClouds_PS == nil || volCloudsCam == nil)
+		return;
+
+	PUSH_RENDERGROUP("CPostFX::RenderVolClouds");
+
+	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEFOGENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDONE);
+	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDZERO);
+
+	RwCameraEndUpdate(cam);
+	RwCameraBeginUpdate((RwCamera*)volCloudsCam);
+	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, CGBuffer::pGbufNormalDepth);
+
+#ifdef RW_D3D9
+	{
+		rw::Camera *rwcam = (rw::Camera*)cam;
+		rw::V3d camPos = rwcam->getFrame()->getLTM()->pos;
+		float farClip = rwcam->farPlane;
+
+		// c10 = camera + farClip
+		float cCam[4] = { camPos.x, camPos.y, camPos.z, farClip };
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(10, cCam, 1);
+
+		// c11..c14: frustum corner rays.
+		const rw::V3d *fc = rwcam->frustumCorners;
+		float corners[4][4] = {
+			{ fc[0].x, fc[0].y, fc[0].z, 0 },
+			{ fc[1].x, fc[1].y, fc[1].z, 0 },
+			{ fc[2].x, fc[2].y, fc[2].z, 0 },
+			{ fc[3].x, fc[3].y, fc[3].z, 0 },
+		};
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(11, &corners[0][0], 4);
+
+		// c15 = sun direction + HG g. pDirect->at points away from sun.
+		float sunDir[4] = { 0, 0, 1, 0.6f };
+		if(pDirect != nullptr){
+			rw::V3d a = pDirect->getFrame()->getLTM()->at;
+			float len = sqrtf(a.x*a.x + a.y*a.y + a.z*a.z);
+			if(len > 1e-5f){
+				sunDir[0] = -a.x / len;
+				sunDir[1] = -a.y / len;
+				sunDir[2] = -a.z / len;
+			}
+		}
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(15, sunDir, 1);
+
+		// c16 = sun colour (DirectionalLightColourForFrame is HDR-scaled
+		// already) + density multiplier.
+		float sunCol[4] = {
+			DirectionalLightColourForFrame.red,
+			DirectionalLightColourForFrame.green,
+			DirectionalLightColourForFrame.blue,
+			VolCloudsDensity,
+		};
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(16, sunCol, 1);
+
+		// c17 = layer bottom / top / wind X / wind Y. Wind is a velocity
+		// in noise-space units per second; we scale by time before the
+		// noise sample inside the shader.
+		float layer[4] = {
+			VolCloudsLayerBottom,
+			VolCloudsLayerTop,
+			VolCloudsWindSpeed * 0.0003f,	// X
+			VolCloudsWindSpeed * 0.0002f,	// Y — slight asymmetry for richer movement
+		};
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(17, layer, 1);
+
+		// c18 = step count, time accumulator, coverage, reserved.
+		static float sCloudTime = 0.0f;
+		sCloudTime += CTimer::GetTimeStepNonClipped() * (1.0f/50.0f);
+		float quality[4] = {
+			(float)VolCloudsSteps,
+			sCloudTime,
+			VolCloudsCoverage,
+			0.0f,
+		};
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(18, quality, 1);
+
+		rw::d3d::im2dOverridePS = volClouds_PS;
+	}
+#endif
+
+	RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, SsaoVertex, 4, Index, 6);
+
+	RwCameraEndUpdate((RwCamera*)volCloudsCam);
+	RwCameraBeginUpdate(cam);
+
+#ifdef RW_D3D9
+	rw::d3d::im2dOverridePS = nil;
+#endif
+
+	POP_RENDERGROUP();
+}
+
 // Per-frame DoF focus distance animator. Exponential lerp toward the
 // menu / script target with a ~0.5 s time constant — long enough that
 // slider movements crossfade smoothly, short enough that a camera-mode
@@ -1916,6 +2055,14 @@ CPostFX::ResolveHDR(RwCamera *cam)
 	// that helps cover the sparse 4-direction sample noise.
 	if(ssgiActive)
 		BindRasterToSampler(4, pSsgiA);
+	// Stage 19 — Volumetric clouds compose. Sampler s5 = half-res
+	// RGBA16F where .rgb = sun in-scatter, .a = layer transmittance.
+	// Only sky pixels (gbuf.a < epsilon) consume this; non-sky pixels
+	// branch out cheaply via the strength gate.
+	bool volCloudsActive = VolCloudsEnable && CGBuffer::GbufEnabled
+	                    && pVolCloudsA != nil;
+	if(volCloudsActive)
+		BindRasterToSampler(5, pVolCloudsA);
 
 #ifdef RW_D3D9
 	// .x = exposure, .y = ACES toggle, .z = gamma toggle, .w = saturation
@@ -2196,6 +2343,15 @@ CPostFX::ResolveHDR(RwCamera *cam)
 			0.0f,
 		};
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(44, reflCompose, 1);
+
+		// c45: Stage 19 — Volumetric clouds compose strength + reserved.
+		// .x = strength (0 = bypass), .yzw = reserved for future
+		// per-cloud-layer tuning.
+		float vcCompose[4] = {
+			volCloudsActive ? 1.0f : 0.0f,
+			0.0f, 0.0f, 0.0f,
+		};
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(45, vcCompose, 1);
 	}
 
 	rw::d3d::im2dOverridePS = hdrResolve_PS;
@@ -2216,6 +2372,8 @@ CPostFX::ResolveHDR(RwCamera *cam)
 		BindRasterToSampler(3, nil);
 	if(ssgiActive)
 		BindRasterToSampler(4, nil);
+	if(volCloudsActive)
+		BindRasterToSampler(5, nil);
 #endif
 	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
 	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);

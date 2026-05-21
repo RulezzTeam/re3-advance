@@ -11,6 +11,7 @@ sampler2D ssaoTex : register(s1);	// R8 AO; 1.0 = fully lit
 sampler2D gbufTex : register(s2);	// RGB = world-normal*0.5+0.5, A = linearDepth (viewZ/farClip)
 sampler2D ssrTex  : register(s3);	// RGBA = reflection colour + confidence
 sampler2D ssgiTex : register(s4);	// RGBA16F bounce radiance (rgb = indirect light)
+sampler2D volCloudsTex : register(s5);	// RGBA16F (.rgb = sun in-scatter, .a = layer transmittance)
 
 // .x = exposure (linear multiplier, 1.0 = neutral)
 // .y = ACES toggle (0..1, lerps toward filmic curve)
@@ -108,6 +109,12 @@ float4 bentParams : register(c43);
 // Future evolution: when per-probe cubemaps land, swap this for a
 // real prefiltered cube lookup; the scaffolding stays the same.
 float4 reflTint : register(c44);
+
+// Stage 19 — Volumetric cloud compose strength. .x = master gate
+// (0 = bypass via [branch]); .yzw reserved. The cloud RT itself
+// (volCloudsTex) carries (sun in-scatter, transmittance) — we
+// modulate the sky pixel colour by transmittance and add scatter.
+float4 vcCompose : register(c45);
 
 float3 ACES(float3 x)
 {
@@ -382,6 +389,23 @@ float4 main(in float2 uv : TEXCOORD0) : COLOR0
 			aoMask = lerp(1.0, ao, hdrSsao.x);
 		}
 		col += max(bounce, 0.0) * ssgiCompose.x * aoMask;
+	}
+
+	// Stage 19 — Volumetric clouds composite. Only on sky pixels
+	// (gbuf.a < epsilon). Cloud RT carries (sun in-scatter, layer
+	// transmittance). Sky pixel = col * transmittance + scatter.
+	// Non-sky pixels skip via the strength + depth check, so the
+	// branch is free in the common in-world case.
+	[branch]
+	if(vcCompose.x > 0.001){
+		float4 gbufSky = tex2D(gbufTex, uv);
+		if(gbufSky.a < 0.0005){
+			float4 cc = tex2D(volCloudsTex, uv);
+			// Defensive: clamp transmittance to [0,1] in case the
+			// raymarch RT picked up junk on first frame after Open.
+			float t = saturate(cc.a);
+			col = col * t + max(cc.rgb, 0.0);
+		}
 	}
 
 

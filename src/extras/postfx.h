@@ -191,6 +191,21 @@ public:
 	static bool ReflectionProbeEnable;
 	static float ReflectionProbeStrength;	// 0..1 — lerp neutral → tint
 
+	// Stage 19 — Volumetric clouds. Half-res raymarch through a
+	// procedural cloud layer; result composited onto sky pixels by
+	// hdrResolve_PS. RT is RGBA16F (HDR-safe sun in-scatter +
+	// transmittance through layer). Cost: ~24 march steps × procedural
+	// noise sample × HG phase per quarter pixel — ~0.8ms at 1080p.
+	static RwRaster *pVolCloudsA;	// half-res RGBA16F cloud RT
+	static bool VolCloudsEnable;
+	static float VolCloudsCoverage;	// 0..1 — sparse / overcast
+	static float VolCloudsDensity;	// 0..2 — extinction multiplier
+	static float VolCloudsWindSpeed;	// 0..10 m/s — XY animation
+	static int32 VolCloudsSteps;	// 8/16/24/32 — quality dial
+	static float VolCloudsLayerBottom;	// metres above ground
+	static float VolCloudsLayerTop;	// metres above ground
+	static void RenderVolClouds(RwCamera *cam);
+
 	// Depth of Field — bokeh blur driven by gbuf depth + focal distance.
 	// Runs before ResolveHDR, blurs pHdrScene in-place via a scratch RT
 	// so the downstream tonemap sees the blurred image.
