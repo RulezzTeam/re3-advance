@@ -31,6 +31,7 @@
 #ifdef POSTFX_HDR
 #include "spotShadow.h"
 #include "decals.h"	// Stage 15 — CDecals menu binding
+#include "oceanWaves.h"	// Stage 21 — COceanWaves menu binding
 #endif
 #include "custompipes.h"
 #include "RwHelper.h"
@@ -239,6 +240,10 @@
 		MENUACTION_CFO_SLIDER, "FED_VCC", { new CCFOSlider(&CPostFX::VolCloudsCoverage, "Graphics", "VolCloudsCov", 0.0f, 1.0f, nil, (int8*)&CPostFX::VolCloudsEnable, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_VCD", { new CCFOSlider(&CPostFX::VolCloudsDensity, "Graphics", "VolCloudsDens", 0.0f, 2.0f, nil, (int8*)&CPostFX::VolCloudsEnable, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_VCW", { new CCFOSlider(&CPostFX::VolCloudsWindSpeed, "Graphics", "VolCloudsWind", 0.0f, 10.0f, nil, (int8*)&CPostFX::VolCloudsEnable, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_OCW", { new CCFOSelect((int8*)&COceanWaves::Enabled, "Graphics", "OceanWaves", off_on, 2, false, nil, false, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_OWA", { new CCFOSlider(&COceanWaves::Amplitude, "Graphics", "OceanWaveAmp", 0.0f, 2.0f, nil, (int8*)&COceanWaves::Enabled, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_OWS", { new CCFOSlider(&COceanWaves::WindSpeed, "Graphics", "OceanWindSpd", 0.0f, 20.0f, nil, (int8*)&COceanWaves::Enabled, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_OWC", { new CCFOSlider(&COceanWaves::Choppiness, "Graphics", "OceanChop", 0.0f, 2.0f, nil, (int8*)&COceanWaves::Enabled, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_WET", { new CCFOSelect((int8*)&CPostFX::WetSurfacesEnable, "Graphics", "WetSurfaces", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_WTI", { new CCFOSlider(&CPostFX::WetSurfacesIntensity, "Graphics", "WetIntensity", 0.0f, 2.0f, nil, (int8*)&CPostFX::WetSurfacesEnable) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_WTS", { new CCFOSlider(&CPostFX::WetSurfacesSpec, "Graphics", "WetSpec", 1.0f, 6.0f, nil, (int8*)&CPostFX::WetSurfacesEnable) }, 0, 0, MENUALIGN_LEFT, \
@@ -502,6 +507,16 @@ void RestoreDefGraphics(int8 action) {
 		CPostFX::VolCloudsSteps = 24;
 		CPostFX::VolCloudsLayerBottom = 1200.0f;
 		CPostFX::VolCloudsLayerTop = 2400.0f;
+		// Stage 21 — Ocean waves. Default OFF; consumer pass for the
+		// water atomic is Stage 21.2.
+		COceanWaves::Enabled = false;
+		COceanWaves::WindSpeed = 6.0f;
+		COceanWaves::WindDirX = 0.707f;
+		COceanWaves::WindDirY = 0.707f;
+		COceanWaves::Amplitude = 0.35f;
+		COceanWaves::Choppiness = 0.6f;
+		COceanWaves::FoamThreshold = 0.7f;
+		COceanWaves::TileSize = 64.0f;
 		CPostFX::WetSurfacesEnable = true;
 		CPostFX::WetSurfacesIntensity = 1.0f;
 		CPostFX::WetSurfacesDiffuse = 0.45f;

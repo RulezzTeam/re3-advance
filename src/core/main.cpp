@@ -78,6 +78,7 @@
 #include "spotShadow.h"
 #include "probeManager.h"
 #include "decals.h"
+#include "oceanWaves.h"
 #ifdef POSTFX_CSM
 #include "csm.h"
 #endif
@@ -1722,6 +1723,10 @@ Idle(void *arg)
 		// by ResolveHDR. Cheap-skipping for non-sky pixels inside
 		// the cloud shader itself.
 		CPostFX::RenderVolClouds(Scene.camera);
+		// Stage 21 — ocean wave heightfield bake. 256² RGBA16F gets
+		// freshly generated each frame; future water-pipe consumer
+		// will sample it for displacement + foam.
+		COceanWaves::Render(Scene.camera);
 		// Depth of field — bokeh blur on pHdrScene before the tonemap
 		// resolve. Off by default, opt-in via menu. Swaps pHdrScene
 		// for the blurred scratch raster so ResolveHDR reads the blur.

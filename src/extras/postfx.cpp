@@ -28,6 +28,7 @@ extern RwRGBAReal DirectionalLightColourForFrame;
 #endif
 #ifdef POSTFX_WATER_REFLECTION
 #include "waterReflection.h"
+#include "oceanWaves.h"	// Stage 21 — wave heightfield Close() in CPostFX::Close
 #endif
 #ifdef POSTFX_CSM
 #include "csm.h"
@@ -931,6 +932,7 @@ CPostFX::Close(void)
 #endif
 	CSpotShadow::Close();
 	CIBL::Close();
+	COceanWaves::Close();
 	// Run ForceReset BEFORE Close so the D3D9 render-state bits get
 	// restored while the device pointer is still alive. After Close,
 	// CGBuffer::Open might be called again with stale COLORWRITEENABLE1
