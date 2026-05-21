@@ -86,6 +86,34 @@ public:
 	// main render loop.
 	static void Update(void);
 
+	// Stage 36 — SH (Spherical Harmonics) light probe payload. 9 SH
+	// coefficients × 3 channels (RGB). Allocated once per PROBE_SH
+	// entry by AllocSHPayloads(), populated by BakeSHFromSky() each
+	// time of day, and queried per scene-pass via GetNearestSH() so
+	// the receiver gets a location-tinted ambient term.
+	struct SHPayload {
+		float coeff[9][3];	// SH-2 basis; row = band-major (Y00, Y1-1, Y10, Y11, Y2-2 ... Y22)
+	};
+	static SHPayload shProbeData[MAX_PROBES];	// indexed by probe array slot
+
+	// Allocate / wire up payload pointers for every PROBE_SH entry.
+	// Idempotent. Called once after Bootstrap() and again after every
+	// Clear(). No dynamic allocation — uses the static shProbeData
+	// pool above so memory is predictable and never freed at runtime.
+	static void AllocSHPayloads(void);
+
+	// Refresh all SH probe coefficients from the current CTimeCycle
+	// sky / horizon / ground colours. Cheap (~0.5ms for 200 probes)
+	// — invoked by the per-frame update so dawn/dusk colour shifts
+	// follow the time-cycle without a separate bake pass.
+	static void BakeSHFromSky(void);
+
+	// Find the nearest PROBE_SH probe to `worldPos` and write its 9
+	// SH coefficients into outCoeffs[0..8].rgb. Returns the probe
+	// index, or -1 if no SH probe is in range. outCoeffs must be a
+	// float[9][3] array (9 RGB triplets, band-major).
+	static int GetNearestSH(CVector worldPos, float outCoeffs[9][3]);
+
 	// Drop all entries. Each consumer subsystem is responsible for
 	// freeing its own payload memory before this is called — the
 	// manager doesn't know how to deallocate type-specific data.

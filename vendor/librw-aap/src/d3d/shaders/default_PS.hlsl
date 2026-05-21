@@ -214,6 +214,42 @@ float4x4  spotShadowMat : register(c70);
 float4    spotShadowLightPos : register(c74);	// xyz pos, w radius
 float4    spotShadowTune : register(c75);	// .x = strength, .y = invMapSize, .z = bias, .w = softness
 
+// Stage 36 — SH (Spherical Harmonics) light probes. The host picks
+// the nearest PROBE_SH entry every frame, evaluates its 9 SH-2 basis
+// coefficients (band 0 + band 1 + band 2, RGB per coefficient), and
+// uploads them here. The receiver evaluates the SH at the world
+// normal to produce a directional ambient term that scales with the
+// local sky colour — much better than the flat IBL gradient for
+// interiors / alcoves once the per-probe bake (Stage 35 cube) feeds
+// these. For now they all carry the global CTimeCycle sky projection
+// (no local lighting), which is already a small visual win because
+// the SH eval has proper band-2 dome shaping vs. the linear gradient.
+// shCoeff[i].rgb = i-th SH coefficient; .w = unused padding.
+float4 shCoeff[9] : register(c76);
+// .x = strength multiplier (0 = bypass via [branch]); .yzw reserved
+// for future per-probe gain / cosine convolution toggles.
+float4 shCompose : register(c85);
+
+// SH-2 basis evaluation. Standard 9-coefficient signal reconstruction;
+// fxc will fold the zero-band coefficients we don't currently bake
+// (Y1-1, Y11, Y2-2, Y2-1, Y21, Y22) — they don't fire ALU once the
+// constants land as 0. Keeping the full form here means future bakes
+// (real cubemap projection) can light up extra terms without a shader
+// change.
+float3 EvalSH9(float3 N)
+{
+	float3 r = shCoeff[0].rgb * 0.282095;
+	r += shCoeff[1].rgb * (-0.488603 * N.y);
+	r += shCoeff[2].rgb * ( 0.488603 * N.z);
+	r += shCoeff[3].rgb * (-0.488603 * N.x);
+	r += shCoeff[4].rgb * ( 1.092548 * N.x * N.y);
+	r += shCoeff[5].rgb * (-1.092548 * N.y * N.z);
+	r += shCoeff[6].rgb * ( 0.315392 * (3.0 * N.z * N.z - 1.0));
+	r += shCoeff[7].rgb * (-1.092548 * N.x * N.z);
+	r += shCoeff[8].rgb * ( 0.546274 * (N.x * N.x - N.y * N.y));
+	return r;
+}
+
 // Local visibility helper — avoids the deprecated `step()` intrinsic
 // path which HLSL flags on some configurations with non-constant args.
 float SpotShadow_Visible(float ref, float sampled) { return sampled >= ref ? 1.0 : 0.0; }
@@ -784,6 +820,19 @@ float4 ComputeShadedColor(VS_out input)
 		// coefficient so unlit materials (like UI quads, particles) don't
 		// pick up sky bleed when this branch is somehow hit.
 		lit += iblCol * iblParams.x * surfDiffuse;
+
+		// Stage 36 — SH probe ambient compose. When the host pushes a
+		// non-zero strength via shCompose.x, we add an SH-evaluated
+		// directional ambient term. The result blends with the existing
+		// gradient/cube IBL: SH carries the per-probe LOCAL sky colour
+		// (eventually per-block when Stage 35 cube bakes feed it), while
+		// the gradient term carries the global sun-driven ambient.
+		// Multiplied by surfDiffuse same as the IBL term so it inherits
+		// the same material gating.
+		if(shCompose.x > 0.001){
+			float3 shAmbient = max(EvalSH9(N), 0.0);
+			lit += shAmbient * shCompose.x * surfDiffuse;
+		}
 	}
 
 	// In LDR mode we clamp prelight+ambient+lit BEFORE matCol — matches the

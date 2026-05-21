@@ -21,6 +21,7 @@
 #include "postfx.h"
 #include "ibl.h"	// CIBL::Enabled / irradianceCube for the Phase 2 receiver
 #include "spotShadow.h"	// CSpotShadow::Open/Close — RT lifecycle
+#include "probeManager.h"	// Stage 36 — SH light probe lookup
 #ifdef POSTFX_HDR
 #include "gbuffer.h"
 extern RwRGBAReal DirectionalLightColourForFrame;
@@ -159,6 +160,12 @@ float CPostFX::SsgiNdotLGate = 0.05f;
 bool CPostFX::BentNormalAmbientEnable = true;
 float CPostFX::BentNormalAmbientStrength = 0.5f;
 float CPostFX::BentNormalAmbientBias = 0.6f;
+// Stage 36 — SH probes. Default OFF: even with bootstrapped probes
+// the receiver shader needs the new constant block + ambient eval
+// branch to land before this contributes anything meaningful, so we
+// keep it as opt-in until the consumer is fully verified.
+bool CPostFX::ShProbeEnable = false;
+float CPostFX::ShProbeStrength = 0.8f;
 // Depth of field — off by default; defaults give a tasteful cinematic
 // near/far blur centred on ~15m (typical car interior distance).
 RwRaster *CPostFX::pDofScratch;
@@ -1242,6 +1249,39 @@ CPostFX::UpdateIBL(void)
 	rw::d3d::setFoam(sFoamTime, foamStr);
 
 	rw::d3d::uploadIBL();
+
+	// Stage 36 — per-frame SH light probe upload. Find the nearest SH
+	// probe to the camera (or to the player if available), pack its
+	// 9 SH coefficients into 9 vec4 + a strength uniform, push to
+	// default_PS at c76..c84 (coeffs) and c85 (strength + reserved).
+	// Receiver evaluates band-0 + band-1.z + band-2.zz at world N.
+	{
+		float coeffs[9][3];
+		CVector lookupPos(0, 0, 0);
+		// Prefer the active scene camera position if available; falls
+		// back to origin during boot.
+		extern CCamera TheCamera;
+		lookupPos = TheCamera.GetPosition();
+		CProbeManager::GetNearestSH(lookupPos, coeffs);
+
+		bool shActive = ShProbeEnable && CProbeManager::bootstrapped
+		             && CProbeManager::numProbes > 0;
+		float strength = shActive ? ShProbeStrength : 0.0f;
+
+		// Pack as 9 × float4: (.rgb = SH coeff, .w = 0). Single bulk
+		// upload of 9 registers — cheap (~36 bytes via memcpy).
+		float packed[9][4];
+		for(int b = 0; b < 9; b++){
+			packed[b][0] = coeffs[b][0];
+			packed[b][1] = coeffs[b][1];
+			packed[b][2] = coeffs[b][2];
+			packed[b][3] = 0.0f;
+		}
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(76, &packed[0][0], 9);
+
+		float shCompose[4] = { strength, 0.0f, 0.0f, 0.0f };
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(85, shCompose, 1);
+	}
 #endif
 }
 

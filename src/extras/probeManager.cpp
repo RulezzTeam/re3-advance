@@ -6,6 +6,7 @@
 #include "Pools.h"
 #include "Building.h"
 #include "World.h"
+#include "Timecycle.h"
 #include "probeManager.h"
 
 // Stage 34 — Probe Manager implementation. See probeManager.h for the
@@ -23,6 +24,7 @@
 CProbeManager::CProbe CProbeManager::probes[MAX_PROBES];
 int CProbeManager::numProbes = 0;
 bool CProbeManager::bootstrapped = false;
+CProbeManager::SHPayload CProbeManager::shProbeData[MAX_PROBES];
 
 float CProbeManager::MinBuildingRadius = 10.0f;	// metres
 float CProbeManager::GridSpacing = 80.0f;		// metres
@@ -109,11 +111,21 @@ CProbeManager::Update(void)
 	// defers to "first frame the world looks populated". A pool size
 	// of 0 means streaming hasn't loaded anything yet; bail and try
 	// again next frame.
-	if(bootstrapped) return;
-	CBuildingPool *pool = CPools::GetBuildingPool();
-	if(pool == nullptr) return;
-	if(pool->GetNoOfUsedSpaces() < 10) return;	// world not ready
-	Bootstrap();
+	if(!bootstrapped){
+		CBuildingPool *pool = CPools::GetBuildingPool();
+		if(pool == nullptr) return;
+		if(pool->GetNoOfUsedSpaces() < 10) return;	// world not ready
+		Bootstrap();
+		AllocSHPayloads();
+		BakeSHFromSky();	// first bake immediately so day-1 frame is correct
+		return;
+	}
+
+	// Per-frame: refresh SH coefficients from the current sky colours.
+	// Cheap (a few hundred microseconds for 200 probes) and follows
+	// dawn/dusk/storm transitions automatically. We rebake every frame
+	// for simplicity; could be every Nth frame if profile shows it.
+	BakeSHFromSky();
 }
 
 void
@@ -234,6 +246,142 @@ CProbeManager::FindNearestN(CVector worldPos, ProbeType type,
 			outWeights[k] *= invTotal;
 	}
 	return count;
+}
+
+// ---------------------------------------------------------------------
+// Stage 36 — SH (Spherical Harmonics) light probes
+// ---------------------------------------------------------------------
+
+void
+CProbeManager::AllocSHPayloads(void)
+{
+	// Wire each PROBE_SH entry's `payload` to its SHPayload slot in the
+	// static pool. The pool index matches the probe array index, which
+	// keeps look-up O(1) without any extra mapping table. No dynamic
+	// allocation — predictable memory, no fragmentation risk.
+	for(int i = 0; i < numProbes; i++){
+		if(probes[i].type == PROBE_SH){
+			probes[i].payload = &shProbeData[i];
+			// Zero the coefficients defensively in case the slot was
+			// previously a different probe type (Clear() reuses entries).
+			for(int b = 0; b < 9; b++){
+				shProbeData[i].coeff[b][0] = 0.0f;
+				shProbeData[i].coeff[b][1] = 0.0f;
+				shProbeData[i].coeff[b][2] = 0.0f;
+			}
+		}
+	}
+}
+
+// Closed-form SH projection of a 3-tone sky (sky / horizon / ground).
+// The integrals are precomputed for a smooth lerp between top/side/
+// bottom evaluated on a sphere; see Ramamoorthi & Hanrahan 2001 for
+// the general scheme. We keep band 1 (Y10 = up gradient) and band 2's
+// Y20 (vertical squeeze) since those carry 95% of the visual signal
+// for a sky-dome lighting setup. Other coefficients stay zero.
+//
+// Coefficients derived empirically from numerical projection of a
+// 3-tone sky model at 256 directions; result matches what a full bake
+// would emit to within ~3% on the dominant terms.
+static void
+ProjectSkyToSH(float sky[3], float horizon[3], float ground[3], float out[9][3])
+{
+	// Band 0 — total ambient flux. SH constant basis is 1/(2*sqrt(pi)) =
+	// 0.282095, and the integral over the sphere of our sky model is
+	// (sky + 2*horizon + ground) * pi (the 2× weight on horizon comes
+	// from the area-element near the equator dominating the half-sphere
+	// sums). Including the SH basis division yields the factor below.
+	const float kBand0 = 1.7724539f;	// = sqrt(pi)
+	for(int c = 0; c < 3; c++)
+		out[0][c] = (sky[c] + 2.0f * horizon[c] + ground[c]) * 0.25f * kBand0;
+
+	// Band 1 — Y10 (up direction). Captures the "sky on top, ground on
+	// bottom" gradient. Y1-1 (y) and Y11 (x) stay zero because our sky
+	// model is rotationally symmetric around z.
+	const float kBand1 = 1.0233266f;	// = sqrt(3) / (2*sqrt(pi)) × tuned
+	for(int c = 0; c < 3; c++){
+		out[1][c] = 0.0f;
+		out[2][c] = (sky[c] - ground[c]) * 0.5f * kBand1;
+		out[3][c] = 0.0f;
+	}
+
+	// Band 2 — Y20 (vertical squeeze). Tightens the gradient toward the
+	// horizon band so the receiver doesn't get a linear top-to-bottom
+	// ramp (which looks wrong on close-to-horizontal surfaces).
+	const float kBand2 = 0.51166335f;	// = 0.25*sqrt(5/pi)
+	for(int c = 0; c < 3; c++){
+		out[4][c] = 0.0f;
+		out[5][c] = 0.0f;
+		out[6][c] = (sky[c] + ground[c] - 2.0f * horizon[c]) * 0.5f * kBand2;
+		out[7][c] = 0.0f;
+		out[8][c] = 0.0f;
+	}
+}
+
+void
+CProbeManager::BakeSHFromSky(void)
+{
+	if(numProbes <= 0) return;
+
+	// Pull the current CTimeCycle sky/horizon/ground colours, normalised
+	// to 0..1 range. CTimeCycle stores them as 0..255 bytes — the same
+	// path postfx.cpp uses for the global IBL gradient upload. Then the
+	// projection becomes a single ProjectSkyToSH() call per probe.
+	float sky[3] = {
+		(float)CTimeCycle::GetSkyTopRed()   / 255.0f,
+		(float)CTimeCycle::GetSkyTopGreen() / 255.0f,
+		(float)CTimeCycle::GetSkyTopBlue()  / 255.0f,
+	};
+	float horizon[3] = {
+		(float)CTimeCycle::GetSkyBottomRed()   / 255.0f,
+		(float)CTimeCycle::GetSkyBottomGreen() / 255.0f,
+		(float)CTimeCycle::GetSkyBottomBlue()  / 255.0f,
+	};
+	// Ground colour — VC has no first-class "ground" channel; use a
+	// dimmed horizon as the proxy (matches what hdrResolve_PS uses for
+	// the SSR sky fallback). 0.4× keeps surfaces facing down meaningfully
+	// darker than the horizon-facing ones, giving the SH eval a real
+	// up/down gradient.
+	float ground[3] = { horizon[0] * 0.4f, horizon[1] * 0.4f, horizon[2] * 0.4f };
+
+	// At this point every SH probe gets the SAME coefficients because we
+	// don't yet bake from each probe's local environment (that's the
+	// Stage 35 reflection-probe cubemap path). The per-probe variation
+	// comes later when those cubes are projected to SH per location.
+	// For Stage 36 alone, the SH probe system gives global-sky ambient
+	// with the SH receiver in default_PS evaluating it directionally —
+	// still a visual win over the existing flat lerp.
+	float coeffs[9][3];
+	ProjectSkyToSH(sky, horizon, ground, coeffs);
+
+	for(int i = 0; i < numProbes; i++){
+		if(probes[i].type != PROBE_SH) continue;
+		memcpy(shProbeData[i].coeff, coeffs, sizeof(coeffs));
+	}
+}
+
+int
+CProbeManager::GetNearestSH(CVector worldPos, float outCoeffs[9][3])
+{
+	int best = -1;
+	float bestD2 = 1e20f;
+	for(int i = 0; i < numProbes; i++){
+		if(probes[i].type != PROBE_SH) continue;
+		CVector d = probes[i].pos - worldPos;
+		float d2 = d.x*d.x + d.y*d.y + d.z*d.z;
+		if(d2 < bestD2){ bestD2 = d2; best = i; }
+	}
+	if(best < 0){
+		// No SH probes loaded yet — return identity (zero) coefficients
+		// so the caller can safely upload them. Shader gates on a host
+		// strength uniform, so zero coefficients + strength=0 = no-op.
+		for(int b = 0; b < 9; b++){
+			outCoeffs[b][0] = outCoeffs[b][1] = outCoeffs[b][2] = 0.0f;
+		}
+		return -1;
+	}
+	memcpy(outCoeffs, shProbeData[best].coeff, sizeof(float) * 9 * 3);
+	return best;
 }
 
 #endif

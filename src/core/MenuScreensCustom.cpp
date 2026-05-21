@@ -223,6 +223,8 @@
 		MENUACTION_CFO_SELECT, "FED_BNA", { new CCFOSelect((int8*)&CPostFX::BentNormalAmbientEnable, "Graphics", "BentN", off_on, 2, false, nil, false, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_BNS", { new CCFOSlider(&CPostFX::BentNormalAmbientStrength, "Graphics", "BentNStrength", 0.0f, 2.0f, nil, (int8*)&CPostFX::BentNormalAmbientEnable, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_BNB", { new CCFOSlider(&CPostFX::BentNormalAmbientBias, "Graphics", "BentNBias", 0.0f, 1.0f, nil, (int8*)&CPostFX::BentNormalAmbientEnable, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_SHP", { new CCFOSelect((int8*)&CPostFX::ShProbeEnable, "Graphics", "SHProbes", off_on, 2, false, nil, false, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_SHS", { new CCFOSlider(&CPostFX::ShProbeStrength, "Graphics", "SHStrength", 0.0f, 2.0f, nil, (int8*)&CPostFX::ShProbeEnable, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_WET", { new CCFOSelect((int8*)&CPostFX::WetSurfacesEnable, "Graphics", "WetSurfaces", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_WTI", { new CCFOSlider(&CPostFX::WetSurfacesIntensity, "Graphics", "WetIntensity", 0.0f, 2.0f, nil, (int8*)&CPostFX::WetSurfacesEnable) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_WTS", { new CCFOSlider(&CPostFX::WetSurfacesSpec, "Graphics", "WetSpec", 1.0f, 6.0f, nil, (int8*)&CPostFX::WetSurfacesEnable) }, 0, 0, MENUALIGN_LEFT, \
@@ -455,6 +457,11 @@ void RestoreDefGraphics(int8 action) {
 		CPostFX::BentNormalAmbientEnable = true;
 		CPostFX::BentNormalAmbientStrength = 0.5f;
 		CPostFX::BentNormalAmbientBias = 0.6f;
+		// Stage 36 — SH light probes. Default OFF until the receiver
+		// branch is verified in real scenes; receiver shader gates on
+		// shCompose.x so the off state is a cheap [branch] skip.
+		CPostFX::ShProbeEnable = false;
+		CPostFX::ShProbeStrength = 0.8f;
 		CPostFX::WetSurfacesEnable = true;
 		CPostFX::WetSurfacesIntensity = 1.0f;
 		CPostFX::WetSurfacesDiffuse = 0.45f;

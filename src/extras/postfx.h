@@ -152,6 +152,15 @@ public:
 	static float BentNormalAmbientStrength;	// 0..2 — additive bias weight
 	static float BentNormalAmbientBias;	// 0..1 — lerp surface N → bent N
 
+	// Stage 36 — SH light probes. Per-frame the nearest PROBE_SH entry's
+	// 9 SH coefficients are uploaded to default_PS at c76..c84 and the
+	// receiver evaluates a directional ambient term. SH probes are baked
+	// from CTimeCycle sky colours each frame so dawn / dusk gradients
+	// follow the world clock. Default OFF until consumer tested in
+	// real scenes; toggle in menu under the IBL block.
+	static bool ShProbeEnable;
+	static float ShProbeStrength;	// 0..2 — receiver weight on the SH term
+
 	// Depth of Field — bokeh blur driven by gbuf depth + focal distance.
 	// Runs before ResolveHDR, blurs pHdrScene in-place via a scratch RT
 	// so the downstream tonemap sees the blurred image.
