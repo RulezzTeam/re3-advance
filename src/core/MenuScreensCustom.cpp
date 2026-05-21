@@ -30,6 +30,7 @@
 #endif
 #ifdef POSTFX_HDR
 #include "spotShadow.h"
+#include "decals.h"	// Stage 15 — CDecals menu binding
 #endif
 #include "custompipes.h"
 #include "RwHelper.h"
@@ -232,6 +233,8 @@
 		MENUACTION_CFO_SLIDER, "FED_ATS", { new CCFOSlider(&CPostFX::AtmosphereProbeStrength, "Graphics", "AtmoStrength", 0.0f, 1.0f, nil, (int8*)&CPostFX::AtmosphereProbeEnable, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_RFP", { new CCFOSelect((int8*)&CPostFX::ReflectionProbeEnable, "Graphics", "ReflProbes", off_on, 2, false, nil, false, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_RFS", { new CCFOSlider(&CPostFX::ReflectionProbeStrength, "Graphics", "ReflStrength", 0.0f, 1.0f, nil, (int8*)&CPostFX::ReflectionProbeEnable, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_DCL", { new CCFOSelect((int8*)&CDecals::Enabled, "Graphics", "Decals", off_on, 2, false, nil, false, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_DCA", { new CCFOSlider(&CDecals::MaxAgeSeconds, "Graphics", "DecalAge", 5.0f, 120.0f, nil, (int8*)&CDecals::Enabled, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_WET", { new CCFOSelect((int8*)&CPostFX::WetSurfacesEnable, "Graphics", "WetSurfaces", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_WTI", { new CCFOSlider(&CPostFX::WetSurfacesIntensity, "Graphics", "WetIntensity", 0.0f, 2.0f, nil, (int8*)&CPostFX::WetSurfacesEnable) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_WTS", { new CCFOSlider(&CPostFX::WetSurfacesSpec, "Graphics", "WetSpec", 1.0f, 6.0f, nil, (int8*)&CPostFX::WetSurfacesEnable) }, 0, 0, MENUALIGN_LEFT, \
@@ -481,6 +484,11 @@ void RestoreDefGraphics(int8 action) {
 		// Stage 35 — Reflection probe tint. Default OFF.
 		CPostFX::ReflectionProbeEnable = false;
 		CPostFX::ReflectionProbeStrength = 0.6f;
+		// Stage 15 — Deferred decals. Default OFF; Stage 15.2 will wire
+		// the visual splat pass — for now the API + menu entry are
+		// placeholder so game code can start spawning decals.
+		CDecals::Enabled = false;
+		CDecals::MaxAgeSeconds = 30.0f;
 		CPostFX::WetSurfacesEnable = true;
 		CPostFX::WetSurfacesIntensity = 1.0f;
 		CPostFX::WetSurfacesDiffuse = 0.45f;

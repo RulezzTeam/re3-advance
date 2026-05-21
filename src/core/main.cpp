@@ -77,6 +77,7 @@
 #include "gbuffer.h"
 #include "spotShadow.h"
 #include "probeManager.h"
+#include "decals.h"
 #ifdef POSTFX_CSM
 #include "csm.h"
 #endif
@@ -1669,6 +1670,11 @@ Idle(void *arg)
 		// on subsequent frames; no-op until consumers (Stages 35-39)
 		// hook payloads onto the probe list.
 		CProbeManager::Update();
+		// Stage 15: age out expired decals. CDecals::Add() spawns
+		// entries from gameplay code (bullet impacts, blood, paint);
+		// Update() ticks the per-decal ageMs counter and clears
+		// finished entries. Cheap (single pass over 64 slots).
+		CDecals::Update();
 #endif
 
 		tbStartTimer(0, "RenderScene");
