@@ -101,6 +101,14 @@ float4 ssgiCompose : register(c42);
 //   .w = reserved
 float4 bentParams : register(c43);
 
+// Stage 35 — Static reflection probe tint. .rgb = per-location RGB
+// multiplier applied to the SSR sky-fallback gradient (ssrIblSky /
+// Horizon / Ground) so off-screen reflections pick up local
+// atmosphere. Identity (1,1,1) when probes are off → no math change.
+// Future evolution: when per-probe cubemaps land, swap this for a
+// real prefiltered cube lookup; the scaffolding stays the same.
+float4 reflTint : register(c44);
+
 float3 ACES(float3 x)
 {
 	return saturate((x*(2.51*x + 0.03)) / (x*(2.43*x + 0.59) + 0.14));
@@ -345,6 +353,10 @@ float4 main(in float2 uv : TEXCOORD0) : COLOR0
 		float3 fallbackCol = upW   * ssrIblSky.rgb
 		                   + downW * ssrIblGround.rgb
 		                   + horW  * ssrIblHorizon.rgb;
+		// Stage 35 — Apply the reflection probe tint to the fallback
+		// gradient. Identity (1,1,1) when probes are off, so this is
+		// free in the common-case path.
+		fallbackCol *= reflTint.rgb;
 
 		float3 reflectionCol = lerp(fallbackCol * ssrCompose.z, ssr.rgb, ssr.a);
 		float w = max(ssr.a, ssrCompose.z) * fresnel * ssrCompose.x;

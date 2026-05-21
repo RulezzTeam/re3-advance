@@ -27,6 +27,7 @@ bool CProbeManager::bootstrapped = false;
 CProbeManager::SHPayload CProbeManager::shProbeData[MAX_PROBES];
 CProbeManager::OcclusionPayload CProbeManager::occProbeData[MAX_PROBES];
 CProbeManager::AtmospherePayload CProbeManager::atmoProbeData[MAX_PROBES];
+CProbeManager::ReflectionPayload CProbeManager::reflProbeData[MAX_PROBES];
 uint8 CProbeManager::blendLut[CProbeManager::LUT_SIZE][CProbeManager::LUT_SIZE];
 
 float CProbeManager::MinBuildingRadius = 10.0f;	// metres
@@ -122,9 +123,11 @@ CProbeManager::Update(void)
 		AllocSHPayloads();
 		AllocOcclusionPayloads();
 		AllocAtmospherePayloads();
+		AllocReflectionPayloads();
 		BakeSHFromSky();	// first bake immediately so day-1 frame is correct
 		BakeOcclusionBentN();	// static — one-shot at session start
 		BakeAtmosphereTint();	// static
+		BakeReflectionTints();	// static
 		BuildBlendLut();	// static — recomputed only on Clear()
 		return;
 	}
@@ -648,6 +651,91 @@ CProbeManager::LutSampleProbe(float worldX, float worldY)
 	if(col < 0) col = 0; if(col >= LUT_SIZE) col = LUT_SIZE - 1;
 	if(row < 0) row = 0; if(row >= LUT_SIZE) row = LUT_SIZE - 1;
 	return (int)blendLut[row][col];
+}
+
+// ---------------------------------------------------------------------
+// Stage 35 — Static reflection probes (tint-only)
+// ---------------------------------------------------------------------
+
+void
+CProbeManager::AllocReflectionPayloads(void)
+{
+	for(int i = 0; i < numProbes; i++){
+		if(probes[i].type == PROBE_REFLECTION){
+			reflProbeData[i].tint[0] = 1.0f;
+			reflProbeData[i].tint[1] = 1.0f;
+			reflProbeData[i].tint[2] = 1.0f;
+		}
+	}
+}
+
+void
+CProbeManager::BakeReflectionTints(void)
+{
+	// Bake heuristic: blend three tint targets based on probe location:
+	//   - Beach / coastline (low |X| + low |Y| won't trip it; we use Z
+	//     low + open density as a proxy)        → cool blue-greenish
+	//   - Open road / sky-dominated             → neutral (1,1,1)
+	//   - Dense urban core                       → warm-but-dirty
+	// The blend uses the same building-density signal as Stages 37+39a.
+	// Tints are subtle (~10-15% deviation) so reflections never go
+	// magenta or radically miscoloured.
+	CBuildingPool *pool = CPools::GetBuildingPool();
+	if(pool == nullptr) return;
+	int poolSize = pool->GetSize();
+	const float kSearchR = 60.0f;
+	const float kSearchR2 = kSearchR * kSearchR;
+
+	for(int i = 0; i < numProbes; i++){
+		if(probes[i].type != PROBE_REFLECTION) continue;
+		CVector p = probes[i].pos;
+		float density = 0.0f;
+		for(int b = 0; b < poolSize; b++){
+			CBuilding *bld = pool->GetSlot(b);
+			if(bld == nullptr) continue;
+			float br = bld->GetBoundRadius();
+			if(br < 3.0f) continue;
+			CVector bc = bld->GetBoundCentre();
+			CVector d = bc - p;
+			float d2 = d.x*d.x + d.y*d.y + d.z*d.z;
+			if(d2 > kSearchR2) continue;
+			density += br / (sqrtf(d2) + 0.5f);
+		}
+		// Sea / beach (low density + low Z) → cool tint. Urban → warm
+		// dirty tint. Mid → neutral.
+		float urbanT = density / (density + 8.0f);
+		bool nearSea = (probes[i].pos.z < 3.0f) && (density < 1.0f);
+		if(nearSea){
+			reflProbeData[i].tint[0] = 0.85f;
+			reflProbeData[i].tint[1] = 0.95f;
+			reflProbeData[i].tint[2] = 1.05f;
+		}else{
+			reflProbeData[i].tint[0] = 1.0f + (0.92f - 1.0f) * urbanT;	// slightly warmer R
+			reflProbeData[i].tint[1] = 1.0f + (0.88f - 1.0f) * urbanT;	// dimmer G
+			reflProbeData[i].tint[2] = 1.0f + (0.78f - 1.0f) * urbanT;	// much dimmer B
+		}
+	}
+}
+
+int
+CProbeManager::GetNearestReflection(CVector worldPos, float outTint[3])
+{
+	int best = -1;
+	float bestD2 = 1e20f;
+	for(int i = 0; i < numProbes; i++){
+		if(probes[i].type != PROBE_REFLECTION) continue;
+		CVector d = probes[i].pos - worldPos;
+		float d2 = d.x*d.x + d.y*d.y + d.z*d.z;
+		if(d2 < bestD2){ bestD2 = d2; best = i; }
+	}
+	if(best < 0){
+		outTint[0] = outTint[1] = outTint[2] = 1.0f;
+		return -1;
+	}
+	outTint[0] = reflProbeData[best].tint[0];
+	outTint[1] = reflProbeData[best].tint[1];
+	outTint[2] = reflProbeData[best].tint[2];
+	return best;
 }
 
 #endif

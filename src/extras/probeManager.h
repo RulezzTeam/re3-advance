@@ -166,6 +166,26 @@ public:
 	// linear scan). Returns the probe index at the world XY cell.
 	static int LutSampleProbe(float worldX, float worldY);
 
+	// Stage 35 — Static reflection probes. Each PROBE_REFLECTION entry
+	// owns a per-location RGB reflection tint (e.g. greenish near
+	// foliage-heavy blocks, warmer near brick clusters, neutral on
+	// open beaches). The "per-probe cubemap" version is too expensive
+	// at ~150-250 probes × 6 faces × 32² × RGBA16F — would take
+	// ~25 MB on its own. The tint approach keeps the global irradiance
+	// cube + GGX prefilter from Stage 12 doing the heavy lifting and
+	// uses the probe data as a colour modulation per location.
+	// Future evolution: render per-probe cubemaps at bake time and
+	// pre-blend the 4 nearest cubes into a per-camera "context cube"
+	// each frame. For now the tint approach is the cheap-but-readable
+	// stopgap that the receiver consumes without any new sampler slot.
+	struct ReflectionPayload {
+		float tint[3];	// RGB multiplier on the IBL specular + SSR sky-miss
+	};
+	static ReflectionPayload reflProbeData[MAX_PROBES];
+	static void AllocReflectionPayloads(void);
+	static void BakeReflectionTints(void);
+	static int GetNearestReflection(CVector worldPos, float outTint[3]);
+
 	// Drop all entries. Each consumer subsystem is responsible for
 	// freeing its own payload memory before this is called — the
 	// manager doesn't know how to deallocate type-specific data.

@@ -180,6 +180,17 @@ public:
 	static bool AtmosphereProbeEnable;
 	static float AtmosphereProbeStrength;	// 0..1 — lerp neutral → tint
 
+	// Stage 35 — Static reflection probes (tint-only). Per-location RGB
+	// multiplier on the SSR sky-fallback colour in hdrResolve_PS. The
+	// "per-probe cube" version is deferred (~25 MB VRAM at 150 probes);
+	// the tint approach gives location-specific reflection colour at
+	// negligible cost by piggybacking on the existing IBL gradient.
+	// Bake heuristic shares the building-density signal with the other
+	// probe stages — sea-edge probes get a cool tint, urban cores get
+	// a warm dirty tint, open roads stay neutral.
+	static bool ReflectionProbeEnable;
+	static float ReflectionProbeStrength;	// 0..1 — lerp neutral → tint
+
 	// Depth of Field — bokeh blur driven by gbuf depth + focal distance.
 	// Runs before ResolveHDR, blurs pHdrScene in-place via a scratch RT
 	// so the downstream tonemap sees the blurred image.

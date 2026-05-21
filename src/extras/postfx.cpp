@@ -178,6 +178,10 @@ float CPostFX::BentNormalProbeBias = 0.3f;
 // when toggling on).
 bool CPostFX::AtmosphereProbeEnable = false;
 float CPostFX::AtmosphereProbeStrength = 0.5f;
+// Stage 35 — Reflection probe tint. Default OFF. Mild defaults so the
+// effect is "atmospheric" rather than "cosmetic" when enabled.
+bool CPostFX::ReflectionProbeEnable = false;
+float CPostFX::ReflectionProbeStrength = 0.6f;
 // Depth of field — off by default; defaults give a tasteful cinematic
 // near/far blur centred on ~15m (typical car interior distance).
 RwRaster *CPostFX::pDofScratch;
@@ -2172,6 +2176,26 @@ CPostFX::ResolveHDR(RwCamera *cam)
 			0.0f, 0.0f,
 		};
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(43, bentBias, 1);
+
+		// c44: Stage 35 — Reflection probe tint. Looked up from the
+		// nearest PROBE_REFLECTION entry to the camera. .rgb = lerped
+		// tint (neutral when disabled), .a = unused. The receiver
+		// multiplies ssrIblSky/Horizon/Ground by .rgb so the SSR sky-
+		// fallback picks up local atmosphere even without per-probe
+		// cubemap storage.
+		float reflTint[3] = { 1.0f, 1.0f, 1.0f };
+		CProbeManager::GetNearestReflection(
+			CVector(camPos.x, camPos.y, camPos.z), reflTint);
+		bool reflActive = ReflectionProbeEnable && CProbeManager::bootstrapped
+		              && CProbeManager::numProbes > 0;
+		float reflLerp = reflActive ? ReflectionProbeStrength : 0.0f;
+		float reflCompose[4] = {
+			1.0f + (reflTint[0] - 1.0f) * reflLerp,
+			1.0f + (reflTint[1] - 1.0f) * reflLerp,
+			1.0f + (reflTint[2] - 1.0f) * reflLerp,
+			0.0f,
+		};
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(44, reflCompose, 1);
 	}
 
 	rw::d3d::im2dOverridePS = hdrResolve_PS;
