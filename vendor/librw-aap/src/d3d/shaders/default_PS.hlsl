@@ -241,6 +241,14 @@ float4 shCompose : register(c85);
 // when off.
 float4 occCompose : register(c86);
 
+// Stage 39a — Atmosphere probe tint. .rgb = per-location IBL tint
+// multiplier (1,1,1 = neutral, < 1 = darkened / warmer), .a = strength
+// for documentation only (the .rgb is already host-lerped against
+// neutral by AtmosphereProbeStrength so the receiver doesn't need to
+// re-apply). Multiplied into iblCol so both the gradient and the SH
+// ambient pick up the same local atmosphere.
+float4 atmoCompose : register(c87);
+
 // SH-2 basis evaluation. Standard 9-coefficient signal reconstruction;
 // fxc will fold the zero-band coefficients we don't currently bake
 // (Y1-1, Y11, Y2-2, Y2-1, Y21, Y22) — they don't fire ALU once the
@@ -832,6 +840,10 @@ float4 ComputeShadedColor(VS_out input)
 		// density-derived occlusion factor. Identity (1.0) when probes
 		// are disabled, so this is free in the off-path.
 		iblCol *= occCompose.x;
+		// Stage 39a — atmosphere probe tint. Per-location RGB multiplier
+		// that nudges urban areas warmer/dimmer and keeps open spaces
+		// neutral. Identity (1,1,1) when probes are off.
+		iblCol *= atmoCompose.rgb;
 		// Treat IBL as a soft diffuse — modulate by the material diffuse
 		// coefficient so unlit materials (like UI quads, particles) don't
 		// pick up sky bleed when this branch is somehow hit.

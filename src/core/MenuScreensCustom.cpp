@@ -228,6 +228,8 @@
 		MENUACTION_CFO_SELECT, "FED_OCP", { new CCFOSelect((int8*)&CPostFX::OcclusionProbeEnable, "Graphics", "OccProbes", off_on, 2, false, nil, false, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_OCS", { new CCFOSlider(&CPostFX::OcclusionProbeStrength, "Graphics", "OccStrength", 0.0f, 1.0f, nil, (int8*)&CPostFX::OcclusionProbeEnable, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_BNP", { new CCFOSlider(&CPostFX::BentNormalProbeBias, "Graphics", "BentNProbe", 0.0f, 1.0f, nil, (int8*)&CPostFX::OcclusionProbeEnable, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SELECT, "FED_ATP", { new CCFOSelect((int8*)&CPostFX::AtmosphereProbeEnable, "Graphics", "AtmoProbes", off_on, 2, false, nil, false, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
+		MENUACTION_CFO_SLIDER, "FED_ATS", { new CCFOSlider(&CPostFX::AtmosphereProbeStrength, "Graphics", "AtmoStrength", 0.0f, 1.0f, nil, (int8*)&CPostFX::AtmosphereProbeEnable, (int8*)&CGBuffer::HdrEnabled) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SELECT, "FED_WET", { new CCFOSelect((int8*)&CPostFX::WetSurfacesEnable, "Graphics", "WetSurfaces", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_WTI", { new CCFOSlider(&CPostFX::WetSurfacesIntensity, "Graphics", "WetIntensity", 0.0f, 2.0f, nil, (int8*)&CPostFX::WetSurfacesEnable) }, 0, 0, MENUALIGN_LEFT, \
 		MENUACTION_CFO_SLIDER, "FED_WTS", { new CCFOSlider(&CPostFX::WetSurfacesSpec, "Graphics", "WetSpec", 1.0f, 6.0f, nil, (int8*)&CPostFX::WetSurfacesEnable) }, 0, 0, MENUALIGN_LEFT, \
@@ -471,6 +473,9 @@ void RestoreDefGraphics(int8 action) {
 		CPostFX::OcclusionProbeEnable = false;
 		CPostFX::OcclusionProbeStrength = 0.6f;
 		CPostFX::BentNormalProbeBias = 0.3f;
+		// Stage 39a — Atmosphere probes. Default OFF.
+		CPostFX::AtmosphereProbeEnable = false;
+		CPostFX::AtmosphereProbeStrength = 0.5f;
 		CPostFX::WetSurfacesEnable = true;
 		CPostFX::WetSurfacesIntensity = 1.0f;
 		CPostFX::WetSurfacesDiffuse = 0.45f;

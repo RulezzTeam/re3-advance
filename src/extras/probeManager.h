@@ -139,6 +139,33 @@ public:
 	// upload is always safe.
 	static int GetNearestOcclusion(CVector worldPos, float &outAO, CVector &outBentN);
 
+	// Stage 39a — Atmosphere probes. Per-location RGB tint that nudges
+	// the sky / IBL ambient toward "downtown haze" (warmer + dimmer)
+	// near dense building clusters and toward "open sky" (cooler +
+	// brighter) on beaches / open roads. Bake heuristic shares the
+	// building-density signal with the occlusion bake (cheap reuse).
+	struct AtmospherePayload {
+		float tint[3];	// multiplier on ambient (1,1,1 = neutral)
+	};
+	static AtmospherePayload atmoProbeData[MAX_PROBES];
+	static void AllocAtmospherePayloads(void);
+	static void BakeAtmosphereTint(void);
+	static int GetNearestAtmosphere(CVector worldPos, float outTint[3]);
+
+	// Stage 39d — Probe blending LUT. A 256×256 byte texture indexed
+	// by world XY giving the nearest reflection-probe index per cell.
+	// Cheap world-space lookup for shaders that want per-pixel probe
+	// data without re-running FindNearestN per fragment. Built once
+	// at Bootstrap()-time from the probe positions; rebuilt only if
+	// Clear() is called. Wraps the playable area (kLutRangeMin..Max).
+	enum { LUT_SIZE = 256 };
+	static uint8 blendLut[LUT_SIZE][LUT_SIZE];
+	static void BuildBlendLut(void);
+	// Sample the LUT in host code (e.g. probe-aware AI / SFX systems
+	// that need "what's the nearest probe near my entity?" without the
+	// linear scan). Returns the probe index at the world XY cell.
+	static int LutSampleProbe(float worldX, float worldY);
+
 	// Drop all entries. Each consumer subsystem is responsible for
 	// freeing its own payload memory before this is called — the
 	// manager doesn't know how to deallocate type-specific data.

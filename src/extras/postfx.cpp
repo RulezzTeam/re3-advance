@@ -173,6 +173,11 @@ float CPostFX::ShProbeStrength = 0.8f;
 bool CPostFX::OcclusionProbeEnable = false;
 float CPostFX::OcclusionProbeStrength = 0.6f;
 float CPostFX::BentNormalProbeBias = 0.3f;
+// Stage 39a — Atmosphere probes. Default OFF; subtle bias toward warmer
+// urban / cooler open-space when enabled (avoids dramatic colour shifts
+// when toggling on).
+bool CPostFX::AtmosphereProbeEnable = false;
+float CPostFX::AtmosphereProbeStrength = 0.5f;
 // Depth of field — off by default; defaults give a tasteful cinematic
 // near/far blur centred on ~15m (typical car interior distance).
 RwRaster *CPostFX::pDofScratch;
@@ -1312,6 +1317,23 @@ CPostFX::UpdateIBL(void)
 			probeBentN.z * effBias,
 		};
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(86, occCompose, 1);
+
+		// Stage 39a — Atmosphere probe tint. Lerp from neutral (1,1,1)
+		// toward the probe-baked tint by AtmosphereProbeStrength. When
+		// disabled (Enable=false OR no probes), the lerp factor is 0 so
+		// the constant remains (1,1,1) → receiver multiplies by 1 = no-op.
+		float atmoTint[3] = { 1.0f, 1.0f, 1.0f };
+		CProbeManager::GetNearestAtmosphere(lookupPos, atmoTint);
+		bool atmoActive = AtmosphereProbeEnable && CProbeManager::bootstrapped
+		              && CProbeManager::numProbes > 0;
+		float atmoLerp = atmoActive ? AtmosphereProbeStrength : 0.0f;
+		float atmoCompose[4] = {
+			1.0f + (atmoTint[0] - 1.0f) * atmoLerp,
+			1.0f + (atmoTint[1] - 1.0f) * atmoLerp,
+			1.0f + (atmoTint[2] - 1.0f) * atmoLerp,
+			atmoLerp,
+		};
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(87, atmoCompose, 1);
 	}
 #endif
 }

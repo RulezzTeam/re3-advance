@@ -26,6 +26,8 @@ int CProbeManager::numProbes = 0;
 bool CProbeManager::bootstrapped = false;
 CProbeManager::SHPayload CProbeManager::shProbeData[MAX_PROBES];
 CProbeManager::OcclusionPayload CProbeManager::occProbeData[MAX_PROBES];
+CProbeManager::AtmospherePayload CProbeManager::atmoProbeData[MAX_PROBES];
+uint8 CProbeManager::blendLut[CProbeManager::LUT_SIZE][CProbeManager::LUT_SIZE];
 
 float CProbeManager::MinBuildingRadius = 10.0f;	// metres
 float CProbeManager::GridSpacing = 80.0f;		// metres
@@ -119,8 +121,11 @@ CProbeManager::Update(void)
 		Bootstrap();
 		AllocSHPayloads();
 		AllocOcclusionPayloads();
+		AllocAtmospherePayloads();
 		BakeSHFromSky();	// first bake immediately so day-1 frame is correct
 		BakeOcclusionBentN();	// static — one-shot at session start
+		BakeAtmosphereTint();	// static
+		BuildBlendLut();	// static — recomputed only on Clear()
 		return;
 	}
 
@@ -509,6 +514,140 @@ CProbeManager::GetNearestOcclusion(CVector worldPos, float &outAO, CVector &outB
 	outAO    = occProbeData[best].ao;
 	outBentN = occProbeData[best].bentN;
 	return best;
+}
+
+// ---------------------------------------------------------------------
+// Stage 39a — Atmosphere probes
+// ---------------------------------------------------------------------
+
+void
+CProbeManager::AllocAtmospherePayloads(void)
+{
+	// Atmosphere probes piggyback on the occlusion probe slots so we
+	// don't need a fresh placement pass. Every occlusion probe also
+	// gets an atmosphere payload; lookups use the same nearest-probe
+	// query. This keeps the probe count flat and the bake cheap.
+	for(int i = 0; i < numProbes; i++){
+		if(probes[i].type == PROBE_OCCLUSION){
+			atmoProbeData[i].tint[0] = 1.0f;
+			atmoProbeData[i].tint[1] = 1.0f;
+			atmoProbeData[i].tint[2] = 1.0f;
+		}
+	}
+}
+
+void
+CProbeManager::BakeAtmosphereTint(void)
+{
+	// Cheap density heuristic: dense urban blocks get a slightly warmer,
+	// dimmer tint (downtown haze look); open beaches / sea-edge roads
+	// stay neutral or slightly cooler. The "denseness" is reused from
+	// the same building scan that BakeOcclusionBentN does, but we don't
+	// share the intermediate because that would couple the two bakes
+	// in a way that's annoying to swap independently later.
+	CBuildingPool *pool = CPools::GetBuildingPool();
+	if(pool == nullptr) return;
+	int poolSize = pool->GetSize();
+	const float kSearchR = 50.0f;
+	const float kSearchR2 = kSearchR * kSearchR;
+
+	for(int i = 0; i < numProbes; i++){
+		if(probes[i].type != PROBE_OCCLUSION) continue;
+		CVector p = probes[i].pos;
+		float density = 0.0f;
+		for(int b = 0; b < poolSize; b++){
+			CBuilding *bld = pool->GetSlot(b);
+			if(bld == nullptr) continue;
+			float br = bld->GetBoundRadius();
+			if(br < 3.0f) continue;
+			CVector bc = bld->GetBoundCentre();
+			CVector d = bc - p;
+			float d2 = d.x*d.x + d.y*d.y + d.z*d.z;
+			if(d2 > kSearchR2) continue;
+			density += br / (sqrtf(d2) + 0.5f);
+		}
+		// 0 = neutral (1,1,1), 1 = full urban (0.88, 0.82, 0.74) — warmer
+		// + dimmer. Curve picked so empty space stays neutral and densest
+		// VC blocks only tint by ~12-25%.
+		float t = density / (density + 6.0f);
+		atmoProbeData[i].tint[0] = 1.0f + (0.88f - 1.0f) * t;
+		atmoProbeData[i].tint[1] = 1.0f + (0.82f - 1.0f) * t;
+		atmoProbeData[i].tint[2] = 1.0f + (0.74f - 1.0f) * t;
+	}
+}
+
+int
+CProbeManager::GetNearestAtmosphere(CVector worldPos, float outTint[3])
+{
+	// Reuse the occlusion probe spatial layout — atmosphere probes share
+	// positions with occlusion ones (allocated in parallel). The lookup
+	// follows the same nearest-probe pattern.
+	int best = -1;
+	float bestD2 = 1e20f;
+	for(int i = 0; i < numProbes; i++){
+		if(probes[i].type != PROBE_OCCLUSION) continue;
+		CVector d = probes[i].pos - worldPos;
+		float d2 = d.x*d.x + d.y*d.y + d.z*d.z;
+		if(d2 < bestD2){ bestD2 = d2; best = i; }
+	}
+	if(best < 0){
+		outTint[0] = outTint[1] = outTint[2] = 1.0f;
+		return -1;
+	}
+	outTint[0] = atmoProbeData[best].tint[0];
+	outTint[1] = atmoProbeData[best].tint[1];
+	outTint[2] = atmoProbeData[best].tint[2];
+	return best;
+}
+
+// ---------------------------------------------------------------------
+// Stage 39d — Probe blending LUT
+// ---------------------------------------------------------------------
+
+void
+CProbeManager::BuildBlendLut(void)
+{
+	// Bake a 256×256 world-XY → nearest-probe-index lookup. The LUT
+	// covers the same playable area the grid-fill in Bootstrap() uses
+	// (kGridMinX..kGridMaxX, kGridMinY..kGridMaxY). At 1300m span / 256
+	// cells = ~10m per cell, which is finer than DedupeRadius (12m), so
+	// every cell falls within the influence of at least one probe.
+	const float spanX = kGridMaxX - kGridMinX;
+	const float spanY = kGridMaxY - kGridMinY;
+	const float cellX = spanX / (float)LUT_SIZE;
+	const float cellY = spanY / (float)LUT_SIZE;
+
+	for(int row = 0; row < LUT_SIZE; row++){
+		float wy = kGridMinY + ((float)row + 0.5f) * cellY;
+		for(int col = 0; col < LUT_SIZE; col++){
+			float wx = kGridMinX + ((float)col + 0.5f) * cellX;
+			// Linear-scan nearest probe (any type — defaults to
+			// reflection if a tie). MAX_PROBES = 256 fits in a uint8,
+			// which is why LUT_SIZE × LUT_SIZE × byte = 64KB is the
+			// upper bound.
+			int best = 0;
+			float bestD2 = 1e20f;
+			for(int i = 0; i < numProbes; i++){
+				CVector d = probes[i].pos - CVector(wx, wy, 0.0f);
+				float d2 = d.x*d.x + d.y*d.y;	// XY only
+				if(d2 < bestD2){ bestD2 = d2; best = i; }
+			}
+			blendLut[row][col] = (uint8)best;
+		}
+	}
+}
+
+int
+CProbeManager::LutSampleProbe(float worldX, float worldY)
+{
+	const float spanX = kGridMaxX - kGridMinX;
+	const float spanY = kGridMaxY - kGridMinY;
+	if(spanX < 1e-3f || spanY < 1e-3f) return -1;
+	int col = (int)(((worldX - kGridMinX) / spanX) * (float)LUT_SIZE);
+	int row = (int)(((worldY - kGridMinY) / spanY) * (float)LUT_SIZE);
+	if(col < 0) col = 0; if(col >= LUT_SIZE) col = LUT_SIZE - 1;
+	if(row < 0) row = 0; if(row >= LUT_SIZE) row = LUT_SIZE - 1;
+	return (int)blendLut[row][col];
 }
 
 #endif

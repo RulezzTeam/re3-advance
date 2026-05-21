@@ -172,6 +172,14 @@ public:
 	static float OcclusionProbeStrength;	// 0..1 — lerp AO toward 1 (= no effect)
 	static float BentNormalProbeBias;		// 0..1 — how much to tilt N toward bent N
 
+	// Stage 39a — Atmosphere probes. Per-location RGB tint that gets
+	// multiplied into the IBL ambient term. Density-driven bake: dense
+	// blocks get a warmer + dimmer "haze" feel, open spaces stay neutral.
+	// Per-frame upload of nearest probe tint to c87 (.rgb = tint, .a =
+	// strength). Default OFF.
+	static bool AtmosphereProbeEnable;
+	static float AtmosphereProbeStrength;	// 0..1 — lerp neutral → tint
+
 	// Depth of Field — bokeh blur driven by gbuf depth + focal distance.
 	// Runs before ResolveHDR, blurs pHdrScene in-place via a scratch RT
 	// so the downstream tonemap sees the blurred image.
