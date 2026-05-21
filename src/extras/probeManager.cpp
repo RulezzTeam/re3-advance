@@ -25,6 +25,7 @@ CProbeManager::CProbe CProbeManager::probes[MAX_PROBES];
 int CProbeManager::numProbes = 0;
 bool CProbeManager::bootstrapped = false;
 CProbeManager::SHPayload CProbeManager::shProbeData[MAX_PROBES];
+CProbeManager::OcclusionPayload CProbeManager::occProbeData[MAX_PROBES];
 
 float CProbeManager::MinBuildingRadius = 10.0f;	// metres
 float CProbeManager::GridSpacing = 80.0f;		// metres
@@ -117,7 +118,9 @@ CProbeManager::Update(void)
 		if(pool->GetNoOfUsedSpaces() < 10) return;	// world not ready
 		Bootstrap();
 		AllocSHPayloads();
+		AllocOcclusionPayloads();
 		BakeSHFromSky();	// first bake immediately so day-1 frame is correct
+		BakeOcclusionBentN();	// static — one-shot at session start
 		return;
 	}
 
@@ -125,6 +128,8 @@ CProbeManager::Update(void)
 	// Cheap (a few hundred microseconds for 200 probes) and follows
 	// dawn/dusk/storm transitions automatically. We rebake every frame
 	// for simplicity; could be every Nth frame if profile shows it.
+	// Occlusion + bent-N are static (building-density driven) so they
+	// don't need per-frame work — baked once at bootstrap.
 	BakeSHFromSky();
 }
 
@@ -168,6 +173,14 @@ CProbeManager::Bootstrap(void)
 			eyeLevel.z += 1.5f;
 			if(!ProbeIsDuplicate(eyeLevel, PROBE_SH, DedupeRadius))
 				ProbePush(eyeLevel, PROBE_SH, r * 1.0f);
+
+			// Occlusion + bent-normal probe — shares position with SH
+			// probe (eye-level) so a per-pixel "what does the camera-
+			// neighbourhood occlusion look like" query gets coherent
+			// answers from all three. Payload is single CVector + AO
+			// scalar (24 bytes per probe) — cheap.
+			if(!ProbeIsDuplicate(eyeLevel, PROBE_OCCLUSION, DedupeRadius))
+				ProbePush(eyeLevel, PROBE_OCCLUSION, r * 1.0f);
 		}
 	}
 
@@ -381,6 +394,120 @@ CProbeManager::GetNearestSH(CVector worldPos, float outCoeffs[9][3])
 		return -1;
 	}
 	memcpy(outCoeffs, shProbeData[best].coeff, sizeof(float) * 9 * 3);
+	return best;
+}
+
+// ---------------------------------------------------------------------
+// Stages 37 + 38 — Occlusion + Bent Normal probes
+// ---------------------------------------------------------------------
+
+void
+CProbeManager::AllocOcclusionPayloads(void)
+{
+	for(int i = 0; i < numProbes; i++){
+		if(probes[i].type == PROBE_OCCLUSION){
+			probes[i].payload = &occProbeData[i];
+			occProbeData[i].ao = 1.0f;
+			occProbeData[i].bentN = CVector(0, 0, 1);
+		}
+	}
+}
+
+void
+CProbeManager::BakeOcclusionBentN(void)
+{
+	// Heuristic bake: for each occlusion probe, scan the building pool
+	// within a 30m radius and accumulate (1) the count of buildings
+	// (drives AO down) and (2) a weighted-average "away from buildings"
+	// direction (drives bent N toward the open hemisphere).
+	//
+	// Cheap and deterministic — no raycasting required. Quality is
+	// "indicative" rather than ground-truth, but for a non-baked
+	// dynamic city the alternative is a fully-precomputed offline
+	// pass that doesn't fit the engine's hot-load model. A real
+	// raycast bake can replace this function later without touching
+	// the consumers.
+	CBuildingPool *pool = CPools::GetBuildingPool();
+	if(pool == nullptr) return;
+	int poolSize = pool->GetSize();
+
+	const float kSearchR = 30.0f;
+	const float kSearchR2 = kSearchR * kSearchR;
+
+	for(int i = 0; i < numProbes; i++){
+		if(probes[i].type != PROBE_OCCLUSION) continue;
+		CVector p = probes[i].pos;
+		float densityAcc = 0.0f;
+		CVector openAcc(0, 0, 0);
+
+		for(int b = 0; b < poolSize; b++){
+			CBuilding *bld = pool->GetSlot(b);
+			if(bld == nullptr) continue;
+			float br = bld->GetBoundRadius();
+			if(br < 3.0f) continue;	// skip tiny props
+			CVector bc = bld->GetBoundCentre();
+			CVector d = bc - p;
+			float d2 = d.x*d.x + d.y*d.y + d.z*d.z;
+			if(d2 > kSearchR2) continue;
+			// Density contribution: closer + bigger buildings count
+			// more. (br / dist) gives a rough subtended-angle proxy.
+			float dist = sqrtf(d2) + 0.5f;
+			float w = br / dist;
+			densityAcc += w;
+			// Away-from-building direction: subtract because we want
+			// the unoccluded hemisphere to point AWAY from buildings.
+			openAcc.x -= d.x * w / dist;
+			openAcc.y -= d.y * w / dist;
+			openAcc.z -= d.z * w / dist;
+		}
+
+		// Normalise density into AO. Empirically density >= 4.0 is a
+		// dense urban core (full city block of tall buildings), 0.0 is
+		// open beach / sea. Map to AO ∈ [0.3, 1.0].
+		float ao = 1.0f - 0.7f * (densityAcc / (densityAcc + 4.0f));
+		if(ao < 0.3f) ao = 0.3f;
+		if(ao > 1.0f) ao = 1.0f;
+		occProbeData[i].ao = ao;
+
+		// Bent normal — prefer the "away from buildings" direction;
+		// fall back to straight-up when density is negligible (open
+		// space → no preferred direction, so default to sky).
+		float magOpen = sqrtf(openAcc.x*openAcc.x + openAcc.y*openAcc.y + openAcc.z*openAcc.z);
+		if(magOpen > 0.01f){
+			// Bias toward up (+z) regardless — pure horizontal bent
+			// normals would shift the SH evaluation off the sky dome
+			// and read wrong on flat ground.
+			CVector bn(openAcc.x / magOpen, openAcc.y / magOpen, openAcc.z / magOpen);
+			bn.z = bn.z * 0.4f + 0.6f;	// 60% toward up
+			float bnMag = sqrtf(bn.x*bn.x + bn.y*bn.y + bn.z*bn.z);
+			if(bnMag > 0.01f){
+				bn.x /= bnMag; bn.y /= bnMag; bn.z /= bnMag;
+			}
+			occProbeData[i].bentN = bn;
+		}else{
+			occProbeData[i].bentN = CVector(0, 0, 1);
+		}
+	}
+}
+
+int
+CProbeManager::GetNearestOcclusion(CVector worldPos, float &outAO, CVector &outBentN)
+{
+	int best = -1;
+	float bestD2 = 1e20f;
+	for(int i = 0; i < numProbes; i++){
+		if(probes[i].type != PROBE_OCCLUSION) continue;
+		CVector d = probes[i].pos - worldPos;
+		float d2 = d.x*d.x + d.y*d.y + d.z*d.z;
+		if(d2 < bestD2){ bestD2 = d2; best = i; }
+	}
+	if(best < 0){
+		outAO = 1.0f;
+		outBentN = CVector(0, 0, 1);
+		return -1;
+	}
+	outAO    = occProbeData[best].ao;
+	outBentN = occProbeData[best].bentN;
 	return best;
 }
 

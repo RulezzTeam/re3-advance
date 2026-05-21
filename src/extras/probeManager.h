@@ -114,6 +114,31 @@ public:
 	// float[9][3] array (9 RGB triplets, band-major).
 	static int GetNearestSH(CVector worldPos, float outCoeffs[9][3]);
 
+	// Stage 37 + 38 — Occlusion / Bent Normal probe payload. Combined
+	// into a single struct because the two are always queried together
+	// (the bent normal is the direction of the unoccluded region whose
+	// occlusion ratio is `ao`). Bake heuristic in BakeOcclusionBentN()
+	// uses building density at the probe position to drive both.
+	struct OcclusionPayload {
+		float ao;		// 0 = fully occluded, 1 = fully open
+		CVector bentN;	// unit-ish vector pointing into the open hemisphere
+	};
+	static OcclusionPayload occProbeData[MAX_PROBES];
+
+	// Allocate occlusion payload pointers + bake initial values from a
+	// building-density heuristic. Fired once after Bootstrap() — the
+	// values stay static across the session (unlike SH which rebakes
+	// every frame because the sky changes). If a future stage adds a
+	// raycast-based bake, replace BakeOcclusionBentN() with it without
+	// touching the consumers.
+	static void AllocOcclusionPayloads(void);
+	static void BakeOcclusionBentN(void);
+
+	// Return the nearest OCCLUSION probe's (ao, bentN) to `worldPos`.
+	// Falls back to (1.0, (0,0,1)) when no probes are in range so the
+	// upload is always safe.
+	static int GetNearestOcclusion(CVector worldPos, float &outAO, CVector &outBentN);
+
 	// Drop all entries. Each consumer subsystem is responsible for
 	// freeing its own payload memory before this is called — the
 	// manager doesn't know how to deallocate type-specific data.

@@ -166,6 +166,13 @@ float CPostFX::BentNormalAmbientBias = 0.6f;
 // keep it as opt-in until the consumer is fully verified.
 bool CPostFX::ShProbeEnable = false;
 float CPostFX::ShProbeStrength = 0.8f;
+// Stages 37 + 38 — Occlusion + Bent Normal probes. Default OFF for the
+// same staged-rollout reason; receiver gates on the host-side strength
+// being non-zero. When on, the bake heuristic gives a clean "darker
+// inside dense urban blocks, more sky-fill on the open side" feel.
+bool CPostFX::OcclusionProbeEnable = false;
+float CPostFX::OcclusionProbeStrength = 0.6f;
+float CPostFX::BentNormalProbeBias = 0.3f;
 // Depth of field — off by default; defaults give a tasteful cinematic
 // near/far blur centred on ~15m (typical car interior distance).
 RwRaster *CPostFX::pDofScratch;
@@ -1281,6 +1288,30 @@ CPostFX::UpdateIBL(void)
 
 		float shCompose[4] = { strength, 0.0f, 0.0f, 0.0f };
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(85, shCompose, 1);
+
+		// Stages 37 + 38 — Occlusion + Bent Normal probe upload. Single
+		// vec4 at c86 carries both: .x = AO multiplier toward 1
+		// (1 = no effect, 0 = full occlusion), .yzw = bentN direction.
+		// Receiver multiplies the IBL ambient by .x and biases the SH
+		// evaluation normal toward .yzw by BentNormalProbeBias.
+		float probeAO = 1.0f;
+		CVector probeBentN(0, 0, 1);
+		CProbeManager::GetNearestOcclusion(lookupPos, probeAO, probeBentN);
+		bool occActive = OcclusionProbeEnable && CProbeManager::bootstrapped
+		              && CProbeManager::numProbes > 0;
+		// Strength lerps AO toward 1 — when strength == 0 the AO is
+		// effectively bypassed regardless of the probe value, and the
+		// bent-N bias is zeroed too so the receiver does nothing extra.
+		float effAO = occActive ? (1.0f - OcclusionProbeStrength) + OcclusionProbeStrength * probeAO
+		                        : 1.0f;
+		float effBias = occActive ? BentNormalProbeBias : 0.0f;
+		float occCompose[4] = {
+			effAO,
+			probeBentN.x * effBias,
+			probeBentN.y * effBias,
+			probeBentN.z * effBias,
+		};
+		rw::d3d::d3ddevice->SetPixelShaderConstantF(86, occCompose, 1);
 	}
 #endif
 }

@@ -230,6 +230,17 @@ float4 shCoeff[9] : register(c76);
 // for future per-probe gain / cosine convolution toggles.
 float4 shCompose : register(c85);
 
+// Stages 37 + 38 — Occlusion + Bent Normal probe compose.
+//   .x   = AO multiplier (1 = no effect, < 1 = darkens the IBL/SH ambient)
+//   .yzw = bent-normal vector pre-scaled by BentNormalProbeBias (so a
+//          length of 0 = no tilt, length of 1 = full tilt). Adding this
+//          to the surface N before SH eval shifts the directional ambient
+//          toward the unoccluded hemisphere — the classic bent-N look.
+// Both terms are gated by the host writing 1.0 / (0,0,0) when disabled,
+// so the shader doesn't need a branch — the math reduces to identity
+// when off.
+float4 occCompose : register(c86);
+
 // SH-2 basis evaluation. Standard 9-coefficient signal reconstruction;
 // fxc will fold the zero-band coefficients we don't currently bake
 // (Y1-1, Y11, Y2-2, Y2-1, Y21, Y22) — they don't fire ALU once the
@@ -816,6 +827,11 @@ float4 ComputeShadedColor(VS_out input)
 		float3 cubeCol = texCUBE(iblIrradianceCube, N).rgb;
 		float useCube = step(0.5, iblParams.z);
 		float3 iblCol = lerp(gradientCol, cubeCol, useCube);
+		// Stage 37 — occlusion probe AO multiplier. When occCompose.x
+		// < 1 the IBL ambient gets darkened by the local building-
+		// density-derived occlusion factor. Identity (1.0) when probes
+		// are disabled, so this is free in the off-path.
+		iblCol *= occCompose.x;
 		// Treat IBL as a soft diffuse — modulate by the material diffuse
 		// coefficient so unlit materials (like UI quads, particles) don't
 		// pick up sky bleed when this branch is somehow hit.
@@ -823,15 +839,16 @@ float4 ComputeShadedColor(VS_out input)
 
 		// Stage 36 — SH probe ambient compose. When the host pushes a
 		// non-zero strength via shCompose.x, we add an SH-evaluated
-		// directional ambient term. The result blends with the existing
-		// gradient/cube IBL: SH carries the per-probe LOCAL sky colour
-		// (eventually per-block when Stage 35 cube bakes feed it), while
-		// the gradient term carries the global sun-driven ambient.
-		// Multiplied by surfDiffuse same as the IBL term so it inherits
-		// the same material gating.
+		// directional ambient term. Normal used for the SH eval is
+		// optionally biased toward the Stage 38 bent normal (length of
+		// occCompose.yzw = bias × unit-bentN); zero bias = pure surface N.
+		// SH ambient gets the same AO multiplier (occCompose.x) as the
+		// gradient/cube term so the occlusion gating stays consistent
+		// across both contributions.
 		if(shCompose.x > 0.001){
-			float3 shAmbient = max(EvalSH9(N), 0.0);
-			lit += shAmbient * shCompose.x * surfDiffuse;
+			float3 shN = normalize(N + occCompose.yzw);
+			float3 shAmbient = max(EvalSH9(shN), 0.0);
+			lit += shAmbient * shCompose.x * occCompose.x * surfDiffuse;
 		}
 	}
 

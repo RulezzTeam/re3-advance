@@ -161,6 +161,17 @@ public:
 	static bool ShProbeEnable;
 	static float ShProbeStrength;	// 0..2 — receiver weight on the SH term
 
+	// Stages 37 + 38 — Occlusion + Bent Normal probes. Static bake at
+	// session start (building-density heuristic). Per-frame upload of
+	// the nearest probe's (ao, bentN) to c86; receiver multiplies the
+	// existing ambient by ao and adds a small N-toward-bentN tilt to
+	// the SH evaluation. Default OFF — when on, alcoves / interior
+	// rooms / underbody pockets read meaningfully darker even without
+	// SSAO, and ambient leans away from building density.
+	static bool OcclusionProbeEnable;
+	static float OcclusionProbeStrength;	// 0..1 — lerp AO toward 1 (= no effect)
+	static float BentNormalProbeBias;		// 0..1 — how much to tilt N toward bent N
+
 	// Depth of Field — bokeh blur driven by gbuf depth + focal distance.
 	// Runs before ResolveHDR, blurs pHdrScene in-place via a scratch RT
 	// so the downstream tonemap sees the blurred image.
